@@ -4,22 +4,43 @@ import * as md from "./md.js";
 import * as ed from "./editor.js";
 import { Store, PICTURES } from "./store.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.2.0";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
 
 const $ = (id) => document.getElementById(id);
-const page = $("page");
 const S = {
-  store: null, note: null, dirty: false, saveTimer: 0, busy: Promise.resolve(),
+  store: null, busy: Promise.resolve(),
   settings: loadSettings(), urls: new Map(), searching: "",
 };
+
+// ------------------------------------------------------------------ the two panes (one unless split)
+const P = [0, 1].map((k) => {
+  const el = $("pane" + k);
+  return { k, el, head: el.querySelector(".head"), scroller: el.querySelector(".scroller"),
+    page: el.querySelector(".page"), note: null, dirty: false, timer: 0 };
+});
+let A = P[0];            // the pane you're working in
+let page = A.page;       // its page
+Object.defineProperty(S, "note", { get: () => A.note, set: (v) => { A.note = v; } });
+const paneOf = (el) => P.find((p) => p.page === el || p.el.contains(el)) || A;
+
+function setActive(p) {
+  if (A === p) return;
+  A = p;
+  page = p.page;
+  for (const q of P) q.el.classList.toggle("active", q === p);
+  S.settings.active = p.k;
+  saveSettings();
+  renderTree();
+  updateHead();
+}
 
 // ------------------------------------------------------------------ settings
 function loadSettings() {
   const d = { dark: false, size: 18, spacing: 100, paraGap: false, keepFull: false, side: 260, list: true,
-    open: "", expanded: [] };
+    open: "", open2: "", expanded: [], split: "", ratio: 0.5, active: 0 };
   try { return Object.assign(d, JSON.parse(localStorage.getItem("rossnote") || "{}")); } catch (e) { return d; }
 }
 function saveSettings() { try { localStorage.setItem("rossnote", JSON.stringify(S.settings)); } catch (e) { /* private */ } }
@@ -41,6 +62,46 @@ function layout() {
   const narrow = window.innerWidth < 720;
   $("app").classList.toggle("app-narrow", narrow);
   $("app").classList.toggle("list-off", narrow ? !S.sideOpenNarrow : !S.settings.list);
+  const split = S.settings.split;
+  const v = split === "v" || (split && narrow);            // narrow screens: always one above the other
+  $("panes").classList.toggle("split", !!split);
+  $("panes").classList.toggle("split-v", !!v);
+  P[1].el.hidden = !split;
+  $("pdiv").hidden = !split;
+  const r = Math.max(0.15, Math.min(0.85, S.settings.ratio || 0.5));
+  P[0].el.style.flex = split ? `${r} 1 0` : "";
+  P[1].el.style.flex = split ? `${1 - r} 1 0` : "";
+  for (const b of document.querySelectorAll("[data-cmd=splith],[data-cmd=splitv]")) {
+    b.classList.toggle("on", split === (b.dataset.cmd === "splith" ? "h" : "v"));
+  }
+}
+
+// Ctrl+\ side by side, Ctrl+Shift+\ top and bottom; the same again goes back to one
+async function setSplit(kind) {
+  const s = S.settings;
+  if (s.split === kind || !kind) {
+    await flushSave();
+    s.split = "";
+    if (A === P[1]) {
+      // the note you were working in stays
+      const n = P[1].note;
+      setActive(P[0]);
+      if (n && n !== P[0].note) await openNote(n, P[0]);
+    }
+    P[1].note = null;
+    P[1].page.textContent = "";
+  } else {
+    const was = s.split;
+    s.split = kind;
+    if (!was) {
+      layout();
+      const n = P[0].note;
+      if (n) await openNote(n, P[1]);
+    }
+  }
+  saveSettings();
+  layout();
+  updateHead();
 }
 
 // ------------------------------------------------------------------ the folder (kept between visits)
@@ -141,8 +202,14 @@ async function openRoot(handle, quiet) {
     if (!S.store.root.children.length) await makeWelcome();
   });
   renderTree();
+  layout();
   const n = S.store.find(S.settings.open) || S.store.root.children[0];
-  if (n) await openNote(n);
+  if (S.settings.split) {
+    const n2 = S.store.find(S.settings.open2) || n;
+    if (n2) await openNote(n2, P[1]);
+  }
+  if (n) await openNote(n, P[0]);
+  if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
 }
 
@@ -205,12 +272,14 @@ function expandTo(note) {
 }
 
 function updateHead() {
-  const n = S.note;
-  $("head").textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow()].join("  ›  ") : "No note open";
+  for (const p of P) {
+    const n = p.note;
+    p.head.textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow(p.page)].join("  ›  ") : "No note open";
+  }
 }
 
-function titleNow() {
-  for (const div of page.children) {
+function titleNow(pg = page) {
+  for (const div of pg.children) {
     const t = ed.lineText(div).split(md.OBJ).join("").trim();
     if (t) return t.slice(0, 80);
   }
@@ -218,35 +287,34 @@ function titleNow() {
 }
 
 // ------------------------------------------------------------------ opening a note
-async function openNote(note) {
+async function openNote(note, pane = A) {
   if (!note) return;
   await flushSave();
   await queue(async () => {
     try { await S.store.read(note); } catch (e) { /* gone: show what we had */ }
   });
-  S.note = note;
-  S.settings.open = note.key();
+  pane.note = note;
+  S.settings[pane.k ? "open2" : "open"] = note.key();
   expandTo(note);
   saveSettings();
-  showText(note.text || "");
+  showText(note.text || "", pane);
   renderTree();
   updateHead();
-  page.scrollTop = 0;
-  $("scroller").scrollTop = 0;
+  pane.scroller.scrollTop = 0;
 }
 
-function showText(text) {
+function showText(text, pane = A) {
   const lines = md.parse(text);
-  const dir = S.note.folderParts();
+  const dir = pane.note.folderParts();
   for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, dir);
-  ed.renderLines(page, lines);
-  ed.relayout(page);
-  loadPictures();
-  page.dataset.loaded = "1";
+  ed.renderLines(pane.page, lines);
+  ed.relayout(pane.page);
+  loadPictures(pane.page);
+  pane.page.dataset.loaded = "1";
 }
 
-async function loadPictures() {
-  for (const img of page.querySelectorAll("img.pic:not([data-loaded])")) {
+async function loadPictures(pg = page) {
+  for (const img of pg.querySelectorAll("img.pic:not([data-loaded])")) {
     img.dataset.loaded = "1";
     let parts = img.dataset.target ? img.dataset.target.split("/") : null;
     let file = null;
@@ -277,28 +345,28 @@ function sizePicture(img) {
 }
 
 // ------------------------------------------------------------------ saving
-function changed() {
-  if (!S.note) return;
-  S.dirty = true;
-  clearTimeout(S.saveTimer);
-  S.saveTimer = setTimeout(() => queue(saveNow), SAVE_AFTER_MS);
+function changed(pane = A) {
+  if (!pane.note) return;
+  pane.dirty = true;
+  clearTimeout(pane.timer);
+  pane.timer = setTimeout(() => queue(() => saveNow(pane)), SAVE_AFTER_MS);
   // the title in the list and the head, as you type
-  const row = $("tree").querySelector(`.row[data-key="${CSS.escape(S.note.key())}"] .lbl`);
-  const t = titleNow();
+  const row = $("tree").querySelector(`.row[data-key="${CSS.escape(pane.note.key())}"] .lbl`);
+  const t = titleNow(pane.page);
   if (row && row.textContent !== t) row.textContent = t;
   updateHead();
 }
 
 function flushSave() {
-  clearTimeout(S.saveTimer);
-  return queue(saveNow);
+  for (const p of P) clearTimeout(p.timer);
+  return queue(async () => { for (const p of P) await saveNow(p); });
 }
 
-async function saveNow() {
-  if (!S.dirty || !S.note) return;
-  S.dirty = false;
-  const note = S.note;
-  const lines = ed.readLines(page);
+async function saveNow(pane) {
+  if (!pane.dirty || !pane.note) return;
+  pane.dirty = false;
+  const note = pane.note;
+  const lines = ed.readLines(pane.page);
   const text = md.serialize(lines, { dir: note.folderParts() });
   if (text !== note.text) {
     const now = await S.store.peek(note);
@@ -308,17 +376,29 @@ async function saveNow() {
       toast("This note had also changed on another device; that version is kept in the .trash folder.");
     }
     await S.store.write(note, text);
+    // the same note open in the other pane shows what was just saved
+    for (const q of P) if (q !== pane && q.note === note && !q.dirty) refill(q);
   }
   const title = md.titleOfLines(lines) || "Untitled";
   if (md.safeName(title) !== note.name) {
     const old = note.key();
     if (await S.store.rename(note, title)) {
       rekey(old, note.key());
-      S.settings.open = note.key();
+      for (const q of P) if (q.note === note) S.settings[q.k ? "open2" : "open"] = note.key();
       saveSettings();
       renderTree();
     }
   }
+}
+
+// a pane shows its note again, keeping its place (and the caret, if it's there)
+function refill(q) {
+  const top = q.scroller.scrollTop;
+  const had = document.activeElement === q.page;
+  const c = had ? ed.caret(q.page) : null;
+  showText(q.note.text || "", q);
+  q.scroller.scrollTop = top;
+  if (had) ed.setCaret(q.page, c);
 }
 
 function rekey(oldKey, newKey) {
@@ -330,24 +410,26 @@ async function refresh() {
   if (!S.store) return;
   await flushSave();
   await queue(async () => {
-    const key = S.note && S.note.key();
-    const shown = S.note && S.note.text;
+    const was = P.map((p) => [p.note && p.note.key(), p.note && p.note.text]);
     await S.store.scan();
-    const n = key && S.store.find(key);
-    if (n) {
-      S.note = n;
-      if (!S.dirty && n.text !== shown) {
-        const c = ed.caret(page);
-        showText(n.text);
-        if (document.activeElement === page) ed.setCaret(page, c);
-        toast("Read again: changed on another device.");
+    let told = false;
+    P.forEach((p, k) => {
+      const [key, shown] = was[k];
+      const n = key && S.store.find(key);
+      if (n) {
+        p.note = n;
+        if (!p.dirty && n.text !== shown) {
+          refill(p);
+          if (!told) toast("Read again: changed on another device.");
+          told = true;
+        }
+      } else if (key) {
+        p.note = null;
+        const first = S.store.root.children[0];
+        if (first) setTimeout(() => openNote(first, p));
+        else p.page.textContent = "";
       }
-    } else if (key) {
-      S.note = null;
-      const first = S.store.root.children[0];
-      if (first) setTimeout(() => openNote(first));
-      else page.textContent = "";
-    }
+    });
   });
   renderTree();
   updateHead();
@@ -406,7 +488,8 @@ async function moveNote(how) {
   if (how === "in") S.settings.expanded = [...new Set([...S.settings.expanded, target.key()])];
   S.settings.open = n.key();
   saveSettings();
-  if (S.note === n) showText(n.text);
+  for (const p of P) if (p.note && moving.includes(p.note)) { S.settings[p.k ? "open2" : "open"] = p.note.key(); refill(p); }
+  saveSettings();
   renderTree();
   updateHead();
 }
@@ -418,12 +501,18 @@ async function deleteNote() {
   if (!confirm(`Delete “${n.title()}”${under ? ` and the ${under} note${under === 1 ? "" : "s"} under it` : ""}?\n\nIt goes to the .trash folder inside RossNotes, in case.`)) return;
   await flushSave();
   const parent = n.parent, i = parent.children.indexOf(n);
+  const gone = [n, ...n.walk()];
   await queue(() => S.store.delete(n));
-  S.note = null;
   const next = parent.children[Math.min(i, parent.children.length - 1)] || (parent.isRoot() ? null : parent) ||
     S.store.root.children[0];
-  if (next) await openNote(next);
-  else { await newNote(false); }
+  for (const p of P) {
+    if (!p.note || !gone.includes(p.note)) continue;
+    p.note = null;
+    p.dirty = false;
+    if (next) await openNote(next, p);
+    else p.page.textContent = "";
+  }
+  if (!next) await newNote(false);
   renderTree();
   updateCount();
 }
@@ -557,6 +646,9 @@ const COMMANDS = {
   redo: () => { exec("redo"); afterEdit(); },
   smaller: () => setSize(-1), bigger: () => setSize(1),
   dark: () => { S.settings.dark = !S.settings.dark; saveSettings(); applyLook(); },
+  print: () => printNote(),
+  splith: () => setSplit("h"),
+  splitv: () => setSplit("v"),
   clear: clearFormatting,
 };
 
@@ -568,10 +660,19 @@ function setSize(step) {
 }
 
 // ------------------------------------------------------------------ typing
-let savedCaret = null;
-function rememberCaret() { savedCaret = ed.caret(page); }
+// what's done on a page is done in its pane: that pane becomes the one you're working in
+function onPages(type, fn) {
+  for (const p of P) p.page.addEventListener(type, (e) => { setActive(p); return fn(e); });
+}
+for (const p of P) {
+  p.page.addEventListener("focus", () => setActive(p));
+  p.el.addEventListener("pointerdown", () => setActive(p));
+}
 
-page.addEventListener("beforeinput", (e) => {
+let savedCaret = null;
+function rememberCaret() { savedCaret = { pane: A, c: ed.caret(page) }; }
+
+onPages("beforeinput", (e) => {
   if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
     e.preventDefault();
     enter();
@@ -658,7 +759,7 @@ const INLINE = [
   [/(?:^|[^_\p{L}\p{N}])_([^_\s](?:[^_]*[^_\s])?)_$/u, "i"],
 ];
 
-page.addEventListener("input", (e) => {
+onPages("input", (e) => {
   if (ed.tidy(page)) { /* put right */ }
   if (e.inputType === "insertText" && e.data) {
     const ch = e.data[e.data.length - 1];
@@ -778,6 +879,9 @@ document.addEventListener("keydown", (e) => {
   else if (c && k === "-") fn = COMMANDS.smaller;
   else if (c && k === "0") fn = () => setSize(0);
   else if (c && (k === "p" || k === "P")) fn = printNote;
+  else if (c && e.shiftKey && (k === "F" || k === "f")) fn = focusSearch;
+  else if (c && e.altKey && (k === "n" || k === "N")) fn = () => newNote(false);
+  else if (c && (k === "\\" || k === "|" || e.code === "Backslash")) fn = e.shiftKey ? COMMANDS.splitv : COMMANDS.splith;
   else if (c && (k === "b" || k === "B" || k === "i" || k === "I" || k === "u" || k === "U") && document.activeElement === page) {
     fn = COMMANDS[{ b: "bold", i: "italic", u: "underline" }[k.toLowerCase()]];
   } else if (e.altKey && !c && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k)) {
@@ -787,7 +891,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ------------------------------------------------------------------ pasting and dropping
-page.addEventListener("paste", async (e) => {
+onPages("paste", async (e) => {
   const dt = e.clipboardData;
   if (!dt) return;
   const files = [...dt.files].filter((f) => f.type.startsWith("image/"));
@@ -841,8 +945,8 @@ function pasteLines(lines, plain) {
   scrollCaretIntoView();
 }
 
-page.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
-page.addEventListener("drop", async (e) => {
+onPages("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+onPages("drop", async (e) => {
   const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
   if (!files.length) return;
   e.preventDefault();
@@ -856,8 +960,9 @@ $("file-pic").addEventListener("change", async (e) => {
   const files = [...e.target.files];
   e.target.value = "";
   if (!files.length) return;
+  if (savedCaret) setActive(savedCaret.pane);
   page.focus();
-  if (savedCaret) ed.setCaret(page, savedCaret);
+  if (savedCaret) ed.setCaret(page, savedCaret.c);
   await addPictures(files);
 });
 
@@ -946,9 +1051,9 @@ function showChip(el, buttons) {
   chip.style.top = top + "px";
   chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
 }
-function hideChip() { $("chip").hidden = true; for (const i of page.querySelectorAll("img.sel")) i.classList.remove("sel"); }
+function hideChip() { $("chip").hidden = true; for (const i of document.querySelectorAll(".page img.sel")) i.classList.remove("sel"); }
 
-page.addEventListener("click", (e) => {
+onPages("click", (e) => {
   const img = e.target.closest && e.target.closest("img.pic");
   if (img) {
     hideChip();
@@ -968,8 +1073,11 @@ document.addEventListener("selectionchange", () => {
   if (!S.note) return;
   updateButtons();
   const sel = window.getSelection();
-  if (!sel.rangeCount || !page.contains(sel.anchorNode)) return;
-  if (document.querySelector("#page img.sel")) return;
+  if (!sel.rangeCount) return;
+  const p = P.find((q) => q.page.contains(sel.anchorNode));
+  if (!p) return;
+  setActive(p);
+  if (document.querySelector(".page img.sel")) return;
   const n = sel.anchorNode;
   const a = (n.nodeType === 1 ? n : n.parentNode).closest && (n.nodeType === 1 ? n : n.parentNode).closest("a");
   if (a && sel.isCollapsed && page.contains(a)) {
@@ -982,7 +1090,8 @@ document.addEventListener("selectionchange", () => {
   } else hideChip();
 });
 
-// ------------------------------------------------------------------ the ⋯ menu
+// ------------------------------------------------------------------ the menus (as on the laptop)
+let openMenu = null;
 function showMenu(anchor, items) {
   const m = $("menu");
   m.textContent = "";
@@ -994,44 +1103,199 @@ function showMenu(anchor, items) {
     tick.className = "tick";
     tick.textContent = it.on ? "✓" : "";
     b.append(tick, document.createTextNode(it.label));
+    if (it.keys) { const k = document.createElement("span"); k.className = "keys"; k.textContent = it.keys; b.appendChild(k); }
+    if (it.off) b.disabled = true;
+    b.addEventListener("mousedown", (e) => e.preventDefault());       // the caret stays in the note
     b.onclick = () => { hideMenu(); it.fn(); };
     m.appendChild(b);
   }
   m.hidden = false;
   const r = anchor.getBoundingClientRect();
-  m.style.top = Math.min(r.bottom + 4, window.innerHeight - m.offsetHeight - 8) + "px";
-  m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, window.innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.top = Math.max(8, Math.min(r.bottom + 2, window.innerHeight - m.offsetHeight - 8)) + "px";
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
 }
-function hideMenu() { $("menu").hidden = true; }
+function hideMenu() {
+  $("menu").hidden = true;
+  openMenu = null;
+  for (const b of document.querySelectorAll("#menubar button")) b.classList.remove("open");
+}
 document.addEventListener("pointerdown", (e) => {
-  if (!$("menu").hidden && !$("menu").contains(e.target) && e.target !== $("b-more")) hideMenu();
+  if (!$("menu").hidden && !$("menu").contains(e.target) && !$("menubar").contains(e.target)) hideMenu();
   if (!$("chip").hidden && !$("chip").contains(e.target) && !(e.target.closest && e.target.closest("img.pic"))) hideChip();
 });
 
-$("b-more").onclick = (e) => {
-  if (!$("menu").hidden) return hideMenu();
+function menuItems(name) {
   const s = S.settings;
-  showMenu(e.currentTarget, [
-    "Line spacing (all notes)",
-    ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: () => { s.spacing = v; saveSettings(); applyLook(); } })),
-    { label: "Space between paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
-    "-",
-    { label: "Dark mode", on: s.dark, fn: COMMANDS.dark },
-    { label: "Normal text size", fn: () => setSize(0) },
-    { label: "Keep photos at full size", on: s.keepFull, fn: () => {
-      s.keepFull = !s.keepFull; saveSettings();
-      toast(s.keepFull ? "New photos are kept exactly as they come." : "Photos larger than 2,000 pixels are stored reduced to 2,000.");
-    } },
-    "-",
-    { label: "Date and time", fn: COMMANDS.datetime },
-    { label: "Clear formatting", fn: COMMANDS.clear },
-    { label: "Print or save as PDF…", fn: printNote },
-    { label: "Read the folder again", fn: refresh },
-    { label: "Choose another folder…", fn: async () => { await flushSave(); chooseFolder(); } },
-    "-",
-    { label: `About Ross Note ${VERSION}`, fn: () => toast(`Ross Note ${VERSION}: your notes are the Markdown files in “${S.store ? S.store.handle.name : ""}”, the same as on the laptop.`, 6000) },
-  ]);
-};
+  const n = S.note;
+  const sib = n ? n.parent.children : [];
+  const i = n ? sib.indexOf(n) : -1;
+  const spacing = (v) => () => { s.spacing = v; saveSettings(); applyLook(); };
+  switch (name) {
+    case "file": return [
+      { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
+      { label: "New Note Under This One", fn: () => newNote(true), off: !n },
+      "-",
+      { label: "Print / Save as PDF…", fn: printNote, keys: "Ctrl+P", off: !n },
+      "-",
+      { label: "Read the Folder Again", fn: refresh },
+      { label: "Choose Another Folder…", fn: async () => { await flushSave(); chooseFolder(); } },
+      "-",
+      { label: "Delete Note…", fn: deleteNote, off: !n },
+    ];
+    case "edit": return [
+      { label: "Undo", fn: COMMANDS.undo, keys: "Ctrl+Z" },
+      { label: "Redo", fn: COMMANDS.redo, keys: "Ctrl+Shift+Z" },
+      "-",
+      { label: "Cut", fn: () => { page.focus(); document.execCommand("cut"); }, keys: "Ctrl+X" },
+      { label: "Copy", fn: () => { page.focus(); document.execCommand("copy"); }, keys: "Ctrl+C" },
+      { label: "Paste", fn: pasteFromMenu, keys: "Ctrl+V" },
+      { label: "Select All", fn: () => { page.focus(); document.execCommand("selectAll"); }, keys: "Ctrl+A" },
+      "-",
+      { label: "Search the Notes", fn: focusSearch, keys: "Ctrl+Shift+F" },
+    ];
+    case "insert": return [
+      { label: "Date", fn: COMMANDS.date, keys: "Ctrl+;" },
+      { label: "Date and Time", fn: COMMANDS.datetime, keys: "Ctrl+Shift+;" },
+      "-",
+      { label: "Picture…", fn: COMMANDS.picture },
+      { label: "Keep Photos at Full Size", on: s.keepFull, fn: () => {
+        s.keepFull = !s.keepFull; saveSettings();
+        toast(s.keepFull ? "New photos are kept exactly as they come." : "Photos larger than 2,000 pixels are stored reduced to 2,000.");
+      } },
+    ];
+    case "format": return [
+      { label: "Bold", fn: COMMANDS.bold, keys: "Ctrl+B" },
+      { label: "Italic", fn: COMMANDS.italic, keys: "Ctrl+I" },
+      { label: "Underline", fn: COMMANDS.underline, keys: "Ctrl+U" },
+      { label: "Strikethrough", fn: COMMANDS.strike, keys: "Ctrl+Shift+X" },
+      { label: "Highlight", fn: COMMANDS.highlight, keys: "Ctrl+Shift+H" },
+      "-",
+      { label: "Heading 1", fn: COMMANDS.h1, keys: "Ctrl+1" },
+      { label: "Heading 2", fn: COMMANDS.h2, keys: "Ctrl+2" },
+      { label: "Heading 3", fn: COMMANDS.h3, keys: "Ctrl+3" },
+      { label: "Normal Text", fn: COMMANDS.normal, keys: "Ctrl+Shift+N" },
+      "-",
+      { label: "Bullet List", fn: COMMANDS.ul, keys: "Ctrl+Shift+8" },
+      { label: "Numbered List", fn: COMMANDS.ol, keys: "Ctrl+Shift+7" },
+      { label: "Quote (indented)", fn: COMMANDS.quote, keys: "Ctrl+M" },
+      "-",
+      { label: "Clear Formatting", fn: COMMANDS.clear, keys: "Ctrl+Space" },
+    ];
+    case "notes": return [
+      { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
+      { label: "New Note Under This One", fn: () => newNote(true), off: !n },
+      "-",
+      { label: "Move Up", fn: () => moveNote("up"), keys: "Alt+Up", off: i < 1 },
+      { label: "Move Down", fn: () => moveNote("down"), keys: "Alt+Down", off: !n || i >= sib.length - 1 },
+      { label: "Move Out a Level", fn: () => moveNote("out"), keys: "Alt+Left", off: !n || n.parent.isRoot() },
+      { label: "Move Under the Note Above", fn: () => moveNote("in"), keys: "Alt+Right", off: i < 1 },
+      "-",
+      { label: "Delete Note…", fn: deleteNote, off: !n },
+    ];
+    case "view": return [
+      { label: "Split Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
+      { label: "Split Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
+      { label: "One Note Only", on: !s.split, fn: () => setSplit("") },
+      "-",
+      { label: "Show the Note List", on: $("app").classList.contains("app-narrow") ? !!S.sideOpenNarrow : s.list,
+        fn: toggleList, keys: "Ctrl+Shift+L" },
+      "-",
+      { label: "Larger Text", fn: COMMANDS.bigger, keys: "Ctrl+=" },
+      { label: "Smaller Text", fn: COMMANDS.smaller, keys: "Ctrl+−" },
+      { label: "Normal Size", fn: () => setSize(0), keys: "Ctrl+0" },
+      "-",
+      "Line spacing (all notes)",
+      ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: spacing(v) })),
+      { label: "Space Between Paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
+      "-",
+      { label: "Dark Mode", on: s.dark, fn: COMMANDS.dark, keys: "Ctrl+Shift+D" },
+    ];
+    case "help": return [
+      { label: "Keyboard Shortcuts", fn: showKeys, keys: "F1" },
+      { label: "About Ross Note", fn: () => dialog("About Ross Note",
+        `Ross Note ${VERSION}\nA simple, fast tree of notes.\n\nYour notes are the Markdown files in the folder “${S.store ? S.store.handle.name : ""}”, ` +
+        "one for each note, the same as on the laptop. Your sync app keeps them in step.") },
+    ];
+  }
+  return [];
+}
+
+function showMenuNamed(name) {
+  const btn = document.querySelector(`#menubar [data-menu="${name}"]`);
+  for (const b of document.querySelectorAll("#menubar button")) b.classList.toggle("open", b === btn);
+  openMenu = name;
+  showMenu(btn, menuItems(name));
+}
+for (const b of document.querySelectorAll("#menubar [data-menu]")) {
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => (openMenu === b.dataset.menu ? hideMenu() : showMenuNamed(b.dataset.menu)));
+  // with one menu open, pointing at another opens it
+  b.addEventListener("pointerenter", (e) => { if (openMenu && openMenu !== b.dataset.menu && e.pointerType === "mouse") showMenuNamed(b.dataset.menu); });
+}
+// Alt shows the menus' letters; Alt+F, Alt+E ... open them
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Alt") $("menubar").classList.add("keys");
+  const letters = { f: "file", e: "edit", i: "insert", o: "format", n: "notes", v: "view", h: "help" };
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && letters[e.key.toLowerCase()]) {
+    e.preventDefault();
+    showMenuNamed(letters[e.key.toLowerCase()]);
+  } else if (e.key === "Escape" && openMenu) hideMenu();
+  else if (e.key === "F1") { e.preventDefault(); showKeys(); }
+});
+document.addEventListener("keyup", (e) => { if (e.key === "Alt") $("menubar").classList.remove("keys"); });
+
+async function pasteFromMenu() {
+  page.focus();
+  try {
+    const items = await navigator.clipboard.read();
+    for (const it of items) {
+      const img = it.types.find((t) => t.startsWith("image/"));
+      if (img) { const b = await it.getType(img); return addPictures([new File([b], "image.png", { type: img })]); }
+    }
+    for (const it of items) {
+      if (it.types.includes("text/html")) return pasteLines(ed.linesFromHtml(await (await it.getType("text/html")).text()), false);
+    }
+    const t = await navigator.clipboard.readText();
+    if (t) pasteLines(md.parse(t), !/\n/.test(t.trim()) && !/[*_~=<#>[`]/.test(t));
+  } catch (e) {
+    toast("Paste with Ctrl+V, or press and hold in the note and choose Paste.");
+  }
+}
+
+function focusSearch() {
+  if ($("app").classList.contains("app-narrow")) { S.sideOpenNarrow = true; layout(); }
+  else if (!S.settings.list) { S.settings.list = true; saveSettings(); layout(); }
+  $("search").focus();
+  $("search").select();
+}
+
+function dialog(title, text) {
+  $("dialog").querySelector("h2").textContent = title;
+  $("dialog").querySelector(".body").textContent = text;
+  $("dialog").hidden = false;
+}
+$("dialog-close").onclick = () => { $("dialog").hidden = true; };
+$("dialog").addEventListener("click", (e) => { if (e.target === $("dialog")) $("dialog").hidden = true; });
+
+function showKeys() {
+  dialog("Keyboard Shortcuts", [
+    "New note: Ctrl+Alt+N",
+    "Insert date: Ctrl+;    Date and time: Ctrl+Shift+;",
+    "Bold / Italic / Underline: Ctrl+B / I / U",
+    "Highlight: Ctrl+Shift+H    Strikethrough: Ctrl+Shift+X",
+    "Headings: Ctrl+1 / 2 / 3    Normal text: Ctrl+Shift+N",
+    "Bullets: Ctrl+Shift+8    Numbers: Ctrl+Shift+7",
+    "Quote (indented): Ctrl+M, or start a line with >",
+    "Clear formatting: Ctrl+Space",
+    "Text size: Ctrl+=  Ctrl+−  Ctrl+0",
+    "Split side by side: Ctrl+\\    Top and bottom: Ctrl+Shift+\\",
+    "Hide / show the note list: Ctrl+Shift+L    Light / dark: Ctrl+Shift+D",
+    "Search the notes: Ctrl+Shift+F",
+    "Move a note: Alt+Up / Down / Left / Right",
+    "Print or save as PDF: Ctrl+P",
+    "Menus: Alt+F, Alt+E, Alt+I, Alt+O, Alt+N, Alt+V, Alt+H",
+  ].join("\n"));
+}
 
 async function printNote() {
   await flushSave();
@@ -1079,9 +1343,25 @@ $("search").addEventListener("input", (e) => { S.searching = e.target.value; ren
   });
 })();
 window.addEventListener("resize", layout);
-$("scroller").addEventListener("click", (e) => {
+(() => {
+  const d = $("pdiv");
+  d.addEventListener("pointerdown", (e) => {
+    d.setPointerCapture(e.pointerId);
+    const box = $("panes").getBoundingClientRect();
+    const v = $("panes").classList.contains("split-v");
+    const move = (ev) => {
+      S.settings.ratio = v ? (ev.clientY - box.top) / box.height : (ev.clientX - box.left) / box.width;
+      layout();
+    };
+    const up = () => { d.removeEventListener("pointermove", move); d.removeEventListener("pointerup", up); saveSettings(); };
+    d.addEventListener("pointermove", move);
+    d.addEventListener("pointerup", up);
+  });
+})();
+for (const p of P) p.scroller.addEventListener("click", (e) => {
   // a tap below the last line puts the caret at the end
-  if (e.target === $("scroller") || (e.target === page && e.clientY > page.lastElementChild.getBoundingClientRect().bottom)) {
+  setActive(p);
+  if (e.target === p.scroller || (e.target === page && e.clientY > page.lastElementChild.getBoundingClientRect().bottom)) {
     const last = page.lastElementChild;
     page.focus();
     const [n, o] = ed.pointAt(last, ed.lineText(last).length);
@@ -1101,6 +1381,6 @@ function toast(msg, ms = 3500) {
 function hideToast() { $("toast").hidden = true; }
 
 // for the tests
-window.RN = { S, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
