@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.3.1";
+import * as md from "./md.js?v=1.3.2";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -646,4 +646,69 @@ export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria
     ["word/numbering.xml", numberingXml(nOrdered), true], ["word/_rels/document.xml.rels", docRels, true],
     ...media.map(([n, d]) => ["word/media/" + n, d, false]),
   ]);
+}
+
+// ================================================================ a note for an email (as the laptop's notesio)
+function runText(r) {
+  const t = r.t.split(OBJ).join("");
+  const h = r.href;
+  if (h && t && t !== h && md.hrefOf(t) !== h) return `${t} (${h})`;
+  return t;
+}
+
+export function plainText(lines) {
+  const out = [];
+  let counters = new Map();
+  for (const ln of lines) {
+    const kind = ln.kind;
+    const text = ln.runs.filter((r) => !r.img).map(runText).join("");
+    const d = ln.depth || 1;
+    if (kind === "ol") {
+      counters = new Map([...counters].filter(([k]) => k <= d));
+      counters.set(d, (counters.get(d) || 0) + 1);
+    } else if (kind !== "ul") counters = new Map();
+    if (!text.trim() && ln.runs.length && ln.runs.every((r) => r.img)) continue;
+    if (kind === "ul") out.push("  ".repeat(d - 1) + "• " + text);
+    else if (kind === "ol") out.push("  ".repeat(d - 1) + counters.get(d) + ". " + text);
+    else if (kind === "quote") out.push("> " + text);
+    else out.push(text);
+  }
+  while (out.length && !out[out.length - 1].trim()) out.pop();
+  return out.join("\n") + "\n";
+}
+
+export function htmlText(lines) {
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = [];
+  let counters = new Map();
+  for (const ln of lines) {
+    const kind = ln.kind;
+    let body = "";
+    for (const r of ln.runs) {
+      if (r.img) continue;
+      let t = esc(r.t.split(OBJ).join(""));
+      if (!t) continue;
+      const f = r.f || new Set();
+      if (f.has("b")) t = `<b>${t}</b>`;
+      if (f.has("i")) t = `<i>${t}</i>`;
+      if (f.has("u")) t = `<u>${t}</u>`;
+      if (f.has("s")) t = `<s>${t}</s>`;
+      if (f.has("h")) t = `<span style="background-color:#ffd54f">${t}</span>`;
+      if (r.href) t = `<a href="${esc(r.href).replace(/"/g, "&quot;")}">${t}</a>`;
+      body += t;
+    }
+    if (!body && ln.runs.length && ln.runs.every((r) => r.img)) continue;
+    const d = ln.depth || 1;
+    if (kind === "ol") {
+      counters = new Map([...counters].filter(([k]) => k <= d));
+      counters.set(d, (counters.get(d) || 0) + 1);
+    } else if (kind !== "ul") counters = new Map();
+    if (ln.code) out.push(`<div style="font-family:monospace">${body || "&nbsp;"}</div>`);
+    else if (kind && kind[0] === "h") { const h = Math.min(3, +kind[1]); out.push(`<h${h}>${body}</h${h}>`); }
+    else if (kind === "ul") out.push(`<div style="margin-left:${d}em">• ${body}</div>`);
+    else if (kind === "ol") out.push(`<div style="margin-left:${d}em">${counters.get(d)}. ${body}</div>`);
+    else if (kind === "quote") out.push(`<blockquote style="margin:0 0 0 2em;color:#555">${body}</blockquote>`);
+    else out.push(`<div>${body || "<br>"}</div>`);
+  }
+  return `<html><body>${out.join("\n")}</body></html>`;
 }

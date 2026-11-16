@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.3.1";
-import * as ed from "./editor.js?v=1.3.1";
-import { Store, PICTURES } from "./store.js?v=1.3.1";
+import * as md from "./md.js?v=1.3.2";
+import * as ed from "./editor.js?v=1.3.2";
+import { Store, PICTURES } from "./store.js?v=1.3.2";
 
-export const VERSION = "1.3.1";
+export const VERSION = "1.3.2";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -675,6 +675,7 @@ const COMMANDS = {
   smaller: () => setSize(-1), bigger: () => setSize(1),
   dark: () => { S.settings.dark = !S.settings.dark; saveSettings(); applyLook(); },
   print: () => printNote(),
+  share: () => shareNote(),
   splith: () => setSplit("h"),
   splitv: () => setSplit("v"),
   clear: clearFormatting,
@@ -1168,6 +1169,9 @@ function menuItems(name) {
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
       "-",
+      { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
+      { label: "Copy This Note for Email", fn: () => copyForEmail(), off: !n },
+      "-",
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
       { label: "Read the Folder Again", fn: refresh },
@@ -1444,7 +1448,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.3.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.3.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1608,6 +1612,26 @@ async function saveFile(blob, name, desc, ext, mime) {
   return name;
 }
 
+async function wordBlob(notes, pages, name, parts = null) {
+  parts = parts || await joinedParts(notes, []);
+  const W = await wordModule();
+  const lines = [];
+  parts.forEach(([, text], k) => {
+    const nl = md.parse(text);
+    for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
+    const part = W.fromNoteLines(nl);
+    while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
+    if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
+    lines.push(...part);
+  });
+  const bytes = async (img) => {
+    try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
+      try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
+    }
+  };
+  return W.writeDocx(lines, bytes, name);
+}
+
 async function exportNotes(kind) {
   if (!S.note) return null;
   await flushSave();
@@ -1625,22 +1649,7 @@ async function exportNotes(kind) {
   }
   if (kind === "word") {
     toast("Making the Word document…", 60000);
-    const W = await wordModule();
-    const lines = [];
-    parts.forEach(([, text], k) => {
-      const nl = md.parse(text);
-      for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
-      const part = W.fromNoteLines(nl);
-      while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
-      if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
-      lines.push(...part);
-    });
-    const bytes = async (img) => {
-      try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
-        try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
-      }
-    };
-    const blob = await W.writeDocx(lines, bytes, name);
+    const blob = await wordBlob(notes, pages, name, parts);
     hideToast();
     const saved = await saveFile(blob, name + ".docx", "Word document", ".docx",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -1676,7 +1685,80 @@ async function exportNotes(kind) {
   return name;
 }
 
+// ------------------------------------------------------------------ email and sharing
+async function noteForEmail() {
+  const W = await wordModule();
+  return { W, title: titleNow(), lines: W.fromNoteLines(ed.readLines(page)) };
+}
+
+async function shareNote() {
+  if (!S.note) return null;
+  await flushSave();
+  const p = document.createElement("div");
+  p.textContent = "Send “" + titleNow() + "” by email or another app (Android's share panel opens), or copy it " +
+    "with its formatting to paste into an email.";
+  const how = await ask("Email or Share", p, [["As the message", "text", true], ["As a Word document", "word"],
+    ["Copy with formatting", "copy"]]);
+  if (how === "text") return shareText();
+  if (how === "word") return shareWord();
+  if (how === "copy") return copyForEmail();
+  return null;
+}
+
+async function shareText() {
+  const { W, title, lines } = await noteForEmail();
+  const text = W.plainText(lines);
+  if (navigator.share) {
+    try { await navigator.share({ title, text }); return "shared"; } catch (e) {
+      if (e && e.name === "AbortError") return null;
+    }
+  }
+  // no share panel here: a new email in the mail app
+  location.href = "mailto:?subject=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(text.replace(/\n/g, "\r\n"));
+  return "mailto";
+}
+
+async function copyForEmail() {
+  const { W, title, lines } = await noteForEmail();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([W.htmlText(lines)], { type: "text/html" }),
+      "text/plain": new Blob([W.plainText(lines)], { type: "text/plain" }),
+    })]);
+    toast(`“${title}” copied, with its formatting: paste it into an email.`);
+    return true;
+  } catch (e) {
+    toast("Couldn't copy here: use Email or Share instead.");
+    return false;
+  }
+}
+
+async function shareWord() {
+  const got = await chooseNotes("Share as a Word Document", true);
+  if (!got) return null;
+  const { notes, pages } = got;
+  toast("Making the Word document…", 60000);
+  const name = md.safeName(notes[0].title());
+  const blob = await wordBlob(notes, pages, name);
+  hideToast();
+  const file = new File([blob], name + ".docx", { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // a fresh tap, so Android lets the share panel open
+    const p = document.createElement("div");
+    p.textContent = `“${file.name}” is ready.`;
+    if (await ask("Share as a Word Document", p, [["Share", "go", true]])) {
+      try { await navigator.share({ files: [file], title: name }); return "shared"; } catch (e) {
+        if (e && e.name === "AbortError") return null;
+      }
+    }
+    return null;
+  }
+  const saved = await saveFile(blob, file.name, "Word document", ".docx", blob.type);
+  if (saved) toast("Saved " + saved + " (this browser can't share files): attach it to an email from there.");
+  return saved;
+}
+
 // for the tests
-window.RN = { S, P, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
