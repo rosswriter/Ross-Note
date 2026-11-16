@@ -94,6 +94,12 @@ button { font: inherit; color: inherit; }
 .row.cur .tw { color: #dfe8f7; }
 .row .lbl { overflow: hidden; text-overflow: ellipsis; }
 .row.match .lbl { font-weight: 600; }
+.row .flag { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.row .ro { flex: none; margin-left: 8px; padding: 0 5px; border: 1px solid var(--line); border-radius: 3px;
+  font-size: 11px; color: var(--ui-muted); }
+.row.cur .ro { color: #dfe8f7; border-color: #9fb6dc; }
+.pane.readonly .page { background: var(--ui); }
+.pane.readonly .head .hname { font-style: italic; }
 #count { padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); font-size: 12px; color: var(--ui-muted);
   border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #divider { flex: none; width: 7px; cursor: col-resize; background: var(--ui2); border-right: 1px solid var(--line);
