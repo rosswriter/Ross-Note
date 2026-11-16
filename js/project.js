@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.7.1";
-import * as wordio from "./wordio.js?v=1.7.1";
-import { blockers, patchDocx, sigOf } from "./wordpatch.js?v=1.7.1";
+import * as md from "./md.js?v=1.7.3";
+import * as wordio from "./wordio.js?v=1.7.3";
+import { blockers, patchDocx, sigOf } from "./wordpatch.js?v=1.7.3";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -99,8 +99,20 @@ export class ProjectStore {
   async scan() {
     const fh = await this.handle.getFileHandle(this.fileName);
     const f = await fh.getFile();
-    const data = JSON.parse(await f.text());
-    if (data.format !== FORMAT) throw new Error("This isn't a Ross Writer project file.");
+    // (a byte-order mark or spaces a sync app or editor put round it don't matter)
+    const text = (await f.text()).replace(/^\uFEFF/, "").trim();
+    if (!text) {
+      throw new Error("The project file is empty on this device (0 bytes): your sync app may not have finished copying it. " +
+        "Wait a moment, then try again.");
+    }
+    let data;
+    try { data = JSON.parse(text); } catch (e) {
+      throw new Error(`Ross Note couldn't read the project file (${f.size} bytes): ${e.message}\n\nIt begins: ` +
+        JSON.stringify(text.slice(0, 120)));
+    }
+    if (!data || typeof data !== "object" || (data.format !== FORMAT && !Array.isArray(data.nodes))) {
+      throw new Error("This isn't a Ross Writer project file. It begins: " + JSON.stringify(text.slice(0, 120)));
+    }
     if (!Array.isArray(data.nodes)) data.nodes = [];
     this.data = data;
     this.jsonModified = f.lastModified;
@@ -141,11 +153,20 @@ export class ProjectStore {
         { kind: null, mark: null, runs: [{ t: "A PDF: " + String(raw.pdf).split(/[\\/]/).pop() + ". Open it in Ross Writer.", f: new Set() }]}]);
       return n.text;
     }
-    let file = null;
+    let file = null, missing = null;
     try {
       const got = await this.sceneFile(raw);
       if (got) file = await (await got[0].getFileHandle(got[1])).getFile();
-    } catch (e) { file = null; }
+    } catch (e) { file = null; missing = e; }
+    if (!file && raw.file) {
+      // its Word file isn't here (not synced to this device yet?): shown, never written over
+      this.scenes.set(raw.id, { mtime: 0, lines: [], sigs: [], files: null, trailing: 0, readOnly: ["no Word file on this device yet"] });
+      n.readOnly = ["no Word file on this device yet"];
+      n.modified = 0;
+      n.text = md.serialize([this.titleLine(n), { kind: null, mark: null, runs: [] },
+        { kind: null, mark: null, runs: [{ t: `Its Word file (${raw.file}) isn't on this device yet: your sync app may still be copying it.`, f: new Set() }] }]);
+      return n.text;
+    }
     if (!file) {
       // no Word file yet (Ross Writer makes one when the entry is first opened): an empty scene
       this.scenes.set(raw.id, { mtime: 0, lines: [], sigs: [], files: null, trailing: 0, readOnly: null });
@@ -162,7 +183,17 @@ export class ProjectStore {
       n.modified = file.lastModified;
       return n.text;
     }
-    const sc = await this.readScene(raw.id, await file.arrayBuffer());
+    let sc;
+    try { sc = await this.readScene(raw.id, await file.arrayBuffer()); } catch (e) {
+      // one scene Ross Note can't read doesn't stop the project opening: it's shown, never written over
+      const why = `a Word file Ross Note couldn't read (${(e && e.message) || e})`;
+      n.readOnly = [why];
+      n.modified = file.lastModified;
+      n.text = md.serialize([this.titleLine(n), { kind: null, mark: null, runs: [] },
+        { kind: null, mark: null, runs: [{ t: `Ross Note couldn't read its Word file (${raw.file}, ${file.size} bytes): ${(e && e.message) || e}`, f: new Set() }] }]);
+      this.scenes.set(raw.id, { mtime: 0, lines: [], sigs: [], files: null, trailing: 0, readOnly: [why] });
+      return n.text;
+    }
     sc.mtime = file.lastModified;
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;

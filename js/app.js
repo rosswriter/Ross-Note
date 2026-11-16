@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.7.1";
-import * as ed from "./editor.js?v=1.7.1";
-import { Store, PICTURES } from "./store.js?v=1.7.1";
-import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.1";
+import * as md from "./md.js?v=1.7.3";
+import * as ed from "./editor.js?v=1.7.3";
+import { Store, PICTURES } from "./store.js?v=1.7.3";
+import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.3";
 
-export const VERSION = "1.7.1";
+export const VERSION = "1.7.3";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -231,6 +231,7 @@ async function chooseFolder() {
   try {
     const h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" });
     await flushSave();
+    if (await asProject(h)) return;       // a Ross Writer project, chosen as the notes folder: opened as one
     await kvSet("root", h);
     openRoot(h);
   } catch (e) {
@@ -238,8 +239,43 @@ async function chooseFolder() {
   }
 }
 
+// A folder holding a .rwproj is a Ross Writer project, whichever way it was chosen: it's opened as one
+// (never as the notes folder, where it would show only "Scenes"), and the notes made for its folders by
+// an earlier version opening it as notes ("Scenes.md" holding just "# Scenes") are taken away again.
+async function asProject(handle) {
+  let files = [];
+  try { files = await findProjectFiles(handle); } catch (e) { return false; }
+  if (!files.length) return false;
+  try {
+    const dirs = [];
+    for await (const [name, e] of handle.entries()) if (e.kind === "directory") dirs.push(name);
+    for (const d of dirs) {
+      try {
+        const f = await (await handle.getFileHandle(d + ".md")).getFile();
+        if ((await f.text()) === "# " + d + "\n") await handle.removeEntry(d + ".md");
+      } catch (e) { /* none */ }
+    }
+  } catch (e) { /* left as it is */ }
+  try {
+    const root = await kvGet("root");
+    if (root && root.isSameEntry && await root.isSameEntry(handle)) await kvSet("root", null);
+  } catch (e) { /* none */ }
+  let file = files[0];
+  if (files.length > 1) {
+    const q = document.createElement("div");
+    q.textContent = `“${handle.name}” holds ${files.length} Ross Writer projects. Which one?`;
+    const v = await ask("Open a Ross Writer Project", q, files.map((f, k) => [f.replace(/\.rwproj$/i, ""), f, k === 0]));
+    if (!v) return true;
+    file = v;
+  }
+  toast(`“${handle.name}” is a Ross Writer project: opening it as one.`, 6000);
+  await openProject(handle, file);
+  return true;
+}
+
 async function openRoot(handle, quiet) {
   $("start").hidden = true;
+  if (!quiet && await asProject(handle)) return;
   const st = new Store(handle);
   st.onWrite = wordSoon;
   for (const p of P) { p.note = null; p.dirty = false; }
@@ -284,7 +320,12 @@ async function chooseProject() {
     return;
   }
   if (!files.length) {
-    dialog("Open a Ross Writer Project", `There's no Ross Writer project in “${h.name}”.\n\nChoose the project's own folder: the one holding the .rwproj file and the Scenes folder.`);
+    // what is there, so it's clear which folder this was
+    const seen = [];
+    try { for await (const [name, e] of h.entries()) { seen.push(e.kind === "directory" ? name + "/" : name); if (seen.length >= 25) break; } } catch (e) { /* none */ }
+    dialog("Open a Ross Writer Project", `There's no Ross Writer project (.rwproj file) in “${h.name}”.\n\n` +
+      (seen.length ? "This folder holds:\n" + seen.sort().map((x) => "  " + x).join("\n") : "This folder looks empty to Ross Note.") +
+      "\n\nChoose the project's own folder: the one holding the .rwproj file and the Scenes folder.");
     return;
   }
   let file = files[0];
@@ -1677,7 +1718,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.3")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1780,7 +1821,7 @@ $("file-book").addEventListener("change", async (e) => {
 
 async function importNotebook(file) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.7.1");
+  const NB = await import("./notebooks.js?v=1.7.3");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
