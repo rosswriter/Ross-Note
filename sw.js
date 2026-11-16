@@ -2,7 +2,7 @@
 // A new version (a new CACHE name) is fetched in the background and used the
 // next time the app is opened. (The notes themselves are in your folder, not here.)
 const PREFIX = "ross-note-";
-const CACHE = PREFIX + "1.2.0";
+const CACHE = PREFIX + "1.0.0";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "js/app.js", "js/md.js", "js/editor.js", "js/store.js",
