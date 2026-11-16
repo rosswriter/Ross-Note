@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.7.0";
-import * as ed from "./editor.js?v=1.7.0";
-import { Store, PICTURES } from "./store.js?v=1.7.0";
-import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.0";
+import * as md from "./md.js?v=1.7.1";
+import * as ed from "./editor.js?v=1.7.1";
+import { Store, PICTURES } from "./store.js?v=1.7.1";
+import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.1";
 
-export const VERSION = "1.7.0";
+export const VERSION = "1.7.1";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -230,6 +230,7 @@ function showStart(kind, handle, file) {
 async function chooseFolder() {
   try {
     const h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" });
+    await flushSave();
     await kvSet("root", h);
     openRoot(h);
   } catch (e) {
@@ -264,13 +265,24 @@ async function openRoot(handle, quiet) {
 // A project folder (made by Ross Writer: <name>.rwproj and Scenes/) somewhere your sync app keeps;
 // its entries are edited here and saved back into their Word files (project.js)
 async function chooseProject() {
-  await flushSave();
-  let h;
-  try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
-    if (e && e.name !== "AbortError") toast("Couldn't open that folder: " + e.message);
+  // the folder picker first, straight from the tap (Android allows it only then); saving after
+  if (!window.showDirectoryPicker) {
+    dialog("Open a Ross Writer Project", "This browser can't open folders on this device. Ross Note needs Chrome (version 132 or later on Android).");
     return;
   }
-  const files = await findProjectFiles(h);
+  toast("Choose the project's folder: the one holding the .rwproj file…", 8000);
+  let h;
+  try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
+    if (e && e.name === "AbortError") toast("No folder chosen.");
+    else dialog("Open a Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    return;
+  }
+  toast(`Looking in “${h.name}”…`, 8000);
+  let files;
+  try { files = await findProjectFiles(h); } catch (e) {
+    dialog("Open a Ross Writer Project", `Couldn't read the folder “${h.name}”.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    return;
+  }
   if (!files.length) {
     dialog("Open a Ross Writer Project", `There's no Ross Writer project in “${h.name}”.\n\nChoose the project's own folder: the one holding the .rwproj file and the Scenes folder.`);
     return;
@@ -288,9 +300,9 @@ async function chooseProject() {
 
 async function openProject(handle, file) {
   $("start").hidden = true;
+  toast("Opening the project…", 60000);
   await flushSave();
   const st = new ProjectStore(handle, file);
-  toast("Opening the project…", 60000);
   try { await queue(() => st.scan()); } catch (e) {
     hideToast();
     dialog("Open a Ross Writer Project", `Couldn't open “${file}”.\n\n${e.message || e}`);
@@ -1381,7 +1393,7 @@ function menuItems(name) {
       { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
       ...(S.store && S.store.isProject ? [{ label: "Back to My Notes (RossNotes)", fn: backToNotes }] : []),
       { label: S.store && S.store.isProject ? "Read the Project Again" : "Read the Folder Again", fn: refresh },
-      { label: "Choose Another Folder…", fn: async () => { await flushSave(); chooseFolder(); } },
+      { label: "Choose Another Folder…", fn: chooseFolder },
       "-",
       { label: "Delete Note…", fn: deleteNote, off: !n },
     ];
@@ -1665,7 +1677,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1768,7 +1780,7 @@ $("file-book").addEventListener("change", async (e) => {
 
 async function importNotebook(file) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.7.0");
+  const NB = await import("./notebooks.js?v=1.7.1");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
