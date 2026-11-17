@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf } from "./wordio.js?v=2.1.0";
+import { unzip, zip, imageSize, extOf } from "./wordio.js?v=2.1.2";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -1105,7 +1105,12 @@ export async function commentEdit(files, op) {
   const st = commentState(pkg);
   const c = op.id != null ? st.byId.get(String(op.id)) : null;
   if (op.kind !== "add" && !c) throw new Error("That comment isn't there any more.");
-  if (op.kind === "add") addComment(pkg, st, op);
+  if (op.kind === "add") {
+    // the page's lines have no spaces at their starts: the paragraph's own count from its first word
+    const kids = [...pkg.body.children];
+    const lead = (k) => { const t = kids[k] && isW(kids[k], "p") ? textAndMarks(kids[k]).text : ""; return t.length - t.replace(/^\s+/, "").length; };
+    addComment(pkg, st, { ...op, so: op.so + lead(op.sp), eo: op.eo + lead(op.ep) });
+  }
   else if (op.kind === "reply") addComment(pkg, st, { ...op, parentId: op.id });
   else if (op.kind === "edit") {
     const ps = c.getElementsByTagNameNS(W, "p");

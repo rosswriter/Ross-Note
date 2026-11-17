@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=2.1.0";
-import * as ed from "./editor.js?v=2.1.0";
-import { Store, PICTURES } from "./store.js?v=2.1.0";
-import { ProjectStore, DocxStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.0";
+import * as md from "./md.js?v=2.1.2";
+import * as ed from "./editor.js?v=2.1.2";
+import { Store, PICTURES } from "./store.js?v=2.1.2";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.2";
 
-export const VERSION = "2.1.0";
+export const VERSION = "2.1.2";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -189,7 +189,7 @@ async function start() {
     try { fh = await kvGet("docFile"); } catch (e) { /* none */ }
     if (fh && fh.kind === "file") {
       const mode = fh.queryPermission ? await fh.queryPermission({ mode: "readwrite" }) : "granted";
-      if (mode === "granted") return openWordDoc(fh);
+      if (mode === "granted") return openDocFile(fh);
       return showStart("doc", fh, fh.name);
     }
   }
@@ -224,10 +224,11 @@ function showStart(kind, handle, file) {
     btns.appendChild(b);
   };
   if (kind === "doc") {
-    msg.textContent = `You were working on the Word document “${file}”.`;
-    button("Open the document", true, async () => {
+    msg.textContent = `You were working on “${file}”.`;
+    button("Open it", true, async () => {
       const r = await handle.requestPermission({ mode: "readwrite" });
-      openWordDoc(handle, r !== "granted");
+      if (/\.docx$/i.test(handle.name)) openWordDoc(handle, r !== "granted");
+      else openMdFile(handle, r !== "granted");
     });
     button("Open my notes instead", false, async () => {
       S.settings.where = "notes";
@@ -413,32 +414,100 @@ async function openProject(handle, file) {
 
 // ------------------------------------------------------------------ a Word document by itself
 // File ▸ Open a Word Document…: edited and commented in place, saved straight back into it (DocxStore)
+const DOC_RE = /\.(docx|md|markdown|mdown|mkd|txt)$/i;
+
+// File ▸ Open a Word Document or Note…: Android's file picker, showing every file (it often doesn't know a
+// synced .docx or .md for what it is, and would grey it out). Where that picker isn't there or won't
+// open: the folder picker (which works wherever RossNotes does), then the Word and Markdown files in it.
 async function chooseWordDoc() {
-  if (!window.showOpenFilePicker) {
-    dialog("Open a Word Document", "This browser can't open files on this device for saving back into them. " +
+  toast("Choose the Word document or Markdown note…", 8000);
+  let fh = null;
+  if (window.showOpenFilePicker) {
+    try {
+      [fh] = await window.showOpenFilePicker({ id: "worddoc", multiple: false });
+    } catch (e) {
+      if (e && e.name === "AbortError") { toast("No file chosen."); return; }
+      fh = null;      // the file picker can't: the folder way instead
+    }
+  }
+  if (!fh) fh = await chooseDocInFolder();
+  if (!fh) return;
+  await openDocFile(fh, true);
+}
+
+async function chooseDocInFolder() {
+  if (!window.showDirectoryPicker) {
+    dialog("Open a Word Document or Note", "This browser can't open files on this device for saving back into them. " +
       "Use File ▸ Import a Word Document… instead (it becomes notes).");
-    return;
+    return null;
   }
-  toast("Choose the Word document…", 8000);
-  let fh;
-  try {
-    [fh] = await window.showOpenFilePicker({ id: "worddoc", multiple: false, types: [{ description: "Word document",
-      accept: { "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"] } }] });
-  } catch (e) {
-    if (e && e.name === "AbortError") toast("No document chosen.");
-    else dialog("Open a Word Document", `The file picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
-    return;
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: "docfolder", mode: "readwrite" }); } catch (e) {
+    if (e && e.name === "AbortError") toast("No folder chosen.");
+    else dialog("Open a Word Document or Note", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    return null;
   }
-  if (!/\.docx$/i.test(fh.name)) {
-    dialog("Open a Word Document", `“${fh.name}” isn't a Word document (.docx). Older .doc files: save them as .docx in Word or LibreOffice first.`);
+  const names = [];
+  try { for await (const [name, h] of dir.entries()) if (h.kind === "file" && DOC_RE.test(name) && !name.startsWith("~$")) names.push(name); } catch (e) { /* none */ }
+  names.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" }));
+  if (!names.length) {
+    dialog("Open a Word Document or Note", `There are no Word documents (.docx) or Markdown notes (.md) in “${dir.name}”.`);
+    return null;
+  }
+  const box = document.createElement("div");
+  box.className = "choose";
+  names.forEach((n, k) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="docpick" value="${k}"${k === 0 ? " checked" : ""}> `;
+    l.append(n);
+    box.appendChild(l);
+  });
+  const v = await ask(`Open from “${dir.name}”`, box, [["Open", "go", true]]);
+  if (!v) return null;
+  const k = +box.querySelector('input[name="docpick"]:checked').value;
+  return dir.getFileHandle(names[k]);
+}
+
+async function openDocFile(fh, ask = false) {
+  if (!DOC_RE.test(fh.name)) {
+    dialog("Open a Word Document or Note", `“${fh.name}” isn't a Word document (.docx) or a Markdown note (.md). ` +
+      "Older .doc files: save them as .docx in Word or LibreOffice first.");
     return;
   }
   let ro = false;
-  try {
-    const r = fh.requestPermission ? await fh.requestPermission({ mode: "readwrite" }) : "granted";
-    ro = r !== "granted";
-  } catch (e) { ro = true; }
-  await openWordDoc(fh, ro);
+  if (ask) {
+    try {
+      const r = fh.requestPermission ? await fh.requestPermission({ mode: "readwrite" }) : "granted";
+      ro = r !== "granted";
+    } catch (e) { ro = true; }
+  }
+  if (/\.docx$/i.test(fh.name)) await openWordDoc(fh, ro);
+  else await openMdFile(fh, ro);
+}
+
+async function openMdFile(fh, readOnly = false) {
+  $("start").hidden = true;
+  toast("Opening the note…", 60000);
+  await flushSave();
+  const st = new MdFileStore(fh);
+  st.canWrite = !readOnly;
+  try { await queue(() => st.scan()); } catch (e) {
+    hideToast();
+    dialog("Open a Note", `Couldn't open “${fh.name}”.\n\n${(e && e.message) || e}`);
+    if (!S.store) start();
+    return;
+  }
+  try { await kvSet("docFile", fh); } catch (e) { /* kept for this visit only */ }
+  for (const p of P) { p.note = null; p.dirty = false; }
+  enterPlace(st);
+  S.store = st;
+  renderTree();
+  layout();
+  const n = st.root.children[0];
+  if (S.settings.split) await openNote(n, P[1]);
+  await openNote(n, P[0]);
+  updateCount();
+  toast(fh.name + (n.readOnly ? " (read-only: " + n.readOnly.join(", ") + ")" : ""));
 }
 
 async function openWordDoc(fh, readOnly = false) {
@@ -543,7 +612,7 @@ function renderTree() {
 function updateCount() {
   const n = S.store ? S.store.all().length : 0;
   const proj = S.store && S.store.isProject;
-  $("count").textContent = S.store && S.store.isDoc ? `Word: ${S.store.label} · Ross Note ${VERSION}` :
+  $("count").textContent = S.store && S.store.isDoc ? `${S.store.isMd ? "Note" : "Word"}: ${S.store.label} · Ross Note ${VERSION}` :
     `${n} ${proj ? (n === 1 ? "entry" : "entries") : n === 1 ? "note" : "notes"} · ` +
     `${S.store ? (proj ? "Ross Writer: " + S.store.label : S.store.handle.name) : ""} · Ross Note ${VERSION}`;
   document.body.classList.toggle("in-project", !!proj);
@@ -1742,7 +1811,7 @@ function menuItems(name) {
       "-",
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
-      { label: "Open a Word Document…", fn: chooseWordDoc, off: !window.showOpenFilePicker },
+      { label: "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
       { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
       ...(S.store && S.store.isProject ? [{ label: "Back to My Notes (RossNotes)", fn: backToNotes }] : []),
       { label: S.store && S.store.isProject ? "Read the Project Again" : "Read the Folder Again", fn: refresh },
@@ -1943,7 +2012,7 @@ function showKeys() {
     "Ross Writer projects: File ▸ Open a Ross Writer Project (scenes saved back into their Word files)",
     "Comments in a Ross Writer scene or Word document: tap “N comments” in the name bar (View ▸ Show Comments); tap one to go to its words",
     "New comment: select the words, Insert ▸ Comment (Ctrl+Alt+M); Reply, Edit, Resolve, Delete in the list",
-    "Open a Word document and save straight back into it: File ▸ Open a Word Document",
+    "Open a Word document or a Markdown note and save straight back into it: File ▸ Open a Word Document or Note",
     "Find: ^p a line's end, ^t a tab    Word count: in the name bar",
     "Word copy (RossNotes/Word Copies, kept up to date): File ▸ Update Word Copy",
     "Move a note: Alt+Up / Down / Left / Right",
@@ -2037,7 +2106,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -2142,7 +2211,7 @@ $("file-book").addEventListener("change", async (e) => {
 async function importNotebook(file) {
   if (S.store && S.store.isDoc) { toast("A Word document opened by itself is one page. File ▸ Back to My Notes for notes."); return; }
   await flushSave();
-  const NB = await import("./notebooks.js?v=2.1.0");
+  const NB = await import("./notebooks.js?v=2.1.2");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -2389,7 +2458,7 @@ async function exportNotes(kind) {
     let blob = await wordBlob(notes, pages, name, parts);
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=2.1.0");
+      const { exportComments } = await import("./wordpatch.js?v=2.1.2");
       blob = await exportComments(await blob.arrayBuffer(), notes.map((x) => ({ title: x.title(), comments: x.comments || [] })));
     }
     hideToast();
@@ -2833,6 +2902,6 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, openWordDoc, chooseWordDoc, addComment, commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment, commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

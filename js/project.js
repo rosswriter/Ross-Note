@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=2.1.0";
-import * as wordio from "./wordio.js?v=2.1.0";
-import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=2.1.0";
+import * as md from "./md.js?v=2.1.2";
+import * as wordio from "./wordio.js?v=2.1.2";
+import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=2.1.2";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -519,4 +519,87 @@ export class DocxStore extends ProjectStore {
     throw new Error(`“${this.fileName}” has changed on another device since you opened it. ` +
       "Your latest typing wasn't saved into it: copy what you need, then open it again (File ▸ Open a Word Document…).");
   }
+}
+
+// ------------------------------------------------------------------ a Markdown file opened by itself
+// File ▸ Open a Word Document or Note…: a .md (or .txt) file from anywhere, read and edited in place, saved
+// straight back into it (its first line its title, as a note's). One page, like a Word document opened by itself.
+export class MdFileStore {
+  constructor(fileHandle) {
+    this.isProject = true;        // (the menus' "Back to My Notes" and the like)
+    this.isDoc = true;
+    this.isMd = true;
+    this.fileHandle = fileHandle;
+    this.fileName = fileHandle.name;
+    this.handle = null;
+    this.canWrite = true;
+    this.raw = { id: "md", title: fileHandle.name.replace(/\.(md|markdown|mdown|mkd|txt)$/i, ""), file: fileHandle.name };
+    this.root = new PNote(null, null);
+    this.crlf = false;
+    this.bom = false;
+  }
+
+  get label() { return this.fileName; }
+
+  async scan() {
+    const root = new PNote(null, null);
+    const n = new PNote(root, this.raw);
+    n.comments = undefined;
+    root.children.push(n);
+    this.root = root;
+    await this.load(n);
+    if (!this.canWrite) n.readOnly = ["no permission to save into it"];
+    return root;
+  }
+
+  async load(n) {
+    const f = await this.fileHandle.getFile();
+    let text = await f.text();
+    this.bom = text.startsWith("﻿");
+    if (this.bom) text = text.slice(1);
+    this.crlf = text.includes("\r\n");
+    text = text.replace(/\r\n/g, "\n");
+    n.text = text;
+    n.modified = f.lastModified;
+    const t = md.titleOf ? md.titleOf(text) : "";
+    if (t) this.raw.title = t;
+    return text;
+  }
+
+  find(key) { return key === "md" ? this.root.children[0] : null; }
+  all() { return [...this.root.walk()]; }
+  async read(n) { return this.load(n); }
+
+  async peek(n) {
+    try {
+      const f = await this.fileHandle.getFile();
+      return { modified: f.lastModified, text: f.lastModified === n.modified ? n.text : "\u0000changed elsewhere" };
+    } catch (e) { return null; }
+  }
+
+  async write(n, text) {
+    if (n.readOnly) throw new Error(`“${this.fileName}” can't be saved here: ${n.readOnly.join(", ")}.`);
+    let out = this.crlf ? text.replace(/\n/g, "\r\n") : text;
+    if (this.bom) out = "﻿" + out;
+    const w = await this.fileHandle.createWritable();
+    await w.write(out);
+    await w.close();
+    n.text = text;
+    n.modified = (await this.fileHandle.getFile()).lastModified;
+    const t = md.titleOf ? md.titleOf(text) : "";
+    if (t) this.raw.title = t;
+  }
+
+  async newNote() { throw new Error("A file opened by itself is one page: new pages are for notes and projects."); }
+  async move() { return false; }
+  async rename() { return false; }
+  async delete() { throw new Error("Close the file instead (File ▸ Back to My Notes)."); }
+  async keepConflict() {
+    throw new Error(`“${this.fileName}” has changed on another device since you opened it. ` +
+      "Your latest typing wasn't saved into it: copy what you need, then open it again.");
+  }
+  async savePicture() { throw new Error("Pictures can't be added to a file opened by itself: open its folder as notes instead."); }
+  async pictureFile() { throw new Error("no such picture"); }
+  async hasWordCopy() { return false; }
+  async writeWordCopy() { throw new Error("Word copies are for notes in RossNotes"); }
 }
