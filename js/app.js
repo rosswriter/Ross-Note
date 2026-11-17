@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.3.2";
-import * as ed from "./editor.js?v=1.3.2";
-import { Store, PICTURES } from "./store.js?v=1.3.2";
+import * as md from "./md.js?v=1.4.0";
+import * as ed from "./editor.js?v=1.4.0";
+import { Store, PICTURES } from "./store.js?v=1.4.0";
 
-export const VERSION = "1.3.2";
+export const VERSION = "1.4.0";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -1165,6 +1165,7 @@ function menuItems(name) {
       { label: "New Note Under This One", fn: () => newNote(true), off: !n },
       "-",
       { label: "Import a Word Document…", fn: () => $("file-docx").click() },
+      { label: "Import a Notebook (NoteCase Pro, FeatherNotes)…", fn: () => $("file-book").click() },
       { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
@@ -1448,7 +1449,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.3.2")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.4.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1516,6 +1517,84 @@ async function importWord(file, split = null) {
   await openNote(top);
   updateCount();
   toast(`Imported ${file.name}`);
+  return top;
+}
+
+// ------------------------------------------------------------------ notebooks from other programs
+$("file-book").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f) await importNotebook(f);
+});
+
+async function importNotebook(file) {
+  await flushSave();
+  const NB = await import("./notebooks.js?v=1.4.0");
+  const W = await wordModule();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const kind = NB.kindOf(bytes);
+  let got;
+  toast("Reading " + file.name + "…", 60000);
+  try {
+    if (kind === "ncdb") got = await NB.readNcdb(bytes);
+    else if (kind === "fnx") got = NB.readFnx(new TextDecoder().decode(bytes));
+    else throw new Error("it isn't a NoteCase Pro or FeatherNotes notebook");
+  } catch (err) {
+    hideToast();
+    dialog("Import a Notebook", `Couldn't import “${file.name}”: ${err.message || err}`);
+    return null;
+  }
+  const stem = file.name.replace(/\.[^.]+$/, "");
+  const saved = new Map();
+  const typeOf = (b) => (b[0] === 0x89 ? "image/png" : b[0] === 0x47 ? "image/gif" : b[0] === 0x42 ? "image/bmp"
+    : b[0] === 0x52 && b[8] === 0x57 ? "image/webp" : "image/jpeg");
+  const savePic = async (data, name) => {
+    // named for what the picture really is (as the laptop does)
+    const ext = { "image/png": "png", "image/gif": "gif", "image/bmp": "bmp", "image/webp": "webp" }[typeOf(data)] || "jpg";
+    name = name.replace(/\.[^.]+$/, "") + "." + ext;
+    const [blob, nm] = await preparePicture(new File([data], name, { type: typeOf(data) }));
+    return S.store.savePicture(blob, nm);
+  };
+  const stamp = () => pictureStamp();
+  // pictures carried inside a page (data: addresses)
+  const pagePicture = async (src) => {
+    if (!src.startsWith("data:")) return null;
+    try {
+      const [head, b64] = src.split(",", 2);
+      const data = head.includes(";base64") ? Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        : new TextEncoder().encode(decodeURIComponent(b64));
+      const ext = { "image/png": "png", "image/gif": "gif", "image/bmp": "bmp" }[typeOf(data)] || "jpg";
+      return await savePic(data, `Picture ${stamp()}.${ext}`);
+    } catch (e) { return null; }
+  };
+  const cur = S.note;
+  const parent = cur ? cur.parent : S.store.root;
+  const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+  let top;
+  const make = async (par, idx, node) => {
+    const n = await S.store.newNote(par, idx, "");
+    let text;
+    if (node.lines) {
+      for (const ln of node.lines) for (const r of ln.runs) {
+        if (r.img && !saved.has(r.img)) saved.set(r.img, got.pictures.get(r.img) ? await savePic(got.pictures.get(r.img), `${stem} ${r.img}`) : null);
+      }
+      text = node.lines.length ? md.serialize(W.toNoteLines(node.lines, (name) => saved.get(name)), { dir: n.folderParts() })
+        : node.title + "\n";
+    } else {
+      const lines = await NB.qtHtmlLines(node.html, pagePicture);
+      text = NB.tidyNote(md.serialize(lines, { dir: n.folderParts() }), node.title);
+    }
+    await S.store.write(n, text);
+    await S.store.rename(n, md.titleOf(text) || node.title || "Untitled");
+    for (const c of node.children) await make(n, n.children.length, c);
+    return n;
+  };
+  await queue(async () => { top = await make(parent, index, { title: stem, lines: [], children: got.tree }); });
+  hideToast();
+  S.settings.expanded = [...new Set([...S.settings.expanded, top.key()])];
+  await openNote(top);
+  updateCount();
+  toast(`Imported ${NB.count(got.tree)} notes from ${file.name}`);
   return top;
 }
 
@@ -1759,6 +1838,6 @@ async function shareWord() {
 }
 
 // for the tests
-window.RN = { S, P, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
