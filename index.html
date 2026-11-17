@@ -9,9 +9,21 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="css/app.css?v=1.6.0">
+<link rel="stylesheet" href="css/app.css?v=1.6.1">
+<link rel="modulepreload" href="js/app.js?v=1.6.1">
+<link rel="modulepreload" href="js/md.js?v=1.6.1">
+<link rel="modulepreload" href="js/editor.js?v=1.6.1">
+<link rel="modulepreload" href="js/store.js?v=1.6.1">
+<style>
+/* shown before anything else has loaded */
+#busy.boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #f3f1ea; color: #2c2a24;
+  font: 17px system-ui, sans-serif; z-index: 100; }
+@media (prefers-color-scheme: dark) { #busy.boot { background: #1e2023; color: #e6e6e6; } }
+#busy.boot .bar { position: fixed; top: 0; left: 0; right: 0; height: 4px; background: #1b523d; opacity: .35; }
+</style>
 </head>
 <body>
+<div id="busy" class="boot" role="status" aria-live="polite"><div class="bar"></div><span class="txt">Starting Ross Note…</span></div>
 <div id="app">
   <nav id="menubar" aria-label="Menus">
     <button data-menu="file"><u>F</u>ile</button>
@@ -117,6 +129,6 @@
 <input id="file-book" type="file" accept=".ncdb,.fnx" hidden>
 <input id="file-docx" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
 <div id="printdoc" class="page"></div>
-<script type="module" src="js/app.js?v=1.6.0"></script>
+<script type="module" src="js/app.js?v=1.6.1"></script>
 </body>
 </html>

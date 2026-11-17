@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.6.0";
-import * as ed from "./editor.js?v=1.6.0";
-import { Store, PICTURES } from "./store.js?v=1.6.0";
+import * as md from "./md.js?v=1.6.1";
+import * as ed from "./editor.js?v=1.6.1";
+import { Store, PICTURES } from "./store.js?v=1.6.1";
 
-export const VERSION = "1.6.0";
+export const VERSION = "1.6.1";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -133,6 +133,39 @@ async function kvSet(k, v) {
   });
 }
 
+// ------------------------------------------------------------------ "working on it": a bar along the top and a
+// line saying what, for anything that takes a while (shown only if it takes more than a moment, so quick things
+// don't flicker)
+const busyJobs = [];
+let busyTimer = 0;
+function busyShow() {
+  const top = busyJobs[busyJobs.length - 1];
+  const el = $("busy");
+  if (!top) { clearTimeout(busyTimer); busyTimer = 0; el.hidden = true; document.documentElement.classList.remove("is-busy"); return; }
+  el.querySelector(".txt").textContent = top.label;
+  el.classList.toggle("quiet", !!top.quiet);
+  if (!el.hidden) return;
+  if (!busyTimer) {
+    busyTimer = setTimeout(() => {
+      busyTimer = 0;
+      if (busyJobs.length) { el.hidden = false; document.documentElement.classList.add("is-busy"); }
+    }, Math.min(...busyJobs.map((j) => j.after)));
+  }
+}
+// busy("Reading…", async (say) => { ...; say("Reading… 12"); ... }, {after: ms, quiet: true for a small one})
+async function busy(label, fn, opts = {}) {
+  const job = { label, after: opts.after ?? 250, quiet: !!opts.quiet };
+  busyJobs.push(job);
+  busyShow();
+  const say = (text) => { job.label = text; if (busyJobs[busyJobs.length - 1] === job) $("busy").querySelector(".txt").textContent = text; };
+  try { return await fn(say); } finally {
+    busyJobs.splice(busyJobs.indexOf(job), 1);
+    busyShow();
+  }
+}
+// lets the screen draw (a long run of work otherwise holds the bar and its words back)
+const breathe = () => new Promise((ok) => setTimeout(ok, 0));
+
 // one thing at a time with the folder
 function queue(fn) {
   const p = S.busy.then(fn, fn);
@@ -142,6 +175,9 @@ function queue(fn) {
 
 async function start() {
   applyLook();
+  const boot = $("busy");
+  boot.hidden = true;
+  boot.classList.remove("boot");
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !location.search.includes("nosw")) {
     navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
   }
@@ -201,10 +237,11 @@ async function openRoot(handle, quiet) {
   $("start").hidden = true;
   S.store = new Store(handle);
   S.store.onWrite = wordSoon;
-  await queue(async () => {
-    await S.store.scan();
+  await busy("Reading your notes…", (say) => queue(async () => {
+    S.store.onProgress = (n) => say(`Reading your notes… ${n}`);
+    try { await S.store.scan(); } finally { S.store.onProgress = null; }
     if (!S.store.root.children.length) await makeWelcome();
-  });
+  }), { after: 0 });
   renderTree();
   layout();
   const n = S.store.find(S.settings.open) || S.store.root.children[0];
@@ -271,8 +308,10 @@ function updateCount() {
 
 function expandTo(note) {
   const s = new Set(S.settings.expanded);
+  const before = s.size;
   for (const a of note.ancestors()) s.add(a.key());
   S.settings.expanded = [...s];
+  return s.size !== before;
 }
 
 function updateHead() {
@@ -316,15 +355,15 @@ async function countBranch() {
   if (!n) return null;
   await flushSave();
   let total = 0, k = 0;
-  await queue(async () => {
+  await busy("Counting…", () => queue(async () => {
+    await S.store.readAll([n, ...n.walk()]);
     for (const x of [n, ...n.walk()]) {
-      let text = x.text;
-      try { text = await S.store.read(x); } catch (e) { /* as we had it */ }
+      const text = x.text;
       const t = md.parse(text || "").map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n");
       total += wordsIn(t.split(md.OBJ).join(""));
       k++;
     }
-  });
+  }));
   alert(`“${n.title()}”${k > 1 ? ` and the ${k - 1} note${k === 2 ? "" : "s"} under it` : ""}:\n\n${total.toLocaleString("en")} words`);
   return total;
 }
@@ -340,18 +379,31 @@ function titleNow(pg = page) {
 // ------------------------------------------------------------------ opening a note
 async function openNote(note, pane = A) {
   if (!note) return;
-  await flushSave();
-  await queue(async () => {
-    try { await S.store.read(note); } catch (e) { /* gone: show what we had */ }
+  await busy("Opening “" + note.title() + "”…", async () => {
+    await flushSave();
+    await queue(async () => {
+      try { await S.store.read(note); } catch (e) { /* gone: show what we had */ }
+    });
+    pane.note = note;
+    S.settings[pane.k ? "open2" : "open"] = note.key();
+    const opened = expandTo(note);
+    saveSettings();
+    showText(note.text || "", pane);
+    // the list redrawn only if a branch had to open to show it; otherwise just the current row moves
+    if (opened || !markCurrent()) renderTree();
+    updateHead();
+    pane.scroller.scrollTop = 0;
   });
-  pane.note = note;
-  S.settings[pane.k ? "open2" : "open"] = note.key();
-  expandTo(note);
-  saveSettings();
-  showText(note.text || "", pane);
-  renderTree();
-  updateHead();
-  pane.scroller.scrollTop = 0;
+}
+
+function markCurrent() {
+  const tree = $("tree");
+  const key = S.note && S.note.key();
+  const row = key && tree.querySelector(`.row[data-key="${CSS.escape(key)}"]`);
+  if (key && !row && !S.searching.trim()) return false;
+  for (const r of tree.querySelectorAll(".row.cur")) r.classList.remove("cur");
+  if (row) row.classList.add("cur");
+  return true;
 }
 
 function showText(text, pane = A) {
@@ -365,7 +417,11 @@ function showText(text, pane = A) {
 }
 
 async function loadPictures(pg = page) {
-  for (const img of pg.querySelectorAll("img.pic:not([data-loaded])")) {
+  await Promise.all([...pg.querySelectorAll("img.pic:not([data-loaded])")].map((img) => loadPicture(img)));
+}
+
+async function loadPicture(img) {
+  {
     img.dataset.loaded = "1";
     let parts = img.dataset.target ? img.dataset.target.split("/") : null;
     let file = null;
@@ -379,7 +435,7 @@ async function loadPictures(pg = page) {
     if (!file) {
       img.classList.add("missing");
       img.alt = "Picture not found: " + md.unquote(img.dataset.src.split("/").pop() || "");
-      continue;
+      return;
     }
     const key = parts.join("/") + "@" + file.lastModified;
     let url = S.urls.get(key);
@@ -484,8 +540,16 @@ function rekey(oldKey, newKey) {
 }
 
 // ------------------------------------------------------------------ changes made elsewhere
-async function refresh() {
+let lastRefresh = 0;
+async function refresh(force = false) {
   if (!S.store) return;
+  // back from one of Ross Note's own pickers (a picture, a file to import): nothing else changed meanwhile
+  if (!force && (S.picking || Date.now() - lastRefresh < 3000)) return;
+  lastRefresh = Date.now();
+  await busy("Checking for changes…", () => refreshNow(), { after: 600, quiet: true });
+}
+
+async function refreshNow() {
   await flushSave();
   await queue(async () => {
     const was = P.map((p) => [p.note && p.note.key(), p.note && p.note.text]);
@@ -516,7 +580,7 @@ async function refresh() {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flushSave().then(() => setTimeout(() => { if (wordDue.size) wordFlush(); }, 50));
-  else refresh();
+  else { refresh(); setTimeout(() => { S.picking = false; }, 1500); }
 });
 window.addEventListener("pagehide", () => flushSave());
 
@@ -1042,6 +1106,10 @@ onPages("drop", async (e) => {
   await addPictures(files);
 });
 
+for (const id of ["file-pic", "file-book", "file-docx"]) {
+  $(id).addEventListener("click", () => { S.picking = true; });
+  $(id).addEventListener("cancel", () => { S.picking = false; });
+}
 $("file-pic").addEventListener("change", async (e) => {
   const files = [...e.target.files];
   e.target.value = "";
@@ -1523,7 +1591,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1533,9 +1601,9 @@ $("file-docx").addEventListener("change", async (e) => {
 
 async function importWord(file, split = null) {
   await flushSave();
-  const W = await wordModule();
+  const W = await busy("Opening " + file.name + "…", () => wordModule(), { after: 0 });
   let got;
-  try { got = await W.readDocx(await file.arrayBuffer()); } catch (err) {
+  try { got = await busy("Reading " + file.name + "…", async () => W.readDocx(await file.arrayBuffer()), { after: 0 }); } catch (err) {
     dialog("Import a Word Document", `Couldn't read “${file.name}” as a Word document.\n\n${err.message || err}`);
     return null;
   }
@@ -1552,9 +1620,13 @@ async function importWord(file, split = null) {
       split = v === "many";
     }
   }
-  toast("Importing…", 60000);
+  return busy("Importing " + file.name + "…", (say) => importWordNow(file, W, got, stem, pre, secs, split, say), { after: 0 });
+}
+
+async function importWordNow(file, W, got, stem, pre, secs, split, say) {
   const saved = new Map();
   const pictureNames = [...got.media.keys()];
+  if (pictureNames.length) say(`Importing ${file.name}: ${pictureNames.length} picture${pictureNames.length === 1 ? "" : "s"}…`);
   await queue(async () => {
     for (const name of pictureNames) {
       const data = got.media.get(name);
@@ -1573,20 +1645,30 @@ async function importWord(file, split = null) {
   const parent = cur ? cur.parent : S.store.root;
   const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
   let top;
+  const orders = new Set();
+  const total = split ? secs.length + 1 : 1;
+  let done = 0;
   const make = async (par, idx, lines) => {
-    const n = await S.store.newNote(par, idx, "");
-    const text = md.serialize(W.toNoteLines(lines, (name) => saved.get(name)), { dir: n.folderParts() });
-    await S.store.write(n, text);
-    await S.store.rename(n, md.titleOf(text) || "Untitled");
+    const textFor = (n) => md.serialize(W.toNoteLines(lines, (name) => saved.get(name)), { dir: n.folderParts() });
+    const n = await S.store.addNote(par, idx, md.titleOf(textFor({ folderParts: () => par.childParts() })) || "Untitled", textFor);
+    orders.add(par);
+    done++;
+    if (total > 1) { say(`Importing ${file.name}: ${done} of ${total} notes`); await breathe(); }
     return n;
   };
-  await queue(async () => {
-    if (!split) top = await make(parent, index, startsWithTitle(got.lines) ? got.lines : [titleLine, ...got.lines]);
-    else {
-      top = await make(parent, index, pre.length && pre[0].title ? pre : [titleLine, ...pre]);
-      for (const sec of secs) await make(top, top.children.length, sec);
-    }
-  });
+  const onWrite = S.store.onWrite;
+  S.store.onWrite = null;
+  try {
+    await queue(async () => {
+      if (!split) top = await make(parent, index, startsWithTitle(got.lines) ? got.lines : [titleLine, ...got.lines]);
+      else {
+        top = await make(parent, index, pre.length && pre[0].title ? pre : [titleLine, ...pre]);
+        for (const sec of secs) await make(top, top.children.length, sec);
+      }
+      for (const par of orders) await S.store.writeOrder(par);
+    });
+  } finally { S.store.onWrite = onWrite; }
+  if (onWrite) onWrite(top);
   S.settings.expanded = [...new Set([...S.settings.expanded, top.key()])];
   await openNote(top);
   updateCount();
@@ -1602,22 +1684,33 @@ $("file-book").addEventListener("change", async (e) => {
 });
 
 async function importNotebook(file) {
+  return busy("Opening " + file.name + "…", (say) => importNotebookNow(file, say), { after: 0 });
+}
+
+async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.6.0");
+  const NB = await import("./notebooks.js?v=1.6.1");
   const W = await wordModule();
+  say("Reading " + file.name + "…");
+  await breathe();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
   let got;
-  toast("Reading " + file.name + "…", 60000);
   try {
-    if (kind === "ncdb") got = await NB.readNcdb(bytes);
-    else if (kind === "fnx") got = NB.readFnx(new TextDecoder().decode(bytes));
+    if (kind === "ncdb") {
+      say("Loading the NoteCase reader…");
+      await breathe();
+      got = await NB.readNcdb(bytes);
+    } else if (kind === "fnx") got = NB.readFnx(new TextDecoder().decode(bytes));
     else throw new Error("it isn't a NoteCase Pro or FeatherNotes notebook");
   } catch (err) {
-    hideToast();
     dialog("Import a Notebook", `Couldn't import “${file.name}”: ${err.message || err}`);
     return null;
   }
+  const total = NB.count(got.tree) + 1;
+  let done = 0;
+  say(`Importing ${file.name}: ${total} notes…`);
+  await breathe();
   const stem = file.name.replace(/\.[^.]+$/, "");
   const saved = new Map();
   const typeOf = (b) => (b[0] === 0x89 ? "image/png" : b[0] === 0x47 ? "image/gif" : b[0] === 0x42 ? "image/bmp"
@@ -1645,26 +1738,39 @@ async function importNotebook(file) {
   const parent = cur ? cur.parent : S.store.root;
   const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
   let top;
+  // each note named from its title and written once; each folder's order written once, at the end
+  const orders = new Set();
   const make = async (par, idx, node) => {
-    const n = await S.store.newNote(par, idx, "");
-    let text;
+    let lines = null;
     if (node.lines) {
       for (const ln of node.lines) for (const r of ln.runs) {
         if (r.img && !saved.has(r.img)) saved.set(r.img, got.pictures.get(r.img) ? await savePic(got.pictures.get(r.img), `${stem} ${r.img}`) : null);
       }
-      text = node.lines.length ? md.serialize(W.toNoteLines(node.lines, (name) => saved.get(name)), { dir: n.folderParts() })
+    } else lines = await NB.qtHtmlLines(node.html, pagePicture);
+    const textFor = (n) => {
+      if (lines) return NB.tidyNote(md.serialize(lines, { dir: n.folderParts() }), node.title);
+      return node.lines.length ? md.serialize(W.toNoteLines(node.lines, (name) => saved.get(name)), { dir: n.folderParts() })
         : node.title + "\n";
-    } else {
-      const lines = await NB.qtHtmlLines(node.html, pagePicture);
-      text = NB.tidyNote(md.serialize(lines, { dir: n.folderParts() }), node.title);
-    }
-    await S.store.write(n, text);
-    await S.store.rename(n, md.titleOf(text) || node.title || "Untitled");
+    };
+    // the title the text will give it (its name), worked out as the laptop does
+    const probe = textFor({ folderParts: () => par.childParts() });
+    const n = await S.store.addNote(par, idx, md.titleOf(probe) || node.title || "Untitled", textFor);
+    orders.add(par);
+    done++;
+    if (done % 3 === 0 || done === total) { say(`Importing ${file.name}: ${done} of ${total} notes`); await breathe(); }
     for (const c of node.children) await make(n, n.children.length, c);
     return n;
   };
-  await queue(async () => { top = await make(parent, index, { title: stem, lines: [], children: got.tree }); });
-  hideToast();
+  const onWrite = S.store.onWrite;
+  S.store.onWrite = null;
+  try {
+    await queue(async () => {
+      top = await make(parent, index, { title: stem, lines: [], children: got.tree });
+      say(`Importing ${file.name}: putting them in order…`);
+      for (const par of orders) await S.store.writeOrder(par);
+    });
+  } finally { S.store.onWrite = onWrite; }
+  if (onWrite) onWrite(top);
   S.settings.expanded = [...new Set([...S.settings.expanded, top.key()])];
   await openNote(top);
   updateCount();
@@ -1731,9 +1837,9 @@ async function joinedParts(notes, dir) {
   const top = Math.min(...notes.map((x) => x.ancestors().length));
   const out = [];
   await queue(async () => {
+    await S.store.readAll(notes);
     for (const n of notes) {
-      let text = n.text;
-      try { text = await S.store.read(n); } catch (e) { /* as we had it */ }
+      const text = n.text;
       const lines = md.parse(text || "");
       for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, n.folderParts());
       out.push([n, md.titleAsHeading(md.serialize(lines, { dir }), n.ancestors().length - top + 1)]);
@@ -1791,6 +1897,11 @@ async function wordBlob(notes, pages, name, parts = null) {
 async function updateWordCopy(note = null, quiet = false) {
   const n = note || S.note;
   if (!n) return null;
+  return busy(quiet ? "Updating the Word copy of “" + n.title() + "”…" : "Saving the Word copy…",
+    () => updateWordCopyNow(n, quiet), { after: quiet ? 800 : 0, quiet });
+}
+
+async function updateWordCopyNow(n, quiet) {
   if (!quiet) await flushSave();
   const notes = [n, ...n.walk()];
   const parts = await joinedParts(notes, []);
@@ -1811,6 +1922,7 @@ async function wordSoon(note) {
 
 async function wordFlush() {
   clearTimeout(wordTimer);
+  if (!S.store) return;
   const due = [...wordDue].sort();
   wordDue.clear();
   for (const k of due) {
@@ -1827,7 +1939,7 @@ async function exportNotes(kind) {
   if (!got) return null;
   const { notes, pages } = got;
   const name = md.safeName(notes.length === 1 ? notes[0].title() : notes[0].title());
-  const parts = await joinedParts(notes, []);
+  const parts = await busy(`Gathering ${notes.length} note${notes.length === 1 ? "" : "s"}…`, () => joinedParts(notes, []));
   if (kind === "md") {
     const blob = new Blob([parts.map(([, t]) => t).join("\n")], { type: "text/markdown" });
     const saved = await saveFile(blob, name + ".md", "Markdown", ".md", "text/markdown");
@@ -1835,9 +1947,7 @@ async function exportNotes(kind) {
     return saved;
   }
   if (kind === "word") {
-    toast("Making the Word document…", 60000);
-    const blob = await wordBlob(notes, pages, name, parts);
-    hideToast();
+    const blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     const saved = await saveFile(blob, name + ".docx", "Word document", ".docx",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     if (saved) toast("Saved " + saved);
@@ -1924,10 +2034,8 @@ async function shareWord() {
   const got = await chooseNotes("Share as a Word Document", true);
   if (!got) return null;
   const { notes, pages } = got;
-  toast("Making the Word document…", 60000);
   const name = md.safeName(notes[0].title());
-  const blob = await wordBlob(notes, pages, name);
-  hideToast();
+  const blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name), { after: 0 });
   const file = new File([blob], name + ".docx", { type: blob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     // a fresh tap, so Android lets the share panel open
