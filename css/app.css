@@ -36,7 +36,7 @@ button { font: inherit; color: inherit; }
 #menubar button:hover, #menubar button.open { background: var(--ui2); }
 #menu .keys { margin-left: auto; padding-left: 24px; color: var(--ui-muted); font-size: 13px; white-space: nowrap; }
 #menu button:disabled { opacity: .45; cursor: default; }
-#dialog { position: fixed; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center;
+#dialog { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.35); padding: 16px; }
 #dialog .box { max-width: 560px; width: 100%; max-height: 86vh; overflow: auto; background: var(--ui); color: var(--ui-ink);
   border-radius: 10px; padding: 16px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
@@ -194,7 +194,7 @@ button { font: inherit; color: inherit; }
 #menu .tick { width: 1.2em; flex: none; }
 #menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
 #menu .lab { padding: 6px 12px 2px; font-size: 12px; color: var(--ui-muted); }
-#toast { position: fixed; z-index: 40; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+#toast { position: fixed; z-index: 70; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
   max-width: min(92vw, 560px); padding: 9px 14px; border-radius: 8px; background: #333; color: #fff; font-size: 14px;
   box-shadow: 0 4px 16px rgba(0,0,0,.3); }
 

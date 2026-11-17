@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf } from "./wordio.js?v=2.1.2";
+import { unzip, zip, imageSize, extOf } from "./wordio.js?v=2.1.3";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";

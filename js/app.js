@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=2.1.2";
-import * as ed from "./editor.js?v=2.1.2";
-import { Store, PICTURES } from "./store.js?v=2.1.2";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.2";
+import * as md from "./md.js?v=2.1.3";
+import * as ed from "./editor.js?v=2.1.3";
+import { Store, PICTURES } from "./store.js?v=2.1.3";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.3";
 
-export const VERSION = "2.1.2";
+export const VERSION = "2.1.3";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -176,6 +176,14 @@ function queue(fn) {
   return p;
 }
 
+// anything that goes wrong is said (and never hidden behind the start screen)
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  if (r && r.name === "AbortError") return;
+  console.error(r);
+  toast("Something went wrong: " + ((r && r.message) || r), 10000);
+});
+
 async function start() {
   applyLook();
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !location.search.includes("nosw")) {
@@ -239,8 +247,10 @@ function showStart(kind, handle, file) {
   } else if (kind === "project") {
     msg.textContent = `You were working on the Ross Writer project “${file.replace(/\.rwproj$/i, "")}”.`;
     button("Open the project", true, async () => {
-      const r = await handle.requestPermission({ mode: "readwrite" });
+      let r = "denied";
+      try { r = await handle.requestPermission({ mode: "readwrite" }); } catch (e) { r = (e && e.message) || "denied"; }
       if (r === "granted") openProject(handle, file);
+      else dialog("Open the Project", `Android didn't let Ross Note into “${handle.name}” (${r}). Try again, or open your notes instead.`);
     });
     button("Open my notes instead", false, async () => {
       S.settings.where = "notes";
@@ -251,8 +261,11 @@ function showStart(kind, handle, file) {
   } else if (kind === "again") {
     msg.textContent = `Your notes are in the folder “${handle.name}”.`;
     button("Open my notes", true, async () => {
-      const r = await handle.requestPermission({ mode: "readwrite" });
+      let r = "denied";
+      try { r = await handle.requestPermission({ mode: "readwrite" }); } catch (e) { r = (e && e.message) || "denied"; }
       if (r === "granted") openRoot(handle);
+      else dialog("Open My Notes", `Android didn't let Ross Note into “${handle.name}” (${r}). ` +
+        "Try again, or choose the folder afresh with “Choose another folder…”.");
     });
     button("Choose another folder…", false, chooseFolder);
     note.textContent = "Android asks once each time Ross Note starts afresh.";
@@ -267,27 +280,47 @@ function showStart(kind, handle, file) {
 }
 
 async function chooseFolder() {
+  let h;
+  try { h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" }); } catch (e) {
+    if (e && e.name !== "AbortError") {
+      dialog("Choose the RossNotes Folder", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    }
+    return;
+  }
+  toast(`Opening “${h.name}”…`, 30000);
   try {
-    const h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" });
     await flushSave();
-    if (await asProject(h)) return;       // a Ross Writer project, chosen as the notes folder: opened as one
-    await kvSet("root", h);
-    openRoot(h);
-  } catch (e) {
-    if (e && e.name !== "AbortError") toast("Couldn't open that folder: " + e.message);
+    if (await asProject(h, true)) return;       // a Ross Writer project, chosen as the notes folder: opened as one
+  } catch (e) { console.error(e); }
+  try { await kvSet("root", h); } catch (e) {
+    // kept for this visit only: Ross Note will ask again next time
+    console.error(e);
+  }
+  try { await openRoot(h, false, true); } catch (e) {
+    dialog("Choose the RossNotes Folder", `Couldn't open the notes in “${h.name}”.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
   }
 }
 
 // A folder holding a .rwproj is a Ross Writer project, whichever way it was chosen: it's opened as one
 // (never as the notes folder, where it would show only "Scenes"), and the notes made for its folders by
 // an earlier version opening it as notes ("Scenes.md" holding just "# Scenes") are taken away again.
-async function asProject(handle) {
+async function asProject(handle, chosen = false) {
   let files = [];
   try { files = await findProjectFiles(handle); } catch (e) { return false; }
   if (!files.length) return false;
+  // a folder of notes that also holds a project file: asked, not guessed
+  let notes = 0;
+  try { for await (const [name, e] of handle.entries()) if (e.kind === "file" && /\.md$/i.test(name) && name !== "Scenes.md") notes++; } catch (e) { /* none */ }
+  if (notes) {
+    if (!chosen) return false;
+    const q = document.createElement("div");
+    q.textContent = `“${handle.name}” holds notes and a Ross Writer project (${files[0]}). Open it as your notes, or as the project?`;
+    const v = await ask("Notes or Project?", q, [["My notes", "notes", true], ["The project", "project"]]);
+    if (v !== "project") return false;
+  }
   try {
     const dirs = [];
-    for await (const [name, e] of handle.entries()) if (e.kind === "directory") dirs.push(name);
+    for await (const [name, e] of handle.entries()) if (e.kind === "directory" && /^(Scenes|Trash)$/.test(name)) dirs.push(name);
     for (const d of dirs) {
       try {
         const f = await (await handle.getFileHandle(d + ".md")).getFile();
@@ -309,12 +342,12 @@ async function asProject(handle) {
   }
   toast(`“${handle.name}” is a Ross Writer project: opening it as one.`, 6000);
   await openProject(handle, file);
-  return true;
+  return !!(S.store && S.store.isProject);
 }
 
-async function openRoot(handle, quiet) {
+async function openRoot(handle, quiet, checked = false) {
   $("start").hidden = true;
-  if (!quiet && await asProject(handle)) return;
+  if (!quiet && !checked && await asProject(handle)) return;
   const st = new Store(handle);
   st.onWrite = wordSoon;
   for (const p of P) { p.note = null; p.dirty = false; }
@@ -386,7 +419,6 @@ async function openProject(handle, file) {
   try { await queue(() => st.scan()); } catch (e) {
     hideToast();
     dialog("Open a Ross Writer Project", `Couldn't open “${file}”.\n\n${e.message || e}`);
-    if (!S.store) start();
     return;
   }
   try { await kvSet("project", handle); await kvSet("projectFile", file); } catch (e) { /* kept for this visit only */ }
@@ -2106,7 +2138,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.2")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.3")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -2211,7 +2243,7 @@ $("file-book").addEventListener("change", async (e) => {
 async function importNotebook(file) {
   if (S.store && S.store.isDoc) { toast("A Word document opened by itself is one page. File ▸ Back to My Notes for notes."); return; }
   await flushSave();
-  const NB = await import("./notebooks.js?v=2.1.2");
+  const NB = await import("./notebooks.js?v=2.1.3");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -2458,7 +2490,7 @@ async function exportNotes(kind) {
     let blob = await wordBlob(notes, pages, name, parts);
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=2.1.2");
+      const { exportComments } = await import("./wordpatch.js?v=2.1.3");
       blob = await exportComments(await blob.arrayBuffer(), notes.map((x) => ({ title: x.title(), comments: x.comments || [] })));
     }
     hideToast();
