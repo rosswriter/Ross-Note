@@ -2,7 +2,7 @@
 // With a connection it always takes the newest files from the site (and keeps
 // them); with none, the kept copy. (The notes themselves are in your folder.)
 const PREFIX = "ross-note-";
-const CACHE = PREFIX + "1.4.0";
+const CACHE = PREFIX + "1.6.0";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "js/app.js", "js/md.js", "js/editor.js", "js/store.js", "js/wordio.js",

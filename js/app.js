@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.4.0";
-import * as ed from "./editor.js?v=1.4.0";
-import { Store, PICTURES } from "./store.js?v=1.4.0";
+import * as md from "./md.js?v=1.6.0";
+import * as ed from "./editor.js?v=1.6.0";
+import { Store, PICTURES } from "./store.js?v=1.6.0";
 
-export const VERSION = "1.4.0";
+export const VERSION = "1.6.0";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -18,7 +18,9 @@ const S = {
 // ------------------------------------------------------------------ the two panes (one unless split)
 const P = [0, 1].map((k) => {
   const el = $("pane" + k);
-  return { k, el, head: el.querySelector(".head"), scroller: el.querySelector(".scroller"),
+  const head = el.querySelector(".head");
+  head.innerHTML = '<span class="hname"></span><span class="hwords"></span>';
+  return { k, el, head, hname: head.firstChild, hwords: head.lastChild, scroller: el.querySelector(".scroller"),
     page: el.querySelector(".page"), note: null, dirty: false, timer: 0 };
 });
 let A = P[0];            // the pane you're working in
@@ -198,6 +200,7 @@ async function chooseFolder() {
 async function openRoot(handle, quiet) {
   $("start").hidden = true;
   S.store = new Store(handle);
+  S.store.onWrite = wordSoon;
   await queue(async () => {
     await S.store.scan();
     if (!S.store.root.children.length) await makeWelcome();
@@ -275,8 +278,55 @@ function expandTo(note) {
 function updateHead() {
   for (const p of P) {
     const n = p.note;
-    p.head.textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow(p.page)].join("  ›  ") : "No note open";
+    p.hname.textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow(p.page)].join("  ›  ") : "No note open";
   }
+  wordsSoon();
+}
+
+// ------------------------------------------------------------------ word count (as the laptop counts)
+// letters and digits, with ' ’ or - inside a word (don't, well-known) as one word
+const WORD_RE = /[\p{L}\p{N}]+(?:['\u2019-][\p{L}\p{N}]+)*/gu;
+function wordsIn(text) { return (text.match(WORD_RE) || []).length; }
+
+function pageWords(pg) {
+  return [...pg.children].map((d) => ed.lineText(d)).join("\n").split(md.OBJ).join("").split("\u200b").join("");
+}
+
+let wordsTimer = 0;
+function wordsSoon() { clearTimeout(wordsTimer); wordsTimer = setTimeout(countWords, 300); }
+
+function countWords() {
+  for (const p of P) {
+    if (!p.note) { p.hwords.textContent = ""; continue; }
+    const text = pageWords(p.page);
+    const n = wordsIn(text);
+    let msg = `${n.toLocaleString("en")} word${n === 1 ? "" : "s"} · ${text.replace(/\n/g, "").length.toLocaleString("en")} characters`;
+    const sel = window.getSelection();
+    if (sel.rangeCount && !sel.isCollapsed && p.page.contains(sel.anchorNode)) {
+      const t = sel.toString().split(md.OBJ).join("").split("\u200b").join("");
+      if (t.trim()) msg = `${wordsIn(t).toLocaleString("en")} of ${n.toLocaleString("en")} words`;
+    }
+    p.hwords.textContent = msg;
+  }
+}
+
+// the words in a note (or the selected notes) and every note under it
+async function countBranch() {
+  const n = S.note;
+  if (!n) return null;
+  await flushSave();
+  let total = 0, k = 0;
+  await queue(async () => {
+    for (const x of [n, ...n.walk()]) {
+      let text = x.text;
+      try { text = await S.store.read(x); } catch (e) { /* as we had it */ }
+      const t = md.parse(text || "").map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n");
+      total += wordsIn(t.split(md.OBJ).join(""));
+      k++;
+    }
+  });
+  alert(`“${n.title()}”${k > 1 ? ` and the ${k - 1} note${k === 2 ? "" : "s"} under it` : ""}:\n\n${total.toLocaleString("en")} words`);
+  return total;
 }
 
 function titleNow(pg = page) {
@@ -465,7 +515,7 @@ async function refresh() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") flushSave();
+  if (document.visibilityState === "hidden") flushSave().then(() => setTimeout(() => { if (wordDue.size) wordFlush(); }, 50));
   else refresh();
 });
 window.addEventListener("pagehide", () => flushSave());
@@ -670,7 +720,9 @@ const COMMANDS = {
   date: () => insertText(md.longDate()),
   datetime: () => insertText(md.longDate(true)),
   picture: () => { rememberCaret(); $("file-pic").click(); },
-  undo: () => { exec("undo"); afterEdit(); },
+  undo: () => { if (!undoReplaceAll()) { exec("undo"); afterEdit(); } },
+  find: () => openFind(true),
+  headings: () => showHeadings(),
   redo: () => { exec("redo"); afterEdit(); },
   smaller: () => setSize(-1), bigger: () => setSize(1),
   dark: () => { S.settings.dark = !S.settings.dark; saveSettings(); applyLook(); },
@@ -909,6 +961,11 @@ document.addEventListener("keydown", (e) => {
   else if (c && k === "0") fn = () => setSize(0);
   else if (c && (k === "p" || k === "P")) fn = printNote;
   else if (c && e.shiftKey && (k === "F" || k === "f")) fn = focusSearch;
+  else if (c && e.shiftKey && (k === "O" || k === "o")) fn = showHeadings;
+  else if (c && !e.shiftKey && (k === "f" || k === "F")) fn = () => openFind(false);
+  else if (c && !e.shiftKey && (k === "h" || k === "H")) fn = () => openFind(true);
+  else if (k === "F3") fn = () => findGo(e.shiftKey);
+  else if (k === "Escape" && !$("findbar").hidden && !openMenu && $("dialog").hidden) fn = closeFind;
   else if (c && e.altKey && (k === "n" || k === "N")) fn = () => newNote(false);
   else if (c && (k === "\\" || k === "|" || e.code === "Backslash")) fn = e.shiftKey ? COMMANDS.splitv : COMMANDS.splith;
   else if (c && (k === "b" || k === "B" || k === "i" || k === "I" || k === "u" || k === "U") && document.activeElement === page) {
@@ -1100,6 +1157,7 @@ onPages("click", (e) => {
 
 document.addEventListener("selectionchange", () => {
   if (!S.note) return;
+  wordsSoon();
   updateButtons();
   const sel = window.getSelection();
   if (!sel.rangeCount) return;
@@ -1173,6 +1231,12 @@ function menuItems(name) {
       { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
       { label: "Copy This Note for Email", fn: () => copyForEmail(), off: !n },
       "-",
+      { label: "Update Word Copy", fn: () => updateWordCopy(), off: !n },
+      { label: "Keep Word Copies Updated", on: s.wordAuto !== false, fn: () => {
+        s.wordAuto = s.wordAuto === false; saveSettings();
+        toast(s.wordAuto ? "A note's Word copy is written again each time the note is saved." : "Word copies are written only when you choose Update Word Copy.");
+      } },
+      "-",
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
       { label: "Read the Folder Again", fn: refresh },
@@ -1188,6 +1252,11 @@ function menuItems(name) {
       { label: "Copy", fn: () => { page.focus(); document.execCommand("copy"); }, keys: "Ctrl+C" },
       { label: "Paste", fn: pasteFromMenu, keys: "Ctrl+V" },
       { label: "Select All", fn: () => { page.focus(); document.execCommand("selectAll"); }, keys: "Ctrl+A" },
+      "-",
+      { label: "Find in This Note…", fn: () => openFind(false), keys: "Ctrl+F" },
+      { label: "Find and Replace…", fn: () => openFind(true), keys: "Ctrl+H" },
+      { label: "Find Next", fn: () => findGo(false), keys: "F3" },
+      { label: "Find Previous", fn: () => findGo(true), keys: "Shift+F3" },
       "-",
       { label: "Search the Notes", fn: focusSearch, keys: "Ctrl+Shift+F" },
     ];
@@ -1221,6 +1290,7 @@ function menuItems(name) {
     ];
     case "notes": return [
       { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
+      { label: "Count Words (with the notes under it)…", fn: countBranch, off: !n },
       { label: "New Note Under This One", fn: () => newNote(true), off: !n },
       "-",
       { label: "Move Up", fn: () => moveNote("up"), keys: "Alt+Up", off: i < 1 },
@@ -1231,6 +1301,8 @@ function menuItems(name) {
       { label: "Delete Note…", fn: deleteNote, off: !n },
     ];
     case "view": return [
+      { label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Shift+O" },
+      "-",
       { label: "Split Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
       { label: "Split Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
       { label: "One Note Only", on: !s.split, fn: () => setSplit("") },
@@ -1358,6 +1430,8 @@ function showKeys() {
     "Split side by side: Ctrl+\\    Top and bottom: Ctrl+Shift+\\",
     "Hide / show the note list: Ctrl+Shift+L    Light / dark: Ctrl+Shift+D",
     "Search the notes: Ctrl+Shift+F",
+    "Find: ^p a line's end, ^t a tab    Word count: in the name bar",
+    "Word copy (RossNotes/Word Copies, kept up to date): File ▸ Update Word Copy",
     "Move a note: Alt+Up / Down / Left / Right",
     "Print or save as PDF: Ctrl+P",
     "Menus: Alt+F, Alt+E, Alt+I, Alt+O, Alt+N, Alt+V, Alt+H",
@@ -1449,7 +1523,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.4.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1529,7 +1603,7 @@ $("file-book").addEventListener("change", async (e) => {
 
 async function importNotebook(file) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.4.0");
+  const NB = await import("./notebooks.js?v=1.6.0");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -1711,6 +1785,40 @@ async function wordBlob(notes, pages, name, parts = null) {
   return W.writeDocx(lines, bytes, name);
 }
 
+// ------------------------------------------------------------------ Word copies (as the laptop keeps them)
+// RossNotes/Word Copies/<the note's place>.docx: the note and the notes under it, as Export as Word
+// makes them; the same file each time, so your sync app carries the latest to the laptop and Drive
+async function updateWordCopy(note = null, quiet = false) {
+  const n = note || S.note;
+  if (!n) return null;
+  if (!quiet) await flushSave();
+  const notes = [n, ...n.walk()];
+  const parts = await joinedParts(notes, []);
+  const blob = await wordBlob(notes, !!S.settings.newPages, md.safeName(n.title()), parts);
+  const where = await queue(() => S.store.writeWordCopy(n, blob));
+  if (!quiet) toast("Word copy saved: " + where);
+  return where;
+}
+
+const wordDue = new Set();
+let wordTimer = 0;
+// a note was saved: its Word copy, and those of the notes it's under, follow (after a pause)
+async function wordSoon(note) {
+  if (S.settings.wordAuto === false) return;
+  for (const x of [note, ...note.ancestors()]) if (await S.store.hasWordCopy(x)) wordDue.add(x.key());
+  if (wordDue.size) { clearTimeout(wordTimer); wordTimer = setTimeout(wordFlush, 2000); }
+}
+
+async function wordFlush() {
+  clearTimeout(wordTimer);
+  const due = [...wordDue].sort();
+  wordDue.clear();
+  for (const k of due) {
+    const n = S.store.find(k);
+    if (n) { try { await updateWordCopy(n, true); } catch (e) { console.error(e); } }
+  }
+}
+
 async function exportNotes(kind) {
   if (!S.note) return null;
   await flushSave();
@@ -1837,7 +1945,299 @@ async function shareWord() {
   return saved;
 }
 
+// ------------------------------------------------------------------ find and replace in the note you're in
+const FB = { text: $("find-text"), repl: $("find-repl"), count: $("find-count"), case: $("find-case"), whole: $("find-whole") };
+let replaceUndo = null;
+
+function openFind(replace) {
+  $("findbar").hidden = false;
+  const show = replace || (!$("find-repl").hidden && !$("findbar").dataset.closed);
+  for (const id of ["find-repl", "find-one", "find-all"]) $(id).hidden = !show;
+  delete $("findbar").dataset.closed;
+  const sel = window.getSelection();
+  const t = sel.rangeCount && page.contains(sel.anchorNode) ? sel.toString() : "";
+  if (t && !t.includes("\n") && t.length < 100) FB.text.value = t;
+  (replace && FB.text.value ? FB.repl : FB.text).focus();
+  if (!replace || !FB.text.value) FB.text.select();
+  findRefresh();
+}
+
+function closeFind() {
+  const ms = findAll();
+  $("findbar").hidden = true;
+  page.focus();
+  if (findCur >= 0 && ms[findCur]) selectMatch(ms[findCur]);   // the caret at the word you found
+  if (window.CSS && CSS.highlights) CSS.highlights.delete("find-current");
+  $("findbar").dataset.closed = "1";
+  if (window.CSS && CSS.highlights) CSS.highlights.delete("find");
+  page.focus();
+}
+
+// Word's codes: ^p a paragraph mark (a line's end), ^t a tab, ^^ a ^
+function codes(t) {
+  let out = "";
+  for (let k = 0; k < t.length; k++) {
+    if (t[k] === "^" && k + 1 < t.length && "pPtT^".includes(t[k + 1])) {
+      out += { p: "\n", t: "\t", "^": "^" }[t[k + 1].toLowerCase()];
+      k++;
+    } else out += t[k];
+  }
+  return out;
+}
+
+function findRegex() {
+  const t = codes(FB.text.value);
+  if (!t) return null;
+  let src = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (FB.whole.checked) src = "(?<![\\p{L}\\p{N}])" + src + "(?![\\p{L}\\p{N}])";
+  return new RegExp(src, "gu" + (FB.case.checked ? "" : "i"));
+}
+
+// the page's words, a line's end as "\n", and where each line starts
+function pageText() {
+  const lines = [...page.children];
+  const starts = [];
+  let at = 0;
+  const parts = lines.map((d) => { const t = ed.lineText(d); starts.push(at); at += t.length + 1; return t; });
+  return { lines, starts, text: parts.join("\n") };
+}
+
+function pointOf(pt, off) {
+  let i = 0;
+  while (i + 1 < pt.starts.length && pt.starts[i + 1] <= off) i++;
+  return { line: i, pos: off - pt.starts[i] };
+}
+
+// every match: {a: {line, pos}, b: {line, pos}, start, end} (a match can run over a line's end)
+function findAll() {
+  const re = findRegex();
+  const out = [];
+  if (!re) return out;
+  const pt = pageText();
+  let m;
+  re.lastIndex = 0;
+  while ((m = re.exec(pt.text))) {
+    if (!m[0].length) { re.lastIndex++; continue; }
+    out.push({ a: pointOf(pt, m.index), b: pointOf(pt, m.index + m[0].length), start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
+function rangeOf(m) {
+  const lines = [...page.children];
+  const r = document.createRange();
+  const [n1, o1] = ed.pointAt(lines[m.a.line], m.a.pos);
+  const [n2, o2] = ed.pointAt(lines[m.b.line], m.b.pos);
+  r.setStart(n1, o1);
+  r.setEnd(n2, o2);
+  return r;
+}
+
+let findCur = -1;      // which match is the current one (marked; selected in the page when you go to the page)
+
+function findFrom() {
+  const c = ed.caret(page);
+  if (!c) return 0;
+  const pt = pageText();
+  return (pt.starts[c.a.line] || 0) + c.a.pos;
+}
+
+function findRefresh(jump = false) {
+  if ($("findbar").hidden) return [];
+  const ms = findAll();
+  if (jump) {
+    const at = findFrom();
+    findCur = ms.length ? Math.max(0, ms.findIndex((m) => m.start >= at)) : -1;
+  } else if (findCur >= ms.length) findCur = ms.length ? 0 : -1;
+  findMark(ms);
+  if (jump && findCur >= 0) showMatch(ms[findCur]);
+  return ms;
+}
+
+function findMark(ms) {
+  if (window.CSS && CSS.highlights && window.Highlight) {
+    try {
+      CSS.highlights.set("find", new Highlight(...ms.slice(0, 5000).map(rangeOf)));
+      if (findCur >= 0 && ms[findCur]) CSS.highlights.set("find-current", new Highlight(rangeOf(ms[findCur])));
+      else CSS.highlights.delete("find-current");
+    } catch (e) { /* no marks */ }
+  }
+  FB.count.textContent = !FB.text.value ? "" : findCur >= 0 && ms.length ? `${findCur + 1} of ${ms.length}` : "Not found";
+  FB.text.classList.toggle("none", !!FB.text.value && !ms.length);
+}
+
+// scrolled to, without taking the caret from where you're typing
+function showMatch(m) {
+  const div = page.children[m.a.line];
+  const sc = div && div.closest(".scroller");
+  if (!sc) return;
+  const top = div.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+  if (top < 0 || top > sc.clientHeight - 40) sc.scrollTop += top - sc.clientHeight / 3;
+}
+
+function selectMatch(m) {
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(rangeOf(m));
+  showMatch(m);
+}
+
+function findGo(back) {
+  if ($("findbar").hidden || !FB.text.value) { openFind(false); return; }
+  const ms = findAll();
+  if (!ms.length) { findCur = -1; findMark(ms); return; }
+  if (findCur < 0) findCur = 0;
+  else findCur = (findCur + (back ? ms.length - 1 : 1)) % ms.length;
+  findMark(ms);
+  if (document.activeElement === page) selectMatch(ms[findCur]); else showMatch(ms[findCur]);
+}
+
+// a match replaced in the page itself: lines joined where a line's end is taken out (the first line's
+// kind stays), a new line (of the same kind, as Enter) for each ^p in the new words. Like the laptop.
+function replaceRange(m, text) {
+  const lines = [...page.children];
+  const A = lines[m.a.line], B = lines[m.b.line];
+  const r = rangeOf(m);
+  r.deleteContents();
+  if (A !== B) {
+    for (const x of [...lines.slice(m.a.line + 1, m.b.line)]) if (x.parentNode) x.remove();
+    for (const br of A.querySelectorAll("br")) br.remove();
+    for (const br of B.querySelectorAll("br")) br.remove();
+    while (B.firstChild) A.appendChild(B.firstChild);
+    B.remove();
+  }
+  let div = A;
+  let pos = m.a.pos;
+  text.split("\n").forEach((part, k) => {
+    if (k) {
+      // a new line from here, as Enter makes it
+      const [n, o] = ed.pointAt(div, pos);
+      const tail = document.createRange();
+      tail.setStart(n, o);
+      tail.setEnd(div, div.childNodes.length);
+      const frag = tail.extractContents();
+      const nl = document.createElement("div");
+      nl.className = "ln";
+      for (const key of ["kind", "mark", "code"]) if (div.dataset[key] != null) nl.dataset[key] = div.dataset[key];
+      if (div.dataset.code) nl.dataset.raw = "";
+      nl.appendChild(frag);
+      div.after(nl);
+      div = nl;
+      pos = 0;
+    }
+    if (part) {
+      const [n, o] = ed.pointAt(div, pos);
+      if (n.nodeType === 3) n.insertData(o, part);
+      else {
+        const t = document.createTextNode(part);
+        const rr = document.createRange();
+        rr.setStart(n, o);
+        rr.insertNode(t);
+      }
+      pos += part.length;
+    }
+  });
+  for (const d of [A, div]) {
+    if (!d.parentNode) continue;
+    for (const el of [...d.querySelectorAll("*")]) {
+      if (el.tagName !== "IMG" && el.tagName !== "BR" && !el.textContent && !el.querySelector("img")) el.remove();
+    }
+    if (!ed.lineText(d)) { if (!d.querySelector("br")) d.appendChild(document.createElement("br")); }
+    else for (const br of d.querySelectorAll("br")) br.remove();
+  }
+  return { line: page.children.length ? [...page.children].indexOf(div) : 0, pos };
+}
+
+function replaceOne() {
+  const ms = findAll();
+  if (findCur < 0 || !ms[findCur]) { findGo(false); return; }
+  const m = ms[findCur];
+  const back = document.activeElement;
+  const text = codes(FB.repl.value);
+  let after;
+  if (m.a.line === m.b.line && !text.includes("\n")) {
+    selectMatch(m);
+    page.focus();
+    document.execCommand("insertText", false, text);   // keeps the words' formatting; Undo as usual
+    after = m.start + text.length;
+    afterEdit();
+  } else {
+    const before = page.innerHTML;
+    replaceRange(m, text);
+    ed.tidy(page);
+    replaceUndo = { page, before, after: page.innerHTML };
+    ed.relayout(page);
+    changed();
+    after = m.start + text.length;
+  }
+  // the next one: the first match after the replaced words
+  const ms2 = findAll();
+  findCur = ms2.length ? ms2.findIndex((x) => x.start >= after) : -1;
+  if (findCur < 0 && ms2.length) findCur = 0;
+  findMark(ms2);
+  if (findCur >= 0) showMatch(ms2[findCur]);
+  if (back && back !== page && back.focus) back.focus();
+}
+
+function replaceAll() {
+  const ms = findAll();
+  if (!ms.length) return 0;
+  const before = page.innerHTML;
+  const text = codes(FB.repl.value);
+  for (const m of [...ms].reverse()) replaceRange(m, text);   // from the end, so the places before stay right
+  ed.tidy(page);
+  replaceUndo = { page, before, after: page.innerHTML };
+  ed.relayout(page);
+  changed();
+  findCur = -1;
+  findRefresh();
+  FB.count.textContent = `Replaced ${ms.length}`;
+  toast(`Replaced ${ms.length}`);
+  return ms.length;
+}
+
+// Undo straight after Replace All: everything back as it was
+function undoReplaceAll() {
+  if (!replaceUndo || replaceUndo.page !== page || page.innerHTML !== replaceUndo.after) { replaceUndo = null; return false; }
+  page.innerHTML = replaceUndo.before;
+  replaceUndo = null;
+  ed.relayout(page);
+  changed();
+  findRefresh();
+  return true;
+}
+
+$("find-prev").onclick = () => findGo(true);
+$("find-next").onclick = () => findGo(false);
+$("find-one").onclick = replaceOne;
+$("find-all").onclick = replaceAll;
+$("find-close").onclick = closeFind;
+for (const id of ["find-prev", "find-next", "find-one", "find-all", "find-close"]) $(id).addEventListener("mousedown", (e) => e.preventDefault());
+FB.text.addEventListener("input", () => findRefresh(true));
+FB.case.addEventListener("change", () => findRefresh());
+FB.whole.addEventListener("change", () => findRefresh());
+FB.text.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); findGo(e.shiftKey); } });
+FB.repl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); replaceOne(); } });
+let findTimer = 0;
+for (const p of P) p.page.addEventListener("input", () => { clearTimeout(findTimer); findTimer = setTimeout(() => findRefresh(), 250); });
+
+// ------------------------------------------------------------------ the headings in the note: go to one
+function showHeadings() {
+  const hs = [...page.children].filter((d) => /^h[1-6]$/.test(d.dataset.kind || "") && ed.lineText(d).split(md.OBJ).join("").trim());
+  const top = Math.min(...hs.map((d) => +d.dataset.kind[1]), 9);
+  const items = hs.length ? hs.map((d) => ({
+    label: "\u2003".repeat(+d.dataset.kind[1] - top) + ed.lineText(d).split(md.OBJ).join("").trim().slice(0, 70),
+    fn: () => {
+      const sc = d.closest(".scroller");
+      if (sc) sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8;
+      page.focus();
+      ed.placeCaret(...ed.pointAt(d, 0));
+    },
+  })) : [{ label: "No headings in this note", off: true, fn: () => {} }];
+  showMenu(document.querySelector('[data-cmd="headings"]') || $("toolbar"), items);
+}
+
 // for the tests
-window.RN = { S, P, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
