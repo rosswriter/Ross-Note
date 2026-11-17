@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.6.1";
-import * as ed from "./editor.js?v=1.6.1";
-import { Store, PICTURES } from "./store.js?v=1.6.1";
+import * as md from "./md.js?v=1.6.2";
+import * as ed from "./editor.js?v=1.6.2";
+import { Store, PICTURES } from "./store.js?v=1.6.2";
 
-export const VERSION = "1.6.1";
+export const VERSION = "1.6.2";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -138,9 +138,24 @@ async function kvSet(k, v) {
 // don't flicker)
 const busyJobs = [];
 let busyTimer = 0;
+// the bar's element: made here if the page hasn't got it (an older page kept by the browser, straight after
+// an update, can come with this newer program)
+function busyEl() {
+  let el = $("busy");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "busy";
+    el.hidden = true;
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  if (!el.querySelector(".bar")) el.prepend(Object.assign(document.createElement("div"), { className: "bar" }));
+  if (!el.querySelector(".txt")) el.appendChild(Object.assign(document.createElement("span"), { className: "txt" }));
+  return el;
+}
 function busyShow() {
   const top = busyJobs[busyJobs.length - 1];
-  const el = $("busy");
+  const el = busyEl();
   if (!top) { clearTimeout(busyTimer); busyTimer = 0; el.hidden = true; document.documentElement.classList.remove("is-busy"); return; }
   el.querySelector(".txt").textContent = top.label;
   el.classList.toggle("quiet", !!top.quiet);
@@ -157,7 +172,7 @@ async function busy(label, fn, opts = {}) {
   const job = { label, after: opts.after ?? 250, quiet: !!opts.quiet };
   busyJobs.push(job);
   busyShow();
-  const say = (text) => { job.label = text; if (busyJobs[busyJobs.length - 1] === job) $("busy").querySelector(".txt").textContent = text; };
+  const say = (text) => { job.label = text; if (busyJobs[busyJobs.length - 1] === job) busyEl().querySelector(".txt").textContent = text; };
   try { return await fn(say); } finally {
     busyJobs.splice(busyJobs.indexOf(job), 1);
     busyShow();
@@ -169,13 +184,24 @@ const breathe = () => new Promise((ok) => setTimeout(ok, 0));
 // one thing at a time with the folder
 function queue(fn) {
   const p = S.busy.then(fn, fn);
-  S.busy = p.catch((e) => { console.error(e); toast("Something went wrong: " + (e && e.message || e)); });
+  S.busy = p.catch((e) => { console.error(e); toast("Something went wrong: " + whatWentWrong(e), 15000); });
   return p;
 }
 
+// an error as a line you can read out: what, and where in Ross Note it happened
+function whatWentWrong(e) {
+  const msg = (e && e.message) || String(e);
+  const at = ((e && e.stack) || "").split("\n").map((l) => l.trim())
+    .filter((l) => /\.js/.test(l)).slice(0, 2)
+    .map((l) => l.replace(/^at\s+/, "").replace(/https?:\/\/[^\s)]*\/js\//, "").replace(/\?v=[\d.]+/, ""));
+  return msg + (at.length ? "  [" + at.join(" ← ") + "]" : "") + "  (Ross Note " + VERSION + ")";
+}
+window.addEventListener("error", (ev) => { if (ev.error) toast("Something went wrong: " + whatWentWrong(ev.error), 15000); });
+window.addEventListener("unhandledrejection", (ev) => toast("Something went wrong: " + whatWentWrong(ev.reason), 15000));
+
 async function start() {
   applyLook();
-  const boot = $("busy");
+  const boot = busyEl();
   boot.hidden = true;
   boot.classList.remove("boot");
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !location.search.includes("nosw")) {
@@ -1591,7 +1617,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1689,7 +1715,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.6.1");
+  const NB = await import("./notebooks.js?v=1.6.2");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
