@@ -42,7 +42,13 @@ button { font: inherit; color: inherit; }
   border-radius: 10px; padding: 16px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
 #dialog h2 { margin: 0 0 10px; font-size: 18px; }
 #dialog .body { white-space: pre-wrap; font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
-#dialog .big { min-width: 120px; }
+#dialog .big { min-width: 120px; margin: 4px 6px 0 0; }
+#dialog .choose label { display: flex; align-items: center; gap: 8px; min-height: 34px; white-space: normal; }
+#dialog .choose input { width: 20px; height: 20px; flex: none; }
+#dialog .picklist { max-height: 40vh; overflow: auto; margin: 2px 0 8px 28px; padding: 4px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--paper); color: var(--ink); }
+#dialog .pages { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+#printdoc { display: none; }
 
 /* toolbar */
 #toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--ui);
@@ -154,6 +160,11 @@ button { font: inherit; color: inherit; }
 .big.main { background: #1b523d; color: #fff; border-color: #1b523d; font-weight: 600; }
 
 @media print {
+  body.print-joined #app { display: none !important; }
+  body.print-joined #printdoc { display: block; padding: 0; background: #fff; color: #000; font-size: 12pt; min-height: 0; }
+  #printdoc .part.newpage { break-before: page; }
+  .page span[style*="background"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #printdoc .part.gap { margin-top: 18pt; }
   html, body, #app { height: auto; background: #fff; }
   #menubar, #dialog, #toolbar, #side, #divider, #pdiv, .head, #chip, #menu, #toast, #start, .pane:not(.active) { display: none !important; }
   #main, #panes, .pane, .scroller { display: block; overflow: visible; background: #fff; }

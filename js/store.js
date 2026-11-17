@@ -5,7 +5,7 @@
 //   Pictures/             pictures in notes (not a note)
 //   .order                the order of the notes in a folder (JSON list of names)
 //   .trash/<time>/        deleted notes
-import { safeName, titleOf } from "./md.js";
+import { safeName, titleOf } from "./md.js?v=1.3.2";
 
 export const EXT = ".md";
 export const ORDER = ".order";

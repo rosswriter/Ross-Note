@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js";
-import * as ed from "./editor.js";
-import { Store, PICTURES } from "./store.js";
+import * as md from "./md.js?v=1.3.2";
+import * as ed from "./editor.js?v=1.3.2";
+import { Store, PICTURES } from "./store.js?v=1.3.2";
 
-export const VERSION = "1.2.0";
+export const VERSION = "1.3.2";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -141,7 +141,7 @@ function queue(fn) {
 async function start() {
   applyLook();
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !location.search.includes("nosw")) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
   }
   const test = new URLSearchParams(location.search).get("test");
   if (test === "opfs") return openRoot(await navigator.storage.getDirectory(), true);
@@ -157,6 +157,7 @@ async function start() {
 
 function showStart(kind, handle) {
   $("start").hidden = false;
+  $("start").querySelector("h1").textContent = "Ross Note " + VERSION;
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
   btns.textContent = "";
   const button = (text, main, fn) => {
@@ -262,7 +263,7 @@ function renderTree() {
 
 function updateCount() {
   const n = S.store ? S.store.all().length : 0;
-  $("count").textContent = `${n} note${n === 1 ? "" : "s"} · ${S.store ? S.store.handle.name : ""}`;
+  $("count").textContent = `${n} note${n === 1 ? "" : "s"} · ${S.store ? S.store.handle.name : ""} · Ross Note ${VERSION}`;
 }
 
 function expandTo(note) {
@@ -354,7 +355,34 @@ function changed(pane = A) {
   const row = $("tree").querySelector(`.row[data-key="${CSS.escape(pane.note.key())}"] .lbl`);
   const t = titleNow(pane.page);
   if (row && row.textContent !== t) row.textContent = t;
+  // the same note in the other half follows as you type
+  for (const q of P) if (q !== pane && q.note === pane.note) mirrorSoon(pane, q);
   updateHead();
+}
+
+// the other half shows what this half has: at most one redraw per frame
+function mirrorSoon(from, to) {
+  if (to.mirrorDue) return;
+  to.mirrorDue = true;
+  requestAnimationFrame(() => {
+    to.mirrorDue = false;
+    if (to.note !== from.note || document.activeElement === to.page) return;
+    const top = to.scroller.scrollTop;
+    ed.renderLines(to.page, ed.readLines(from.page));
+    ed.relayout(to.page);
+    // pictures: the ones already showing in the first half, not read again
+    const have = [...from.page.querySelectorAll("img.pic")];
+    [...to.page.querySelectorAll("img.pic")].forEach((img, k) => {
+      const src = have[k];
+      if (!src || !src.dataset.loaded) return;
+      img.dataset.loaded = "1";
+      if (src.classList.contains("missing")) { img.classList.add("missing"); img.alt = src.alt; return; }
+      img.onload = () => sizePicture(img);
+      img.src = src.src;
+    });
+    loadPictures(to.page);
+    to.scroller.scrollTop = top;
+  });
 }
 
 function flushSave() {
@@ -647,6 +675,7 @@ const COMMANDS = {
   smaller: () => setSize(-1), bigger: () => setSize(1),
   dark: () => { S.settings.dark = !S.settings.dark; saveSettings(); applyLook(); },
   print: () => printNote(),
+  share: () => shareNote(),
   splith: () => setSplit("h"),
   splitv: () => setSplit("v"),
   clear: clearFormatting,
@@ -1135,7 +1164,15 @@ function menuItems(name) {
       { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
       { label: "New Note Under This One", fn: () => newNote(true), off: !n },
       "-",
-      { label: "Print / Save as PDF…", fn: printNote, keys: "Ctrl+P", off: !n },
+      { label: "Import a Word Document…", fn: () => $("file-docx").click() },
+      { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
+      { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
+      { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
+      "-",
+      { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
+      { label: "Copy This Note for Email", fn: () => copyForEmail(), off: !n },
+      "-",
+      { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
       { label: "Read the Folder Again", fn: refresh },
       { label: "Choose Another Folder…", fn: async () => { await flushSave(); chooseFolder(); } },
@@ -1272,10 +1309,39 @@ function focusSearch() {
 function dialog(title, text) {
   $("dialog").querySelector("h2").textContent = title;
   $("dialog").querySelector(".body").textContent = text;
+  $("dialog-close").textContent = "Close";
+  $("dialog-close").classList.add("main");
+  for (const b of $("dialog").querySelectorAll(".extra")) b.remove();
   $("dialog").hidden = false;
 }
+
+// a dialog with a form in it and buttons: resolves with the button's value (null for Cancel)
+function ask(title, bodyEl, buttons) {
+  return new Promise((ok) => {
+    const d = $("dialog");
+    d.querySelector("h2").textContent = title;
+    const body = d.querySelector(".body");
+    body.textContent = "";
+    body.appendChild(bodyEl);
+    for (const b of d.querySelectorAll(".extra")) b.remove();
+    const close = $("dialog-close");
+    close.textContent = "Cancel";
+    close.classList.remove("main");
+    const row = close.parentNode;
+    const done = (v) => { d.hidden = true; close.onclick = () => { d.hidden = true; }; ok(v); };
+    for (const [label, value, main] of buttons) {
+      const b = document.createElement("button");
+      b.className = "big extra" + (main ? " main" : "");
+      b.textContent = label;
+      b.onclick = () => done(value);
+      row.insertBefore(b, close);
+    }
+    close.onclick = () => done(null);
+    d.hidden = false;
+  });
+}
 $("dialog-close").onclick = () => { $("dialog").hidden = true; };
-$("dialog").addEventListener("click", (e) => { if (e.target === $("dialog")) $("dialog").hidden = true; });
+$("dialog").addEventListener("click", (e) => { if (e.target === $("dialog")) $("dialog-close").click(); });
 
 function showKeys() {
   dialog("Keyboard Shortcuts", [
@@ -1380,7 +1446,319 @@ function toast(msg, ms = 3500) {
 }
 function hideToast() { $("toast").hidden = true; }
 
+// ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
+let wordio = null;
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.3.2")); }
+
+$("file-docx").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f) await importWord(f);
+});
+
+async function importWord(file, split = null) {
+  await flushSave();
+  const W = await wordModule();
+  let got;
+  try { got = await W.readDocx(await file.arrayBuffer()); } catch (err) {
+    dialog("Import a Word Document", `Couldn't read “${file.name}” as a Word document.\n\n${err.message || err}`);
+    return null;
+  }
+  const stem = file.name.replace(/\.[^.]+$/, "");
+  const { pre, secs } = W.splitSections(got.lines);
+  if (split == null) {
+    split = false;
+    if (secs.length > 1) {
+      const p = document.createElement("div");
+      p.textContent = `“${stem}” has ${secs.length} headings. Bring it in as one note, or as a note for each heading ` +
+        "(under a note named after the document)?";
+      const v = await ask("Import a Word Document", p, [["One note", "one", true], ["A note for each heading", "many"]]);
+      if (!v) return null;
+      split = v === "many";
+    }
+  }
+  toast("Importing…", 60000);
+  const saved = new Map();
+  const pictureNames = [...got.media.keys()];
+  await queue(async () => {
+    for (const name of pictureNames) {
+      const data = got.media.get(name);
+      const ext = name.split(".").pop().toLowerCase();
+      const type = { png: "image/png", gif: "image/gif", bmp: "image/bmp", webp: "image/webp" }[ext] || "image/jpeg";
+      const [blob, nm] = await preparePicture(new File([data], `${stem} ${name}`, { type }));
+      saved.set(name, await S.store.savePicture(blob, nm));
+    }
+  });
+  const titleLine = { kind: null, depth: 1, code: false, runs: [{ t: got.title || stem, f: new Set() }] };
+  const startsWithTitle = (ls) => {
+    for (const ln of ls) if (ln.runs.some((r) => r.t.trim())) return !!ln.kind && ln.kind[0] === "h";
+    return false;
+  };
+  const cur = S.note;
+  const parent = cur ? cur.parent : S.store.root;
+  const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+  let top;
+  const make = async (par, idx, lines) => {
+    const n = await S.store.newNote(par, idx, "");
+    const text = md.serialize(W.toNoteLines(lines, (name) => saved.get(name)), { dir: n.folderParts() });
+    await S.store.write(n, text);
+    await S.store.rename(n, md.titleOf(text) || "Untitled");
+    return n;
+  };
+  await queue(async () => {
+    if (!split) top = await make(parent, index, startsWithTitle(got.lines) ? got.lines : [titleLine, ...got.lines]);
+    else {
+      top = await make(parent, index, pre.length && pre[0].title ? pre : [titleLine, ...pre]);
+      for (const sec of secs) await make(top, top.children.length, sec);
+    }
+  });
+  S.settings.expanded = [...new Set([...S.settings.expanded, top.key()])];
+  await openNote(top);
+  updateCount();
+  toast(`Imported ${file.name}`);
+  return top;
+}
+
+// which notes, for an export: this one, with those under it, or ones you tick
+async function chooseNotes(title, withPages) {
+  const n = S.note;
+  const box = document.createElement("div");
+  box.className = "choose";
+  const opt = (value, label, checked) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="which" value="${value}"${checked ? " checked" : ""}> `;
+    l.append(label);
+    box.appendChild(l);
+    return l;
+  };
+  opt("one", `“${n.title()}”`, true);
+  const withKids = opt("kids", "This note and the notes under it", false);
+  if (!n.children.length) withKids.querySelector("input").disabled = true;
+  opt("pick", "Notes I choose:", false);
+  const list = document.createElement("div");
+  list.className = "picklist";
+  const top = Math.min(...S.store.all().map((x) => x.ancestors().length));
+  for (const x of S.store.all()) {
+    const l = document.createElement("label");
+    l.style.paddingLeft = (x.ancestors().length - top) * 18 + "px";
+    l.innerHTML = '<input type="checkbox"> ';
+    l.querySelector("input").dataset.key = x.key();
+    l.querySelector("input").checked = x === n;
+    l.append(x.title());
+    list.appendChild(l);
+  }
+  list.addEventListener("change", () => { box.querySelector('input[value="pick"]').checked = true; });
+  box.appendChild(list);
+  let pages = null;
+  if (withPages) {
+    const l = document.createElement("label");
+    l.className = "pages";
+    l.innerHTML = `<input type="checkbox"${S.settings.newPages ? " checked" : ""}> `;
+    l.append("Each note on a new page");
+    pages = l.querySelector("input");
+    box.appendChild(l);
+  }
+  const v = await ask(title, box, [["Export", "go", true]]);
+  if (!v) return null;
+  const which = box.querySelector('input[name="which"]:checked').value;
+  let notes;
+  if (which === "one") notes = [n];
+  else if (which === "kids") notes = [n, ...n.walk()];
+  else {
+    const keys = new Set([...list.querySelectorAll("input:checked")].map((i) => i.dataset.key));
+    notes = S.store.all().filter((x) => keys.has(x.key()));
+  }
+  if (!notes.length) return null;
+  if (pages) { S.settings.newPages = pages.checked; saveSettings(); }
+  return { notes, pages: !!(pages && pages.checked) };
+}
+
+// the chosen notes, each with its title as a heading; picture links from `dir`
+async function joinedParts(notes, dir) {
+  const top = Math.min(...notes.map((x) => x.ancestors().length));
+  const out = [];
+  await queue(async () => {
+    for (const n of notes) {
+      let text = n.text;
+      try { text = await S.store.read(n); } catch (e) { /* as we had it */ }
+      const lines = md.parse(text || "");
+      for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, n.folderParts());
+      out.push([n, md.titleAsHeading(md.serialize(lines, { dir }), n.ancestors().length - top + 1)]);
+    }
+  });
+  return out;
+}
+
+// save a file where you choose (or to Downloads where the browser can't ask)
+async function saveFile(blob, name, desc, ext, mime) {
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({ suggestedName: name, id: "rossnote-export",
+        types: [{ description: desc, accept: { [mime]: [ext] } }] });
+      const w = await h.createWritable();
+      await w.write(blob);
+      await w.close();
+      return h.name;
+    } catch (e) {
+      if (e && e.name === "AbortError") return null;
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+  return name;
+}
+
+async function wordBlob(notes, pages, name, parts = null) {
+  parts = parts || await joinedParts(notes, []);
+  const W = await wordModule();
+  const lines = [];
+  parts.forEach(([, text], k) => {
+    const nl = md.parse(text);
+    for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
+    const part = W.fromNoteLines(nl);
+    while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
+    if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
+    lines.push(...part);
+  });
+  const bytes = async (img) => {
+    try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
+      try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
+    }
+  };
+  return W.writeDocx(lines, bytes, name);
+}
+
+async function exportNotes(kind) {
+  if (!S.note) return null;
+  await flushSave();
+  const label = { word: "Export as Word", pdf: "Export as PDF", md: "Export as Markdown" }[kind];
+  const got = await chooseNotes(label, kind !== "md");
+  if (!got) return null;
+  const { notes, pages } = got;
+  const name = md.safeName(notes.length === 1 ? notes[0].title() : notes[0].title());
+  const parts = await joinedParts(notes, []);
+  if (kind === "md") {
+    const blob = new Blob([parts.map(([, t]) => t).join("\n")], { type: "text/markdown" });
+    const saved = await saveFile(blob, name + ".md", "Markdown", ".md", "text/markdown");
+    if (saved) toast("Saved " + saved);
+    return saved;
+  }
+  if (kind === "word") {
+    toast("Making the Word document…", 60000);
+    const blob = await wordBlob(notes, pages, name, parts);
+    hideToast();
+    const saved = await saveFile(blob, name + ".docx", "Word document", ".docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    if (saved) toast("Saved " + saved);
+    return saved;
+  }
+  // PDF: the joined notes laid out for printing; the browser's "Save as PDF"
+  const doc = $("printdoc");
+  doc.textContent = "";
+  parts.forEach(([, text], k) => {
+    const part = document.createElement("div");
+    part.className = "part" + (k && pages ? " newpage" : k ? " gap" : "");
+    const lines = md.parse(text);
+    for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
+    ed.renderLines(part, lines);
+    ed.relayout(part);
+    part.querySelector(".ln.title") && part.querySelector(".ln.title").classList.remove("title");
+    doc.appendChild(part);
+  });
+  await loadPictures(doc);
+  await Promise.all([...doc.querySelectorAll("img.pic")].map((i) => (i.decode ? i.decode().catch(() => {}) : null)));
+  document.body.classList.add("print-joined");
+  const old = document.title;
+  document.title = name;
+  const after = () => {
+    document.body.classList.remove("print-joined");
+    document.title = old;
+    doc.textContent = "";
+    window.removeEventListener("afterprint", after);
+  };
+  window.addEventListener("afterprint", after);
+  window.print();
+  return name;
+}
+
+// ------------------------------------------------------------------ email and sharing
+async function noteForEmail() {
+  const W = await wordModule();
+  return { W, title: titleNow(), lines: W.fromNoteLines(ed.readLines(page)) };
+}
+
+async function shareNote() {
+  if (!S.note) return null;
+  await flushSave();
+  const p = document.createElement("div");
+  p.textContent = "Send “" + titleNow() + "” by email or another app (Android's share panel opens), or copy it " +
+    "with its formatting to paste into an email.";
+  const how = await ask("Email or Share", p, [["As the message", "text", true], ["As a Word document", "word"],
+    ["Copy with formatting", "copy"]]);
+  if (how === "text") return shareText();
+  if (how === "word") return shareWord();
+  if (how === "copy") return copyForEmail();
+  return null;
+}
+
+async function shareText() {
+  const { W, title, lines } = await noteForEmail();
+  const text = W.plainText(lines);
+  if (navigator.share) {
+    try { await navigator.share({ title, text }); return "shared"; } catch (e) {
+      if (e && e.name === "AbortError") return null;
+    }
+  }
+  // no share panel here: a new email in the mail app
+  location.href = "mailto:?subject=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(text.replace(/\n/g, "\r\n"));
+  return "mailto";
+}
+
+async function copyForEmail() {
+  const { W, title, lines } = await noteForEmail();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([W.htmlText(lines)], { type: "text/html" }),
+      "text/plain": new Blob([W.plainText(lines)], { type: "text/plain" }),
+    })]);
+    toast(`“${title}” copied, with its formatting: paste it into an email.`);
+    return true;
+  } catch (e) {
+    toast("Couldn't copy here: use Email or Share instead.");
+    return false;
+  }
+}
+
+async function shareWord() {
+  const got = await chooseNotes("Share as a Word Document", true);
+  if (!got) return null;
+  const { notes, pages } = got;
+  toast("Making the Word document…", 60000);
+  const name = md.safeName(notes[0].title());
+  const blob = await wordBlob(notes, pages, name);
+  hideToast();
+  const file = new File([blob], name + ".docx", { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // a fresh tap, so Android lets the share panel open
+    const p = document.createElement("div");
+    p.textContent = `“${file.name}” is ready.`;
+    if (await ask("Share as a Word Document", p, [["Share", "go", true]])) {
+      try { await navigator.share({ files: [file], title: name }); return "shared"; } catch (e) {
+        if (e && e.name === "AbortError") return null;
+      }
+    }
+    return null;
+  }
+  const saved = await saveFile(blob, file.name, "Word document", ".docx", blob.type);
+  if (saved) toast("Saved " + saved + " (this browser can't share files): attach it to an email from there.");
+  return saved;
+}
+
 // for the tests
-window.RN = { S, P, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
