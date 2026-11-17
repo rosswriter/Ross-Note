@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.8.0";
-import * as ed from "./editor.js?v=1.8.0";
-import { Store, PICTURES } from "./store.js?v=1.8.0";
-import * as spell from "./spell.js?v=1.8.0";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.8.0";
+import * as md from "./md.js?v=1.8.2";
+import * as ed from "./editor.js?v=1.8.2";
+import { Store, PICTURES } from "./store.js?v=1.8.2";
+import * as spell from "./spell.js?v=1.8.2";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.8.2";
 
-export const VERSION = "1.8.0";
+export const VERSION = "1.8.2";
 export const EDITION = "V7-full";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -664,6 +664,16 @@ function updateHead() {
 // ------------------------------------------------------------------ Word comments (Ross Writer scenes)
 // The scene's comments listed beside the page: who, when, the words they're on, what they say. They're
 // kept in the Word file as you edit (wordpatch.js); here they're read only. Tap one to go to its words.
+// the comments pane's own text size (11 to 26), remembered
+function commentSize(step) {
+  const s = S.settings;
+  s.cSize = step === 0 ? 13 : Math.max(11, Math.min(26, (s.cSize || 13) + step));
+  saveSettings();
+  document.documentElement.style.setProperty("--csize", s.cSize + "px");
+  toast("Comments text size " + s.cSize, 1200);
+}
+document.documentElement.style.setProperty("--csize", (S.settings.cSize || 13) + "px");
+
 function toggleComments() {
   S.settings.showComments = !S.settings.showComments;
   saveSettings();
@@ -700,6 +710,19 @@ function renderComments() {
     x.textContent = "✕";
     x.title = "Hide the comments";
     x.onclick = toggleComments;
+    // the comments' text size: A− / A+ (also View ▸ Comments Text Larger / Smaller, Ctrl+Alt+= / Ctrl+Alt+−)
+    const sizes = document.createElement("span");
+    sizes.className = "csizes";
+    for (const [label, step, tip] of [["A−", -1, "Smaller text in the comments (Ctrl+Alt+−)"], ["A+", 1, "Larger text in the comments (Ctrl+Alt+=)"]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.title = tip;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.onclick = (e) => { e.stopPropagation(); commentSize(step); };
+      sizes.appendChild(b);
+    }
+    top.appendChild(sizes);
     top.appendChild(x);
     p.cpanel.appendChild(top);
     const replies = (id) => cs.filter((c) => c.parent === id);
@@ -1763,6 +1786,9 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.altKey && !e.shiftKey && (k === "o" || k === "O" || e.code === "KeyO")) fn = showHeadings;
   else if (c && e.altKey && !e.shiftKey && (k === "f" || k === "F" || e.code === "KeyF")) fn = focusSearch;
   else if (c && e.altKey && e.shiftKey && (k === "v" || k === "V" || e.code === "KeyV")) fn = () => pasteFromClipboard(true);
+  else if (c && e.altKey && !e.shiftKey && (k === "=" || k === "+" || e.code === "Equal")) fn = () => commentSize(1);
+  else if (c && e.altKey && !e.shiftKey && (k === "-" || e.code === "Minus")) fn = () => commentSize(-1);
+  else if (c && e.altKey && !e.shiftKey && (k === "0" || e.code === "Digit0")) fn = () => commentSize(0);
   else if (c && e.shiftKey && (k === ">" || e.code === "Period")) fn = COMMANDS.bigger;
   else if (c && e.shiftKey && (k === "<" || e.code === "Comma")) fn = COMMANDS.smaller;
   else if (c && e.shiftKey && !e.altKey && (k === "G" || k === "g")) fn = () => findGo(true);
@@ -2057,6 +2083,7 @@ function menuItems(name) {
       "-",
       { label: "Import a Word Document…", fn: () => $("file-docx").click(), off: !!(S.store && S.store.isDoc) },
       { label: "Import a Notebook (NoteCase Pro, FeatherNotes)…", fn: () => $("file-book").click(), off: !!(S.store && (S.store.isDoc || S.store.isProject)) },
+      { label: "Import a NobleNote Folder…", fn: () => importNoble(), off: !!(S.store && (S.store.isDoc || S.store.isProject)) },
       { label: "Import a Ross Writer Project as Notes…", fn: () => importProject(), off: !!(S.store && (S.store.isDoc || S.store.isProject)) },
       { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
@@ -2147,6 +2174,9 @@ function menuItems(name) {
       { label: "Pop-up Note", on: !PN.el.hidden, fn: togglePop, keys: "Ctrl+Alt+I" },
       { label: "Check Spelling", on: spellMode() === "ross", fn: toggleSpelling, keys: "F7" },
       { label: "Show Comments", on: !!s.showComments, fn: toggleComments, off: !(A.note && A.note.comments && A.note.comments.length) },
+      { label: "Comments Text Larger", fn: () => commentSize(1), keys: "Ctrl+Alt+=" },
+      { label: "Comments Text Smaller", fn: () => commentSize(-1), keys: "Ctrl+Alt+−" },
+      { label: "Comments Text Normal Size", fn: () => commentSize(0), keys: "Ctrl+Alt+0" },
       "-",
       { label: "Split Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
       { label: "Split Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
@@ -2280,7 +2310,7 @@ function showKeys() {
     "Insert date: Ctrl+;    Date and time: Ctrl+Shift+;",
     "Find: Ctrl+F    Find and Replace: Ctrl+H    Next: F3    Previous: Ctrl+Shift+G (or Shift+F3)",
     "List all matches (this note, all notes, or the whole project): Ctrl+Shift+F    ^p a line's end, ^t a tab",
-    "Comment: Ctrl+Alt+M, or right-click the words",
+    "Comment: Ctrl+Alt+M, or right-click the words    Comments text size: Ctrl+Alt+=  Ctrl+Alt+−  Ctrl+Alt+0 (or A− A+ in the pane)",
     "Paste as plain text: Ctrl+Alt+Shift+V    Right-click: spelling, cut, copy, paste, comment",
     "Check spelling on or off: F7",
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
@@ -2379,7 +2409,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.8.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.8.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -2504,6 +2534,92 @@ $("file-book").addEventListener("change", async (e) => {
   if (f) await importNotebook(f);
 });
 
+// ------------------------------------------------------------------ a NobleNote folder, brought in as notes
+// The folder is only read: each notebook (folder) becomes a note with its notes under it, all under one
+// note named after the folder, placed after the open note. Empty notes and non-notes are left out.
+async function importNoble(dir = null) {
+  await flushSave();
+  if (S.store && (S.store.isDoc || S.store.isProject)) {
+    dialog("Import a NobleNote Folder", "Go back to your notes first (File ▸ Back to My Notes): NobleNote's notes come in among them.");
+    return null;
+  }
+  if (!dir) {
+    if (!window.showDirectoryPicker) { dialog("Import a NobleNote Folder", "This browser can't open a folder. Ross Note needs Chrome or Edge."); return null; }
+    S.picking = true;
+    try { dir = await window.showDirectoryPicker({ id: "noblenote", mode: "read" }); } catch (e) {
+      if (e && e.name !== "AbortError") dialog("Import a NobleNote Folder", "Couldn't open that folder: " + (e.message || e));
+      return null;
+    } finally { setTimeout(() => { S.picking = false; }, 1500); }
+  }
+  return busy("Looking in “" + dir.name + "”…", (say) => importNobleNow(dir, say), { after: 0 });
+}
+
+async function importNobleNow(dir, say) {
+  const NB = await import("./notebooks.js?v=1.8.2");
+  let got;
+  try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
+    dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
+    return null;
+  }
+  const notes = (t) => t.reduce((a, n) => a + (n.folder ? 0 : 1) + notes(n.children), 0);
+  const total = NB.count(got.tree);
+  if (!notes(got.tree)) {
+    dialog("Import a NobleNote Folder", `There are no notes in “${dir.name}”.\n\nChoose NobleNote's notes folder ` +
+      "(usually called nobleNote): the one that holds a folder for each notebook.");
+    return null;
+  }
+  const cur = S.note;
+  const parent = cur ? cur.parent : S.store.root;
+  const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+  const orders = new Set();
+  const conflicts = [];
+  let done = 0;
+  const make = async (par, idx, node) => {
+    let textFor;
+    if (node.html != null) {
+      const lines = await NB.qtHtmlLines(node.html, async () => null, { pre: true, webPictures: true, relative: true });
+      textFor = (n) => NB.tidyNote(md.serialize(lines, { dir: n.folderParts() }), "");
+    } else if (node.text != null) textFor = () => NB.tidyNote(node.text.replace(/\r\n?/g, "\n"), "");
+    else textFor = () => "";
+    // its name as its first line; a name Ross Note would read as something else (“1. Digger…”, a list) as a heading
+    const body = textFor;
+    const head = md.titleOf(node.title) === node.title.trim() ? node.title.trim() : "# " + node.title.trim();
+    textFor = (n) => { const t = body(n).replace(/[\u00a0\u202f]/g, " ").replace(/^\n+/, ""); return md.titleOf(t) === node.title.trim() ? t : head + "\n" + t; };
+    const name = md.titleOf(textFor({ folderParts: () => par.childParts() })) || node.title || "Untitled";
+    const n = await S.store.addNote(par, idx, name, textFor);
+    orders.add(par);
+    if (/\(conflict \d{4}-\d\d-\d\d/i.test(node.title)) conflicts.push(n);
+    done++;
+    if (done % 3 === 0 || done === total + 1) { say(`Importing “${dir.name}”: ${done} of ${total + 1} notes`); await breathe(); }
+    for (const c of node.children) await make(n, n.children.length, c);
+    return n;
+  };
+  let top;
+  const title = /^noblenote$/i.test(dir.name) ? "NobleNote" : dir.name;
+  const onWrite = S.store.onWrite;
+  S.store.onWrite = null;
+  try {
+    await queue(async () => {
+      top = await make(parent, index, { title, children: got.tree });
+      say(`Importing “${dir.name}”: putting them in order…`);
+      for (const par of orders) await S.store.writeOrder(par);
+    });
+  } finally { S.store.onWrite = onWrite; }
+  if (onWrite) onWrite(top);
+  S.settings.expanded = [...new Set([...S.settings.expanded, top.key()])];
+  await openNote(top);
+  updateCount();
+  const n = notes(got.tree), nb = total - n;
+  dialog("Import a NobleNote Folder", `Imported ${n} note${n === 1 ? "" : "s"}` + (nb ? ` in ${nb} notebook${nb === 1 ? "" : "s"}` : "") +
+    ` under “${top.title()}”.` +
+    (got.skipped.empty ? `\n\n${got.skipped.empty} empty note${got.skipped.empty === 1 ? " was" : "s were"} left out.` : "") +
+    (got.skipped.other ? `\n\n${got.skipped.other} other file${got.skipped.other === 1 ? "" : "s"} or folder${got.skipped.other === 1 ? "" : "s"} (settings, backups, programs) left out.` : "") +
+    (conflicts.length ? `\n\n${conflicts.length} note${conflicts.length === 1 ? " is a" : "s are"} sync-conflict cop${conflicts.length === 1 ? "y" : "ies"} (“conflict” in the name): ` +
+      "compare each with its namesake and keep the one you want." : "") +
+    "\n\nThe NobleNote folder itself isn't changed.");
+  return top;
+}
+
 async function importNotebook(file) {
   if (S.store && (S.store.isDoc || S.store.isProject)) { toast("Notebooks come in as notes: File ▸ Back to My Notes first."); return null; }
   return busy("Opening " + file.name + "…", (say) => importNotebookNow(file, say), { after: 0 });
@@ -2511,7 +2627,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.8.0");
+  const NB = await import("./notebooks.js?v=1.8.2");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -2726,7 +2842,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.8.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.8.2"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3062,7 +3178,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.8.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.8.2");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -4059,7 +4175,7 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
