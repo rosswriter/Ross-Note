@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.7.3";
-import * as wordio from "./wordio.js?v=1.7.3";
-import { blockers, patchDocx, sigOf } from "./wordpatch.js?v=1.7.3";
+import * as md from "./md.js?v=1.7.0";
+import * as wordio from "./wordio.js?v=1.7.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.7.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -57,7 +57,8 @@ export class PNote {
     this.children = [];
     this.text = null;
     this.modified = 0;
-    this.readOnly = null;         // what keeps it from being written: ["comments", ...], or null
+    this.readOnly = null;         // what keeps it from being written: ["tracked changes", ...], or null
+    this.comments = [];           // its Word comments (wordpatch.readComments), for the list beside the page
   }
   isRoot() { return this.parent === null; }
   folderParts() { return []; }
@@ -117,17 +118,29 @@ export class ProjectStore {
     this.data = data;
     this.jsonModified = f.lastModified;
     const root = new PNote(null, null);
-    const build = async (parent, list) => {
+    const all = [];
+    const build = (parent, list) => {
       for (const raw of list) {
         if (!raw || typeof raw !== "object") continue;
         if (!raw.id) raw.id = newId();
         const n = new PNote(parent, raw);
         parent.children.push(n);
-        await this.load(n);
-        if (Array.isArray(raw.children)) await build(n, raw.children);
+        all.push(n);
+        if (Array.isArray(raw.children)) build(n, raw.children);
       }
     };
-    await build(root, data.nodes);
+    build(root, data.nodes);
+    // the scenes read side by side (a few at once: Android answers each file call slowly), counted as they come
+    let done = 0, next = 0;
+    const worker = async () => {
+      while (next < all.length) {
+        const n = all[next++];
+        await this.load(n);
+        done++;
+        if (this.onProgress) this.onProgress(done, all.length);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, all.length) }, worker));
     this.root = root;
     return root;
   }
@@ -180,6 +193,7 @@ export class ProjectStore {
       // just as the page gave it, if that's what was written last (and the title's the same)
       n.text = known.shown != null && known.shownTitle === n.title() ? known.shown : this.withTitle(n, known);
       n.readOnly = known.readOnly;
+      n.comments = known.comments || [];
       n.modified = file.lastModified;
       return n.text;
     }
@@ -197,6 +211,7 @@ export class ProjectStore {
     sc.mtime = file.lastModified;
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;
+    n.comments = sc.comments || [];
     n.modified = file.lastModified;
     n.text = this.withTitle(n, sc);
     if (!sc.readOnly && sc.files) this.template = sc;
@@ -228,7 +243,9 @@ export class ProjectStore {
     const back = this.ownPictures(id, wordio.fromNoteLines(md.parse(text).slice(1)));
     const kept = got.lines.slice(0, got.lines.length - trailing);
     const sigs = back.length === kept.length ? back.map(sigOf).concat(got.lines.slice(kept.length).map(sigOf)) : null;
-    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text };
+    let comments = [];
+    try { comments = await readComments(got.files); } catch (e) { comments = []; }
+    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are
@@ -318,6 +335,45 @@ export class ProjectStore {
     n.text = text;
     const now = this.scenes.get(raw.id);
     if (now) { now.shown = text; now.shownTitle = n.title(); }
+  }
+
+  // ------------------------------------------------------------ comments (the scene's words untouched)
+  // Where a place on the page (line k: 0 the title, then the scene's lines; pos in its words) is in the
+  // Word file: [body paragraph, offset in its words]. The page's words there must be the file's.
+  placeOf(sc, pageLines, line, pos) {
+    if (line < 1) throw new Error("A comment goes on the scene's words, not on its title.");
+    const i = line - 1;
+    const ln = sc.lines[i];
+    if (!ln || ln.src == null) throw new Error("Those words can't take a comment on the tablet (a table or the like): add it in Ross Writer.");
+    const txt = (l) => (l.runs || []).map((r) => (r.img ? md.OBJ : r.t || "")).join("");
+    if (pageLines[line] !== txt(ln)) throw new Error("The page and the scene's file don't match here: wait a moment (it may still be saving) and try again.");
+    let off = pos;
+    for (let k = i - 1; k >= 0 && sc.lines[k].src === ln.src; k--) off += txt(sc.lines[k]).length;
+    return [ln.src, off];
+  }
+
+  // a change to an entry's comments ({kind: add|reply|edit|resolve|delete, ...}, as wordpatch.commentEdit);
+  // for add, a: {line, pos} and b: {line, pos} on the page, with pageLines its lines' words
+  async commentOp(n, op) {
+    const sc = this.scenes.get(n.raw.id);
+    if (!sc || !sc.files) throw new Error("This entry has no Word file to keep comments in yet: type something in it first.");
+    const o = { ...op };
+    if (op.kind === "add") {
+      [o.sp, o.so] = this.placeOf(sc, op.pageLines, op.a.line, op.a.pos);
+      [o.ep, o.eo] = this.placeOf(sc, op.pageLines, op.b.line, op.b.pos);
+    }
+    const blob = await commentEdit(sc.files, o);
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    const keep = n.text;
+    await this.load(n, true);
+    // the page's words are as they were
+    n.text = keep;
+    const now = this.scenes.get(n.raw.id);
+    if (now) { now.shown = keep; now.shownTitle = n.title(); }
+    return n.comments;
   }
 
   async findTemplate() {
@@ -432,4 +488,166 @@ export class ProjectStore {
 
   async hasWordCopy() { return false; }
   async writeWordCopy() { throw new Error("Word copies are for notes in RossNotes"); }
+
+  // several entries read at once (exports, word counts)
+  async readAll(notes) {
+    let next = 0;
+    const worker = async () => { while (next < notes.length) { const n = notes[next++]; try { await this.read(n); } catch (e) { /* as we had it */ } } };
+    await Promise.all(Array.from({ length: Math.min(6, notes.length) }, worker));
+  }
+
+  // a new entry made in one go (imports): its text's first line is its title
+  async addNote(parent, index, title, textFor) {
+    const n = await this.newNote(parent, index, "");
+    const text = typeof textFor === "function" ? await textFor(n) : (textFor || "");
+    await this.write(n, text);
+    return n;
+  }
+
+  // the order is the project file's, written with each change
+  async writeOrder() { /* nothing to do */ }
+}
+
+// ------------------------------------------------------------------ a Word document opened by itself
+// File ▸ Open a Word Document…: one .docx, worked on in place like a project's scene (its title line is the
+// file's name, never written into it). Saves straight back into the file; comments as in scenes.
+export class DocxStore extends ProjectStore {
+  constructor(fileHandle) {
+    super(null, fileHandle.name);
+    this.isDoc = true;
+    this.fileHandle = fileHandle;
+    this.canWrite = true;
+    const stem = fileHandle.name.replace(/\.docx$/i, "");
+    this.raw = { id: "doc", title: stem, flag: "", include: true, expanded: true, file: fileHandle.name };
+  }
+
+  get label() { return this.fileName; }
+
+  async scan() {
+    this.data = { format: "word-document", nodes: [this.raw] };
+    const root = new PNote(null, null);
+    const n = new PNote(root, this.raw);
+    root.children.push(n);
+    this.root = root;
+    await this.load(n);
+    if (!this.canWrite && !n.readOnly) n.readOnly = ["no permission to save into it"];
+    return root;
+  }
+
+  // the "folder" the file is in: just the file
+  async sceneFile() {
+    const fh = this.fileHandle;
+    return [{ getFileHandle: async () => fh }, fh.name];
+  }
+
+  async saveProject() { /* no project file */ }
+  async newNote() { throw new Error("A Word document opened by itself is one page: new pages are for notes and projects."); }
+  async move() { return false; }
+  async rename() { return false; }
+  async delete() { throw new Error("Close the document instead (File ▸ Back to My Notes)."); }
+  async keepConflict() {
+    throw new Error(`“${this.fileName}” has changed on another device since you opened it. ` +
+      "Your latest typing wasn't saved into it: copy what you need, then open it again (File ▸ Open a Word Document…).");
+  }
+}
+
+// ------------------------------------------------------------------ a Markdown file opened by itself
+// File ▸ Open a Word Document or Note…: a .md (or .txt) file from anywhere, read and edited in place, saved
+// straight back into it (its first line its title, as a note's). One page, like a Word document opened by itself.
+export class MdFileStore {
+  constructor(fileHandle) {
+    this.isProject = true;        // (the menus' "Back to My Notes" and the like)
+    this.isDoc = true;
+    this.isMd = true;
+    this.fileHandle = fileHandle;
+    this.fileName = fileHandle.name;
+    this.handle = null;
+    this.canWrite = true;
+    this.raw = { id: "md", title: fileHandle.name.replace(/\.(md|markdown|mdown|mkd|txt)$/i, ""), file: fileHandle.name };
+    this.root = new PNote(null, null);
+    this.crlf = false;
+    this.bom = false;
+  }
+
+  get label() { return this.fileName; }
+
+  async scan() {
+    const root = new PNote(null, null);
+    const n = new PNote(root, this.raw);
+    n.comments = undefined;
+    root.children.push(n);
+    this.root = root;
+    await this.load(n);
+    if (!this.canWrite) n.readOnly = ["no permission to save into it"];
+    return root;
+  }
+
+  async load(n) {
+    const f = await this.fileHandle.getFile();
+    let text = await f.text();
+    this.bom = text.startsWith("﻿");
+    if (this.bom) text = text.slice(1);
+    this.crlf = text.includes("\r\n");
+    text = text.replace(/\r\n/g, "\n");
+    n.text = text;
+    n.modified = f.lastModified;
+    const t = md.titleOf ? md.titleOf(text) : "";
+    if (t) this.raw.title = t;
+    return text;
+  }
+
+  find(key) { return key === "md" ? this.root.children[0] : null; }
+  all() { return [...this.root.walk()]; }
+  async read(n) { return this.load(n); }
+
+  async peek(n) {
+    try {
+      const f = await this.fileHandle.getFile();
+      return { modified: f.lastModified, text: f.lastModified === n.modified ? n.text : "\u0000changed elsewhere" };
+    } catch (e) { return null; }
+  }
+
+  async write(n, text) {
+    if (n.readOnly) throw new Error(`“${this.fileName}” can't be saved here: ${n.readOnly.join(", ")}.`);
+    let out = this.crlf ? text.replace(/\n/g, "\r\n") : text;
+    if (this.bom) out = "﻿" + out;
+    const w = await this.fileHandle.createWritable();
+    await w.write(out);
+    await w.close();
+    n.text = text;
+    n.modified = (await this.fileHandle.getFile()).lastModified;
+    const t = md.titleOf ? md.titleOf(text) : "";
+    if (t) this.raw.title = t;
+  }
+
+  async newNote() { throw new Error("A file opened by itself is one page: new pages are for notes and projects."); }
+  async move() { return false; }
+  async rename() { return false; }
+  async delete() { throw new Error("Close the file instead (File ▸ Back to My Notes)."); }
+  async keepConflict() {
+    throw new Error(`“${this.fileName}” has changed on another device since you opened it. ` +
+      "Your latest typing wasn't saved into it: copy what you need, then open it again.");
+  }
+  async savePicture() { throw new Error("Pictures can't be added to a file opened by itself: open its folder as notes instead."); }
+  async pictureFile() { throw new Error("no such picture"); }
+  async hasWordCopy() { return false; }
+  async writeWordCopy() { throw new Error("Word copies are for notes in RossNotes"); }
+
+  // several entries read at once (exports, word counts)
+  async readAll(notes) {
+    let next = 0;
+    const worker = async () => { while (next < notes.length) { const n = notes[next++]; try { await this.read(n); } catch (e) { /* as we had it */ } } };
+    await Promise.all(Array.from({ length: Math.min(6, notes.length) }, worker));
+  }
+
+  // a new entry made in one go (imports): its text's first line is its title
+  async addNote(parent, index, title, textFor) {
+    const n = await this.newNote(parent, index, "");
+    const text = typeof textFor === "function" ? await textFor(n) : (textFor || "");
+    await this.write(n, text);
+    return n;
+  }
+
+  // the order is the project file's, written with each change
+  async writeOrder() { /* nothing to do */ }
 }
