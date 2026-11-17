@@ -3,11 +3,11 @@
 // everything it loads carries ?v=<version> (or never changes: fonts, icons, the database reader), so the
 // kept copy is used straight away, with no wait on the network. (The notes themselves are in your folder.)
 const PREFIX = "ross-note-";
-const CACHE = PREFIX + "1.6.3";
-const V = "?v=1.6.3";
+const CACHE = PREFIX + "1.6.4";
+const V = "?v=1.6.4";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css" + V,
-  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V,
+  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V,
   "vendor/sqljs/sql-wasm.js", "vendor/sqljs/sql-wasm.wasm",
   "fonts/Caladea-Regular.woff2", "fonts/Caladea-Bold.woff2", "fonts/Caladea-Italic.woff2", "fonts/Caladea-BoldItalic.woff2",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png",

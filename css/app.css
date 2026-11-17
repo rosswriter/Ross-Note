@@ -72,6 +72,23 @@ button { font: inherit; color: inherit; }
 #findbar button:hover { background: var(--ui2); }
 #findbar label { display: flex; align-items: center; gap: 4px; font-size: 14px; white-space: nowrap; }
 #find-count { min-width: 64px; font-size: 13px; color: var(--ui-muted); }
+/* spelling: a red wavy underline (drawn over the text; the note itself isn't changed) */
+::highlight(spell) { text-decoration: underline wavy #d32f2f; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.dark ::highlight(spell) { text-decoration-color: #ff6b6b; }
+#spellbar { position: fixed; z-index: 85; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: min(94vw, 560px);
+  padding: 8px; border-radius: 12px; background: var(--chrome, #fff); color: var(--ink, #222); border: 1px solid rgba(0, 0, 0, .15);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .22); font: 15px system-ui, sans-serif; }
+#spellbar[hidden] { display: none; }
+#spellbar button { min-height: 40px; padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, .12); background: transparent;
+  color: inherit; font: inherit; cursor: pointer; }
+#spellbar button.sug { font-weight: 600; background: rgba(27, 82, 61, .09); border-color: rgba(27, 82, 61, .3); }
+#spellbar button.act { font-size: 14px; opacity: .85; }
+#spellbar .none { padding: 0 6px; opacity: .7; font-style: italic; }
+.dark #spellbar { background: #2a2d31; color: #eee; border-color: rgba(255, 255, 255, .15); }
+.dark #spellbar button { border-color: rgba(255, 255, 255, .18); }
+.dark #spellbar button.sug { background: rgba(138, 180, 248, .14); border-color: rgba(138, 180, 248, .35); }
+@media print { #spellbar { display: none !important; } }
+
 ::highlight(find) { background-color: #ffd699; color: #1d1a10; }
 ::highlight(find-current) { background-color: #ff8f00; color: #000; }
 

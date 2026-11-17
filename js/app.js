@@ -1,10 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.6.3";
-import * as ed from "./editor.js?v=1.6.3";
-import { Store, PICTURES } from "./store.js?v=1.6.3";
+import * as md from "./md.js?v=1.6.4";
+import * as ed from "./editor.js?v=1.6.4";
+import { Store, PICTURES } from "./store.js?v=1.6.4";
+import * as spell from "./spell.js?v=1.6.4";
 
-export const VERSION = "1.6.3";
+export const VERSION = "1.6.4";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -268,6 +269,9 @@ async function openRoot(handle, quiet) {
     try { await S.store.scan(); } finally { S.store.onProgress = null; }
     if (!S.store.root.children.length) await makeWelcome();
   }), { after: 0 });
+  dictTime = 0;
+  if (spellMode() === "ross" && spell.ready()) readDictionary(true);
+  setTimeout(applySpellMode, 50);
   renderTree();
   layout();
   const n = S.store.find(S.settings.open) || S.store.root.children[0];
@@ -440,6 +444,189 @@ function showText(text, pane = A) {
   ed.relayout(pane.page);
   loadPictures(pane.page);
   pane.page.dataset.loaded = "1";
+  spellSoon(0);
+}
+
+// ------------------------------------------------------------------ spelling
+// "ross": Ross Note's own British English check (the laptop's dictionary, your words shared through the
+// RossNotes folder); "device": the tablet's own spell checker; "off": none.
+const DICT_FILE = "Ross Note dictionary.txt";
+let spellTimer = 0, dictTime = 0;
+const spellMode = () => S.settings.spell || "ross";
+
+function applySpellMode() {
+  for (const p of P) p.page.spellcheck = spellMode() === "device";
+  if (spellMode() !== "ross") {
+    if (window.CSS && CSS.highlights) CSS.highlights.delete("spell");
+    hideSpellBar();
+    return;
+  }
+  if (!spell.ready()) {
+    busy("Loading the dictionary…", () => spell.load(), { after: 800, quiet: true })
+      .then(() => readDictionary()).then(() => spellSoon(0))
+      .catch((e) => toast("The spelling dictionary couldn't be loaded: " + (e.message || e) + ". Spelling isn't checked."));
+  } else spellSoon(0);
+}
+
+// your own words: the dictionary file in the RossNotes folder (read again when another device changes it)
+async function readDictionary(force = false) {
+  if (!S.store) return;
+  const [text, when] = await S.store.readTop(DICT_FILE);
+  if (!force && when && when === dictTime) return;
+  dictTime = when;
+  spell.setOwn(text ? text.split(/\r?\n/) : []);
+  spellSoon(0);
+}
+
+async function saveDictionary() {
+  const text = spell.ownWords().join("\n") + "\n";
+  try { await queue(async () => { dictTime = await S.store.writeTop(DICT_FILE, text); }); } catch (e) { /* the queue said so */ }
+}
+
+function spellSoon(ms = 600) {
+  clearTimeout(spellTimer);
+  spellTimer = setTimeout(spellCheckNow, ms);
+}
+
+// every misspelt word in the open notes, underlined (the page itself is never changed)
+function spellCheckNow() {
+  if (!(window.CSS && CSS.highlights && window.Highlight)) return;
+  if (spellMode() !== "ross" || !spell.ready()) { CSS.highlights.delete("spell"); return; }
+  const ranges = [];
+  for (const p of P) {
+    if (!p.note || p.el.hidden) continue;
+    for (const div of p.page.children) {
+      if (div.dataset.code) continue;
+      const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.parentElement && node.parentElement.closest("code, pre")) continue;
+        for (const [a, b, w] of spell.wordsIn(node.data)) {
+          if (spell.ok(w)) continue;
+          const r = new Range();
+          r.setStart(node, a);
+          r.setEnd(node, b);
+          ranges.push(r);
+        }
+      }
+    }
+  }
+  S.spellRanges = ranges;
+  if (ranges.length) CSS.highlights.set("spell", new Highlight(...ranges));
+  else CSS.highlights.delete("spell");
+}
+
+// the misspelt word at a place in the page, if there is one
+function misspeltAt(node, offset) {
+  for (const r of S.spellRanges || []) {
+    if (r.startContainer === node && offset >= r.startOffset && offset <= r.endOffset && r.toString()) return r;
+  }
+  return null;
+}
+
+// a bar of suggestions under the word: tap one, or add the word to your dictionary, or ignore it
+function showSpellBar(range) {
+  const word = range.toString();
+  const bar = $("spellbar");
+  bar.textContent = "";
+  const sug = spell.suggest(word);
+  const btn = (label, cls, fn) => {
+    const b = document.createElement("button");
+    b.className = cls;
+    b.textContent = label;
+    b.addEventListener("pointerdown", (e) => e.preventDefault());        // the caret stays in the note
+    b.onclick = () => { hideSpellBar(); fn(); };
+    bar.appendChild(b);
+  };
+  for (const x of sug) btn(x, "sug", () => replaceWord(range, x));
+  if (!sug.length) { const n = document.createElement("span"); n.className = "none"; n.textContent = "No suggestions"; bar.appendChild(n); }
+  btn("Add to Dictionary", "act", () => { spell.addOwn(word); saveDictionary(); spellSoon(0); toast(`“${word}” is in your dictionary.`); });
+  btn("Ignore", "act", () => { spell.ignore(word); spellSoon(0); });
+  bar.hidden = false;
+  const r = range.getBoundingClientRect();
+  const top = r.bottom + 8 + bar.offsetHeight > window.innerHeight ? r.top - bar.offsetHeight - 8 : r.bottom + 8;
+  bar.style.top = Math.max(8, top) + "px";
+  bar.style.left = Math.max(8, Math.min(r.left, window.innerWidth - bar.offsetWidth - 8)) + "px";
+  S.spellBarFor = range;
+}
+
+function hideSpellBar() {
+  const bar = $("spellbar");
+  if (bar) bar.hidden = true;
+  S.spellBarFor = null;
+}
+
+function replaceWord(range, text) {
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand("insertText", false, text);
+  spellSoon(0);
+}
+
+// a tap (or a click) in a misspelt word brings up its suggestions; right-click too, on the laptop
+document.addEventListener("selectionchange", () => {
+  if (spellMode() !== "ross" || !spell.ready()) return;
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) { hideSpellBar(); return; }
+  const node = sel.anchorNode;
+  if (!node || node.nodeType !== 3 || !P.some((p) => p.page.contains(node))) { hideSpellBar(); return; }
+  if (S.typing) return;
+  const r = misspeltAt(node, sel.anchorOffset);
+  if (r && r !== S.spellBarFor) showSpellBar(r);
+  else if (!r) hideSpellBar();
+});
+for (const p of P) {
+  p.page.addEventListener("input", () => {
+    S.typing = true;
+    hideSpellBar();
+    clearTimeout(S.typingTimer);
+    S.typingTimer = setTimeout(() => { S.typing = false; }, 900);
+    spellSoon(700);
+  });
+  p.page.addEventListener("contextmenu", (e) => {
+    if (spellMode() !== "ross" || !spell.ready()) return;
+    const pos = document.caretPositionFromPoint ? document.caretPositionFromPoint(e.clientX, e.clientY) : null;
+    const cr = !pos && document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+    const node = pos ? pos.offsetNode : cr && cr.startContainer;
+    const off = pos ? pos.offset : cr && cr.startOffset;
+    const r = node && misspeltAt(node, off);
+    if (!r) return;
+    e.preventDefault();
+    showSpellBar(r);
+  });
+  p.scroller.addEventListener("scroll", hideSpellBar, { passive: true });
+}
+
+function showDictionary() {
+  const box = document.createElement("div");
+  box.className = "choose";
+  const words = spell.ownWords();
+  const p = document.createElement("p");
+  p.textContent = words.length
+    ? `${words.length} word${words.length === 1 ? "" : "s"} you've added. They're kept in “${DICT_FILE}” in your RossNotes folder, ` +
+      "so the laptop's Ross Note knows them too. Untick any to take them out."
+    : `None yet. A word you add (tap it, then Add to Dictionary) is kept in “${DICT_FILE}” in your RossNotes folder, ` +
+      "so the laptop's Ross Note knows it too.";
+  box.appendChild(p);
+  const list = document.createElement("div");
+  list.className = "picklist";
+  for (const w of words) {
+    const l = document.createElement("label");
+    l.innerHTML = '<input type="checkbox" checked> ';
+    l.querySelector("input").dataset.word = w;
+    l.append(w);
+    list.appendChild(l);
+  }
+  if (words.length) box.appendChild(list);
+  ask("Your Dictionary", box, words.length ? [["Save", "go", true]] : []).then((v) => {
+    if (v !== "go") return;
+    const keep = [...list.querySelectorAll("input:checked")].map((i) => i.dataset.word);
+    if (keep.length === words.length) return;
+    spell.setOwn(keep);
+    saveDictionary();
+    spellSoon(0);
+  });
 }
 
 async function loadPictures(pg = page) {
@@ -576,6 +763,7 @@ async function refresh(force = false) {
 }
 
 async function refreshNow() {
+  if (spellMode() === "ross" && spell.ready()) readDictionary();
   await flushSave();
   await queue(async () => {
     const was = P.map((p) => [p.note && p.note.key(), p.note && p.note.text]);
@@ -1414,6 +1602,12 @@ function menuItems(name) {
       { label: "Space Between Paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
       "-",
       { label: "Dark Mode", on: s.dark, fn: COMMANDS.dark, keys: "Ctrl+Shift+D" },
+      "-",
+      "Spelling",
+      { label: "Check Spelling (British English)", on: spellMode() === "ross", fn: () => { s.spell = "ross"; saveSettings(); applySpellMode(); } },
+      { label: "Use the Tablet's Own Spell Checker", on: spellMode() === "device", fn: () => { s.spell = "device"; saveSettings(); applySpellMode(); } },
+      { label: "No Spelling Check", on: spellMode() === "off", fn: () => { s.spell = "off"; saveSettings(); applySpellMode(); } },
+      { label: "Your Dictionary…", fn: showDictionary, off: spellMode() !== "ross" || !spell.ready() },
     ];
     case "help": return [
       { label: "Keyboard Shortcuts", fn: showKeys, keys: "F1" },
@@ -1618,7 +1812,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.3")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.4")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1716,7 +1910,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.6.3");
+  const NB = await import("./notebooks.js?v=1.6.4");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -1826,7 +2020,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.6.3"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.6.4"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -2547,6 +2741,6 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, importProject, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, importProject, spell, spellCheckNow, showDictionary, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

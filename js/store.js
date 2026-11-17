@@ -6,7 +6,7 @@
 //   Word Copies/          a Word document kept for a note, as the tree (not a note)
 //   .order                the order of the notes in a folder (JSON list of names)
 //   .trash/<time>/        deleted notes
-import { safeName, titleOf } from "./md.js?v=1.6.3";
+import { safeName, titleOf } from "./md.js?v=1.6.4";
 
 export const EXT = ".md";
 export const ORDER = ".order";
@@ -111,6 +111,19 @@ export class Store {
     this.dirs = new Map();        // folder handles already found ("a/b" -> handle): each lookup is a slow call
     this.wordCopies = new Map();  // note key -> has a Word copy (asked once, not on every save)
     this.onProgress = null;       // (notes read so far) while reading the folder
+  }
+
+  // a text file at the top of the folder (the spelling dictionary): [text or null, its time]
+  async readTop(name) {
+    try {
+      const f = await (await this.handle.getFileHandle(name)).getFile();
+      return [await f.text(), f.lastModified];
+    } catch (e) { return [null, 0]; }
+  }
+
+  async writeTop(name, text) {
+    const fh = await writeFile(this.handle, name, text);
+    return (await fh.getFile()).lastModified;
   }
 
   // folders were renamed, moved or removed: find them afresh
