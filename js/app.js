@@ -1,10 +1,10 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.6.2";
-import * as ed from "./editor.js?v=1.6.2";
-import { Store, PICTURES } from "./store.js?v=1.6.2";
+import * as md from "./md.js?v=1.6.3";
+import * as ed from "./editor.js?v=1.6.3";
+import { Store, PICTURES } from "./store.js?v=1.6.3";
 
-export const VERSION = "1.6.2";
+export const VERSION = "1.6.3";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -1318,6 +1318,7 @@ function menuItems(name) {
       "-",
       { label: "Import a Word Document…", fn: () => $("file-docx").click() },
       { label: "Import a Notebook (NoteCase Pro, FeatherNotes)…", fn: () => $("file-book").click() },
+      { label: "Import a Ross Writer Project…", fn: () => importProject() },
       { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
@@ -1617,7 +1618,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.2")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.3")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1715,7 +1716,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.6.2");
+  const NB = await import("./notebooks.js?v=1.6.3");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -1801,6 +1802,180 @@ async function importNotebookNow(file, say) {
   await openNote(top);
   updateCount();
   toast(`Imported ${NB.count(got.tree)} notes from ${file.name}`);
+  return top;
+}
+
+// ------------------------------------------------------------------ a Ross Writer project, brought in as notes
+// The project's folder is only read: its chapters and scenes become notes (a note named after the project,
+// the chapters under it, their scenes under them), each scene's words and pictures from its Word file.
+async function chooseProjectFolder() {
+  if (!window.showDirectoryPicker) {
+    dialog("Import a Ross Writer Project", "This browser can't open a folder. Ross Note needs Chrome or Edge.");
+    return null;
+  }
+  S.picking = true;
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: "rwproject", mode: "read" }); } catch (e) {
+    if (e && e.name !== "AbortError") dialog("Import a Ross Writer Project", "Couldn't open that folder: " + (e.message || e));
+    return null;
+  } finally { setTimeout(() => { S.picking = false; }, 1500); }
+  return dir;
+}
+
+async function importProject(dir = null, opts = null) {
+  await flushSave();
+  dir = dir || await chooseProjectFolder();
+  if (!dir) return null;
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.6.3"), { after: 0 });
+  let names;
+  try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
+    dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
+    return null;
+  }
+  if (!names.length) {
+    dialog("Import a Ross Writer Project", `There's no Ross Writer project in “${dir.name}”.\n\nChoose the project's own ` +
+      "folder: the one that holds the project's .rwproj file and its Scenes folder.");
+    return null;
+  }
+  let fileName = names[0];
+  if (names.length > 1 && !opts) {
+    const box = document.createElement("div");
+    box.className = "choose";
+    names.forEach((n, k) => {
+      const l = document.createElement("label");
+      l.innerHTML = `<input type="radio" name="proj" value="${k}"${k ? "" : " checked"}> `;
+      l.append(n.replace(/\.rwproj$/i, ""));
+      box.appendChild(l);
+    });
+    if (!await ask("Which Project?", box, [["Next", "go", true]])) return null;
+    fileName = names[+box.querySelector("input:checked").value];
+  }
+  let data;
+  try { data = await RW.readProject(dir, fileName); } catch (e) {
+    dialog("Import a Ross Writer Project", `Couldn't read “${fileName}”: ${e.message || e}`);
+    return null;
+  }
+  const title = (data.title || fileName.replace(/\.rwproj$/i, "")).trim() || "Ross Writer project";
+  const total = RW.countEntries(data.nodes);
+  if (!opts) {
+    const box = document.createElement("div");
+    box.className = "choose";
+    const p = document.createElement("p");
+    p.textContent = `“${title}”: ${total} entr${total === 1 ? "y" : "ies"}. They come in as notes under a note named ` +
+      "after the project, chapters with their scenes under them. The project itself isn't changed.";
+    box.appendChild(p);
+    const group = (name, items) => {
+      const h = document.createElement("div");
+      h.className = "lab";
+      h.textContent = items[0];
+      box.appendChild(h);
+      items.slice(1).forEach(([value, label], k) => {
+        const l = document.createElement("label");
+        l.innerHTML = `<input type="radio" name="${name}" value="${value}"${k ? "" : " checked"}> `;
+        l.append(label);
+        box.appendChild(l);
+      });
+    };
+    group("split", ["Scenes", ["whole", "Each scene as one note"], ["split", "Split scenes at their headings (a note for each heading, under the scene)"]]);
+    group("comments", ["Ross Writer's comments", ["text", "Bring them in as text, at the end of each note"], ["none", "Leave them out"]]);
+    if (!await ask("Import a Ross Writer Project", box, [["Import", "go", true]])) return null;
+    opts = { split: box.querySelector('input[name="split"]:checked').value === "split",
+      comments: box.querySelector('input[name="comments"]:checked').value === "text" };
+  }
+  return busy(`Importing “${title}”…`, (say) => importProjectNow(RW, dir, data, title, total, opts, say), { after: 0 });
+}
+
+async function importProjectNow(RW, dir, data, title, total, opts, say) {
+  const W = await wordModule();
+  const T = (t, f = []) => ({ t, f: new Set(f) });
+  const plain = (t) => ({ kind: null, depth: 1, code: false, runs: [T(t)] });
+  const textOf = (ln) => ln.runs.filter((r) => !r.img).map((r) => r.t).join("").trim();
+  const cur = S.note;
+  const parent = cur ? cur.parent : S.store.root;
+  const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+  const orders = new Set();
+  let done = 0, missing = 0, comments = 0;
+  const add = async (par, idx, lines, picture) => {
+    const textFor = (n) => md.serialize(W.toNoteLines(lines, picture), { dir: n.folderParts() });
+    const name = md.titleOf(textFor({ folderParts: () => par.childParts() })) || "Untitled";
+    const n = await S.store.addNote(par, idx, name, textFor);
+    orders.add(par);
+    return n;
+  };
+  const entry = async (par, raw) => {
+    const name = String(raw.title || "Untitled").trim() || "Untitled";
+    const head = plain(name);
+    let lines = [], media = new Map(), cs = [];
+    if (raw.pdf) lines = [plain(""), plain("A PDF in Ross Writer: " + String(raw.pdf).split(/[\\/]/).pop())];
+    else {
+      const buf = await RW.sceneBytes(dir, raw);
+      if (buf) {
+        try {
+          const got = await W.readDocx(buf);
+          lines = got.lines;
+          media = got.media;
+          if (opts.comments) cs = await RW.readComments(buf);
+        } catch (e) { lines = [plain(""), plain("(Its Word file couldn't be read: " + (e.message || e) + ")")]; }
+      } else if (raw.file) {
+        missing++;
+        lines = [plain(""), plain("(Its Word file, " + raw.file + ", wasn't in the project folder.)")];
+      }
+    }
+    // a scene that starts with its own title as a heading: not twice
+    const firstText = lines.findIndex((ln) => textOf(ln) || ln.runs.some((r) => r.img));
+    if (firstText >= 0 && textOf(lines[firstText]).toLowerCase() === name.toLowerCase() &&
+        lines[firstText].kind && lines[firstText].kind[0] === "h") lines = lines.slice(firstText + 1);
+    // its pictures, into Pictures
+    const saved = new Map();
+    for (const [pname, bytes] of media) {
+      const ext = pname.split(".").pop().toLowerCase();
+      const type = { png: "image/png", gif: "image/gif", bmp: "image/bmp", webp: "image/webp" }[ext] || "image/jpeg";
+      const [blob, nm] = await preparePicture(new File([bytes], `${md.safeName(name)} ${pname}`, { type }));
+      saved.set(pname, await S.store.savePicture(blob, nm));
+    }
+    const picture = (p) => saved.get(p);
+    comments += cs.length;
+    // split at the headings: the scene's opening, then a note for each heading
+    let own = lines, secs = [];
+    if (opts.split) {
+      const sp = W.splitSections(lines);
+      if (sp.secs.length) { own = sp.pre; secs = sp.secs; }
+    }
+    // each comment goes with the part its words are in; a reply goes with the comment it answers
+    const forOwn = [], forSec = secs.map(() => []);
+    let last = forOwn;
+    for (const c of cs) {
+      if (c.reply) { last.push(c); continue; }
+      const k = c.words ? secs.findIndex((sec) => sec.map(textOf).join(" ").includes(c.words.slice(0, 40))) : -1;
+      last = k >= 0 ? forSec[k] : forOwn;
+      last.push(c);
+    }
+    const n = await add(par, par.children.length, [head, ...own, ...RW.commentLines(forOwn)], picture);
+    done++;
+    if (done % 2 === 0 || done === total) { say(`Importing “${data.title || "the project"}”: ${done} of ${total}`); await breathe(); }
+    for (let k = 0; k < secs.length; k++) await add(n, n.children.length, [...secs[k], ...RW.commentLines(forSec[k])], picture);
+    for (const c of raw.children || []) if (c && typeof c === "object") await entry(n, c);
+    return n;
+  };
+  let top;
+  const onWrite = S.store.onWrite;
+  S.store.onWrite = null;
+  try {
+    await queue(async () => {
+      const when = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      top = await add(parent, index, [plain(title), plain(""),
+        plain(`Brought in from the Ross Writer project “${title}” on ${when}. Editing these notes doesn't change the project.`)], () => null);
+      for (const raw of data.nodes) if (raw && typeof raw === "object") await entry(top, raw);
+      say(`Importing “${title}”: putting them in order…`);
+      for (const par of orders) await S.store.writeOrder(par);
+    });
+  } finally { S.store.onWrite = onWrite; }
+  if (onWrite) onWrite(top);
+  S.settings.expanded = [...new Set([...S.settings.expanded, top.key(), ...top.children.map((c) => c.key())])];
+  await openNote(top);
+  updateCount();
+  toast(`Imported “${title}”: ${done} entr${done === 1 ? "y" : "ies"}` + (comments ? `, ${comments} comment${comments === 1 ? "" : "s"}` : "") +
+    (missing ? ` (${missing} Word file${missing === 1 ? "" : "s"} missing)` : ""), 6000);
   return top;
 }
 
@@ -2372,6 +2547,6 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, importProject, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
