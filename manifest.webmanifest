@@ -1,8 +1,8 @@
 {
-  "name": "Ross Note V7-full",
-  "short_name": "Ross Note V7",
-  "description": "Ross Note with Ross Writer projects, Word documents and comments edited in place.",
-  "id": "./?edition=v7full",
+  "name": "Ross Note",
+  "short_name": "Ross Note",
+  "description": "A simple, fast tree of notes, kept as Markdown files in your RossNotes folder.",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

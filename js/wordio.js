@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.8.0";
+import * as md from "./md.js?v=1.6.5";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -211,10 +211,8 @@ function tidyRuns(runs) {
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 
 // {lines (wordio's: kind, depth, runs, code, title), media: Map(name -> Uint8Array), title}
-// opts.keep (a Ross Writer scene): every line as it is (no empty lines taken out), each with .src, the
-// place of its paragraph in the body, so a scene can be written back with the untouched paragraphs as they were
-export async function readDocx(buf, opts = {}) {
-  const files = opts.files || await unzip(buf);
+export async function readDocx(buf) {
+  const files = await unzip(buf);
   const text = async (p) => (files.has(p) ? new TextDecoder().decode(await files.get(p)()) : null);
   const docText = await text("word/document.xml");
   if (!docText) throw new Error("not a Word document");
@@ -363,22 +361,18 @@ export async function readDocx(buf, opts = {}) {
     });
   };
 
-  const block = (el, top) => {
-    [...el.children].forEach((c, idx) => {
-      if (c.namespaceURI !== W) return;
-      if (c.localName === "p") {
-        const ls = paragraph(c);
-        if (top) ls.forEach((ln) => { ln.src = idx; });
-        lines.push(...ls);
-      } else if (c.localName === "tbl") table(c);
+  const block = (el) => {
+    for (const c of el.children) {
+      if (c.namespaceURI !== W) continue;
+      if (c.localName === "p") lines.push(...paragraph(c));
+      else if (c.localName === "tbl") table(c);
       else if (c.localName === "sdt") { const sc = kid(c, "sdtContent"); if (sc) block(sc); }
       else if (c.localName === "ins" || c.localName === "customXml") block(c);
-    });
+    }
   };
   const body = kid(doc.documentElement, "body");
-  if (body) block(body, true);
+  if (body) block(body);
   await Promise.all(pending);
-  if (opts.keep) return { lines, media, title, files, docText };
   const tidy = [];
   for (const ln of lines) {
     const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind;
@@ -497,14 +491,14 @@ function numberingXml(nOrdered) {
     "</w:numbering>";
 }
 
-export function rpr(f, link) {
+function rpr(f, link) {
   let p = "";
   if (link) p += '<w:rStyle w:val="Hyperlink"/>';
   if (f.has("b")) p += "<w:b/><w:bCs/>";
   if (f.has("i")) p += "<w:i/><w:iCs/>";
   if (f.has("s")) p += "<w:strike/>";
-  if (f.has("h")) p += '<w:highlight w:val="yellow"/>';   // highlight before u: Word's order
   if (f.has("u") && !link) p += '<w:u w:val="single"/>';
+  if (f.has("h")) p += '<w:highlight w:val="yellow"/>';
   return p ? `<w:rPr>${p}</w:rPr>` : "";
 }
 
@@ -536,7 +530,7 @@ export function imageSize(b) {
   return null;
 }
 
-export function extOf(b) {
+function extOf(b) {
   if (b[0] === 0x89 && b[1] === 0x50) return ["png", "image/png"];
   if (b[0] === 0x47 && b[1] === 0x49) return ["gif", "image/gif"];
   if (b[0] === 0x42 && b[1] === 0x4D) return ["bmp", "image/bmp"];
