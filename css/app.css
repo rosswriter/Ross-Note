@@ -273,3 +273,55 @@ button { font: inherit; color: inherit; }
   .page img.pic.sel { outline: none; }
   @page { margin: 20mm; }
 }
+
+/* ------------------------------------------------------------------ 1.8.0 */
+/* the word count: the lower right corner, always there */
+#wc { position: fixed; right: 14px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 40; padding: 5px 12px;
+  border-radius: 14px; background: var(--ui); color: var(--ui-ink); border: 1px solid var(--line); font: 13px system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12); cursor: pointer; white-space: nowrap; user-select: none; font-variant-numeric: tabular-nums; }
+#wc:empty { display: none; }
+#wc .more { color: var(--ui-muted); }
+#wc:hover { border-color: var(--ui-muted); }
+.pane .head .hwords { display: none; }
+@media print { #wc, #results, #popnote { display: none !important; } }
+
+/* page view (Ctrl+Shift+L): a page-wide column in the middle, as Ross Writer's page view */
+body.pageview .page { max-width: 44em; margin: 0 auto; box-shadow: 0 0 0 1px var(--line), 0 4px 18px rgba(0, 0, 0, .08); }
+body.pageview .scroller { background: var(--ui2); }
+
+/* Find: where to look; List All */
+#find-scope { height: 32px; border-radius: 6px; border: 1px solid var(--line); background: var(--ui); color: var(--ui-ink); font: inherit; font-size: 14px; }
+#results { position: fixed; z-index: 45; top: 110px; right: 12px; bottom: 56px; width: min(420px, 92vw); display: flex; flex-direction: column;
+  background: var(--ui); color: var(--ui-ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, .22); }
+#results[hidden] { display: none; }
+#results .rhead { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); font: 600 14px system-ui, sans-serif; }
+#results .rtitle { flex: 1; }
+#results .rclose, #popnote .pclose { border: 0; background: none; color: inherit; font-size: 20px; cursor: pointer; padding: 0 6px; }
+#results .rlist { overflow: auto; padding: 4px 0; font: 14px system-ui, sans-serif; }
+#results .rnote { padding: 8px 14px 2px; font-weight: 600; color: var(--ui-muted); font-size: 12px; text-transform: none; }
+#results .rnote .ro { font-weight: 400; font-style: italic; }
+#results .ritem { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; padding: 5px 14px 5px 22px;
+  font: inherit; line-height: 1.35; cursor: pointer; }
+#results .ritem:hover, #results .ritem.cur { background: var(--ui2); }
+#results .ritem mark { background: #ffe07a; color: #222; border-radius: 2px; padding: 0 1px; }
+
+/* the pop-up note: a small notepad over whatever you're working on */
+#popnote { position: fixed; z-index: 46; width: 320px; height: 260px; min-width: 220px; min-height: 140px; resize: both; overflow: hidden;
+  display: flex; flex-direction: column; background: #fff8c5; color: #2b2a22; border: 1px solid #d8cc7a; border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+#popnote[hidden] { display: none; }
+#popnote .phead { display: flex; align-items: center; padding: 4px 4px 4px 12px; background: #f2e58e; cursor: move; user-select: none;
+  font: 600 13px system-ui, sans-serif; border-bottom: 1px solid #d8cc7a; }
+#popnote .phead span { flex: 1; }
+#popnote textarea { flex: 1; border: 0; outline: none; resize: none; padding: 10px 12px; background: transparent; color: inherit;
+  font: 16px/1.4 Cambria, Caladea, "Liberation Serif", serif; }
+.dark #popnote { background: #3a3726; color: #eee6b8; border-color: #5c5636; }
+.dark #popnote .phead { background: #4a4530; border-color: #5c5636; }
+/* Go To and Recent: a list to pick from */
+#dialog .goto input.wide { width: 100%; height: 42px; padding: 6px 12px; box-sizing: border-box; font: inherit; font-size: 17px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); margin-bottom: 8px; }
+#dialog .golist { max-height: 55vh; overflow: auto; display: flex; flex-direction: column; }
+#dialog .goitem { display: flex; flex-direction: column; align-items: flex-start; text-align: left; border: 0; border-radius: 6px;
+  background: none; color: inherit; padding: 7px 10px; font: inherit; cursor: pointer; }
+#dialog .goitem small { color: var(--ui-muted); font-size: 12px; }
+#dialog .goitem:hover, #dialog .goitem.cur { background: var(--ui2); }
