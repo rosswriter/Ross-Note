@@ -1,10 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.6.0";
-import * as ed from "./editor.js?v=1.6.0";
-import { Store, PICTURES } from "./store.js?v=1.6.0";
+import * as md from "./md.js?v=1.7.0";
+import * as ed from "./editor.js?v=1.7.0";
+import { Store, PICTURES } from "./store.js?v=1.7.0";
+import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.0";
 
-export const VERSION = "1.6.0";
+export const VERSION = "1.7.0";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -106,6 +107,24 @@ async function setSplit(kind) {
   updateHead();
 }
 
+// ------------------------------------------------------------------ places: RossNotes, or a Ross Writer project
+// each keeps its own open notes and open branches in the list
+function placeId(store) { return store && store.isProject ? "project:" + store.handle.name + "/" + store.fileName : "notes"; }
+function enterPlace(store) {
+  const s = S.settings;
+  s.places = s.places || {};
+  if (S.store) {
+    // leaving one place for another: this one's open notes kept, the other's taken up
+    s.places[placeId(S.store)] = { open: s.open, open2: s.open2, expanded: s.expanded };
+    const p = s.places[placeId(store)];
+    if (p) Object.assign(s, { open: p.open || "", open2: p.open2 || "", expanded: p.expanded || [] });
+    else Object.assign(s, { open: "", open2: "", expanded: [] });
+  }
+  // (starting up: the settings are already the last place's)
+  s.where = store.isProject ? "project" : "notes";
+  saveSettings();
+}
+
 // ------------------------------------------------------------------ the folder (kept between visits)
 function idb() {
   return new Promise((ok, bad) => {
@@ -148,6 +167,15 @@ async function start() {
   const test = new URLSearchParams(location.search).get("test");
   if (test === "opfs") return openRoot(await navigator.storage.getDirectory(), true);
   let handle = null;
+  if (S.settings.where === "project") {
+    let ph = null, pf = null;
+    try { ph = await kvGet("project"); pf = await kvGet("projectFile"); } catch (e) { /* none */ }
+    if (ph && ph.kind === "directory" && pf) {
+      const mode = ph.queryPermission ? await ph.queryPermission({ mode: "readwrite" }) : "granted";
+      if (mode === "granted") return openProject(ph, pf);
+      return showStart("project", ph, pf);
+    }
+  }
   try { handle = await kvGet("root"); } catch (e) { /* none */ }
   if (handle && handle.kind === "directory") {
     const mode = handle.queryPermission ? await handle.queryPermission({ mode: "readwrite" }) : "granted";
@@ -157,7 +185,7 @@ async function start() {
   showStart(window.showDirectoryPicker ? "first" : "unsupported");
 }
 
-function showStart(kind, handle) {
+function showStart(kind, handle, file) {
   $("start").hidden = false;
   $("start").querySelector("h1").textContent = "Ross Note " + VERSION;
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
@@ -169,7 +197,19 @@ function showStart(kind, handle) {
     b.onclick = fn;
     btns.appendChild(b);
   };
-  if (kind === "again") {
+  if (kind === "project") {
+    msg.textContent = `You were working on the Ross Writer project “${file.replace(/\.rwproj$/i, "")}”.`;
+    button("Open the project", true, async () => {
+      const r = await handle.requestPermission({ mode: "readwrite" });
+      if (r === "granted") openProject(handle, file);
+    });
+    button("Open my notes instead", false, async () => {
+      S.settings.where = "notes";
+      saveSettings();
+      start();
+    });
+    note.textContent = "Android asks once each time Ross Note starts afresh.";
+  } else if (kind === "again") {
     msg.textContent = `Your notes are in the folder “${handle.name}”.`;
     button("Open my notes", true, async () => {
       const r = await handle.requestPermission({ mode: "readwrite" });
@@ -199,8 +239,11 @@ async function chooseFolder() {
 
 async function openRoot(handle, quiet) {
   $("start").hidden = true;
-  S.store = new Store(handle);
-  S.store.onWrite = wordSoon;
+  const st = new Store(handle);
+  st.onWrite = wordSoon;
+  for (const p of P) { p.note = null; p.dirty = false; }
+  enterPlace(st);
+  S.store = st;
   await queue(async () => {
     await S.store.scan();
     if (!S.store.root.children.length) await makeWelcome();
@@ -215,6 +258,79 @@ async function openRoot(handle, quiet) {
   if (n) await openNote(n, P[0]);
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
+}
+
+// ------------------------------------------------------------------ Ross Writer projects
+// A project folder (made by Ross Writer: <name>.rwproj and Scenes/) somewhere your sync app keeps;
+// its entries are edited here and saved back into their Word files (project.js)
+async function chooseProject() {
+  await flushSave();
+  let h;
+  try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
+    if (e && e.name !== "AbortError") toast("Couldn't open that folder: " + e.message);
+    return;
+  }
+  const files = await findProjectFiles(h);
+  if (!files.length) {
+    dialog("Open a Ross Writer Project", `There's no Ross Writer project in “${h.name}”.\n\nChoose the project's own folder: the one holding the .rwproj file and the Scenes folder.`);
+    return;
+  }
+  let file = files[0];
+  if (files.length > 1) {
+    const q = document.createElement("div");
+    q.textContent = `“${h.name}” holds ${files.length} projects. Which one?`;
+    const v = await ask("Open a Ross Writer Project", q, files.map((f, k) => [f.replace(/\.rwproj$/i, ""), f, k === 0]));
+    if (!v) return;
+    file = v;
+  }
+  await openProject(h, file);
+}
+
+async function openProject(handle, file) {
+  $("start").hidden = true;
+  await flushSave();
+  const st = new ProjectStore(handle, file);
+  toast("Opening the project…", 60000);
+  try { await queue(() => st.scan()); } catch (e) {
+    hideToast();
+    dialog("Open a Ross Writer Project", `Couldn't open “${file}”.\n\n${e.message || e}`);
+    if (!S.store) start();
+    return;
+  }
+  try { await kvSet("project", handle); await kvSet("projectFile", file); } catch (e) { /* kept for this visit only */ }
+  for (const p of P) { p.note = null; p.dirty = false; }
+  const fresh = !(S.settings.places || {})[placeId(st)];
+  enterPlace(st);
+  S.store = st;
+  // the first time: the branches open as Ross Writer had them
+  if (fresh) S.settings.expanded = st.all().filter((n) => n.children.length && n.raw.expanded !== false).map((n) => n.key());
+  renderTree();
+  layout();
+  const n = st.find(S.settings.open) || st.root.children[0];
+  if (S.settings.split) {
+    const n2 = st.find(S.settings.open2) || n;
+    if (n2) await openNote(n2, P[1]);
+  }
+  if (n) await openNote(n, P[0]);
+  else for (const p of P) { p.page.textContent = ""; p.page.contentEditable = "false"; }
+  if (S.settings.split && S.settings.active === 1) setActive(P[1]);
+  updateCount();
+  const ro = st.all().filter((x) => x.readOnly && !x.raw.pdf).length;
+  toast(`${st.label}: ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}` +
+    (ro ? ` (${ro} read-only here: comments, footnotes or the like)` : ""));
+}
+
+async function backToNotes() {
+  await flushSave();
+  let h = null;
+  try { h = await kvGet("root"); } catch (e) { /* none */ }
+  if (h && h.kind === "directory") {
+    const mode = h.queryPermission ? await h.queryPermission({ mode: "readwrite" }) : "granted";
+    if (mode === "granted" || (await h.requestPermission({ mode: "readwrite" })) === "granted") return openRoot(h);
+  }
+  S.settings.where = "notes";
+  saveSettings();
+  chooseFolder();
 }
 
 // ------------------------------------------------------------------ the list of notes
@@ -236,6 +352,19 @@ function renderTree() {
     lbl.className = "lbl";
     lbl.textContent = note.title();
     row.append(tw, lbl);
+    if (note.flag && FLAG_COLOURS[note.flag()]) {
+      const f = document.createElement("span");
+      f.className = "flag";
+      f.style.background = FLAG_COLOURS[note.flag()];
+      row.insertBefore(f, lbl);
+    }
+    if (note.readOnly) {
+      const ro = document.createElement("span");
+      ro.className = "ro";
+      ro.textContent = "read-only";
+      ro.title = `Has ${note.readOnly.join(", ")}: edit it in Ross Writer`;
+      row.appendChild(ro);
+    }
     tw.onclick = (e) => {
       e.stopPropagation();
       if (!note.children.length) return openNote(note);
@@ -266,7 +395,10 @@ function renderTree() {
 
 function updateCount() {
   const n = S.store ? S.store.all().length : 0;
-  $("count").textContent = `${n} note${n === 1 ? "" : "s"} · ${S.store ? S.store.handle.name : ""} · Ross Note ${VERSION}`;
+  const proj = S.store && S.store.isProject;
+  $("count").textContent = `${n} ${proj ? (n === 1 ? "entry" : "entries") : n === 1 ? "note" : "notes"} · ` +
+    `${S.store ? (proj ? "Ross Writer: " + S.store.label : S.store.handle.name) : ""} · Ross Note ${VERSION}`;
+  document.body.classList.toggle("in-project", !!proj);
 }
 
 function expandTo(note) {
@@ -278,7 +410,8 @@ function expandTo(note) {
 function updateHead() {
   for (const p of P) {
     const n = p.note;
-    p.hname.textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow(p.page)].join("  ›  ") : "No note open";
+    p.hname.textContent = n ? [...n.ancestors().reverse().map((a) => a.title()), titleNow(p.page)].join("  ›  ") +
+      (n.readOnly ? `  (read-only: it has ${n.readOnly.join(", ")}; edit it in Ross Writer)` : "") : "No note open";
   }
   wordsSoon();
 }
@@ -360,6 +493,8 @@ function showText(text, pane = A) {
   for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, dir);
   ed.renderLines(pane.page, lines);
   ed.relayout(pane.page);
+  pane.page.contentEditable = pane.note.readOnly ? "false" : "true";
+  pane.el.classList.toggle("readonly", !!pane.note.readOnly);
   loadPictures(pane.page);
   pane.page.dataset.loaded = "1";
 }
@@ -397,7 +532,7 @@ function sizePicture(img) {
 
 // ------------------------------------------------------------------ saving
 function changed(pane = A) {
-  if (!pane.note) return;
+  if (!pane.note || pane.note.readOnly) return;
   pane.dirty = true;
   clearTimeout(pane.timer);
   pane.timer = setTimeout(() => queue(() => saveNow(pane)), SAVE_AFTER_MS);
@@ -442,6 +577,7 @@ function flushSave() {
 
 async function saveNow(pane) {
   if (!pane.dirty || !pane.note) return;
+  if (pane.note.readOnly) { pane.dirty = false; return; }
   pane.dirty = false;
   const note = pane.note;
   const lines = ed.readLines(pane.page);
@@ -451,7 +587,8 @@ async function saveNow(pane) {
     if (now && now.modified !== note.modified && now.text !== note.text && now.text !== text) {
       // changed on the laptop too since we read it: theirs is kept, not lost
       await S.store.keepConflict(note, now.text);
-      toast("This note had also changed on another device; that version is kept in the .trash folder.");
+      toast(S.store.isProject ? "This scene had also changed on another device; that version is kept in the project's Trash folder."
+        : "This note had also changed on another device; that version is kept in the .trash folder.");
     }
     await S.store.write(note, text);
     // the same note open in the other pane shows what was just saved
@@ -576,7 +713,9 @@ async function deleteNote() {
   const n = S.note;
   if (!n) return;
   const under = [...n.walk()].length;
-  if (!confirm(`Delete “${n.title()}”${under ? ` and the ${under} note${under === 1 ? "" : "s"} under it` : ""}?\n\nIt goes to the .trash folder inside RossNotes, in case.`)) return;
+  const proj = S.store.isProject;
+  if (!confirm(`Delete “${n.title()}”${under ? ` and the ${under} ${proj ? "entr" + (under === 1 ? "y" : "ies") : "note" + (under === 1 ? "" : "s")} under it` : ""}?\n\n` +
+    (proj ? "Its Word file goes to the project's Trash folder, as in Ross Writer." : "It goes to the .trash folder inside RossNotes, in case."))) return;
   await flushSave();
   const parent = n.parent, i = parent.children.indexOf(n);
   const gone = [n, ...n.walk()];
@@ -1231,15 +1370,17 @@ function menuItems(name) {
       { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
       { label: "Copy This Note for Email", fn: () => copyForEmail(), off: !n },
       "-",
-      { label: "Update Word Copy", fn: () => updateWordCopy(), off: !n },
-      { label: "Keep Word Copies Updated", on: s.wordAuto !== false, fn: () => {
+      { label: "Update Word Copy", fn: () => updateWordCopy(), off: !n || !!(S.store && S.store.isProject) },
+      { label: "Keep Word Copies Updated", on: s.wordAuto !== false, off: !!(S.store && S.store.isProject), fn: () => {
         s.wordAuto = s.wordAuto === false; saveSettings();
         toast(s.wordAuto ? "A note's Word copy is written again each time the note is saved." : "Word copies are written only when you choose Update Word Copy.");
       } },
       "-",
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
-      { label: "Read the Folder Again", fn: refresh },
+      { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
+      ...(S.store && S.store.isProject ? [{ label: "Back to My Notes (RossNotes)", fn: backToNotes }] : []),
+      { label: S.store && S.store.isProject ? "Read the Project Again" : "Read the Folder Again", fn: refresh },
       { label: "Choose Another Folder…", fn: async () => { await flushSave(); chooseFolder(); } },
       "-",
       { label: "Delete Note…", fn: deleteNote, off: !n },
@@ -1430,6 +1571,7 @@ function showKeys() {
     "Split side by side: Ctrl+\\    Top and bottom: Ctrl+Shift+\\",
     "Hide / show the note list: Ctrl+Shift+L    Light / dark: Ctrl+Shift+D",
     "Search the notes: Ctrl+Shift+F",
+    "Ross Writer projects: File ▸ Open a Ross Writer Project (scenes saved back into their Word files)",
     "Find: ^p a line's end, ^t a tab    Word count: in the name bar",
     "Word copy (RossNotes/Word Copies, kept up to date): File ▸ Update Word Copy",
     "Move a note: Alt+Up / Down / Left / Right",
@@ -1523,7 +1665,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.6.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1541,13 +1683,22 @@ async function importWord(file, split = null) {
   }
   const stem = file.name.replace(/\.[^.]+$/, "");
   const { pre, secs } = W.splitSections(got.lines);
+  const proj = !!S.store.isProject;
+  // in a project, as Ross Writer does it: the top headings chapters, the ones under them scenes
+  const subOf = (sec) => W.splitSections(sec.slice(1));
+  const nested = proj && secs.some((sec) => subOf(sec).secs.length);
   if (split == null) {
     split = false;
-    if (secs.length > 1) {
+    if (secs.length > 1 || nested) {
       const p = document.createElement("div");
-      p.textContent = `“${stem}” has ${secs.length} headings. Bring it in as one note, or as a note for each heading ` +
-        "(under a note named after the document)?";
-      const v = await ask("Import a Word Document", p, [["One note", "one", true], ["A note for each heading", "many"]]);
+      p.textContent = proj
+        ? `“${stem}” has ${secs.length} chapter heading${secs.length === 1 ? "" : "s"}. Bring it in as one entry, or as ` +
+          "a chapter for each top heading with a scene for each heading under it (after this entry)?"
+        : `“${stem}” has ${secs.length} headings. Bring it in as one note, or as a note for each heading ` +
+          "(under a note named after the document)?";
+      const v = await ask("Import a Word Document", p, proj
+        ? [["One entry", "one", true], ["Chapters and scenes", "many"]]
+        : [["One note", "one", true], ["A note for each heading", "many"]]);
       if (!v) return null;
       split = v === "many";
     }
@@ -1582,7 +1733,21 @@ async function importWord(file, split = null) {
   };
   await queue(async () => {
     if (!split) top = await make(parent, index, startsWithTitle(got.lines) ? got.lines : [titleLine, ...got.lines]);
-    else {
+    else if (proj) {
+      let at = index;
+      const hasText = (ls) => ls.some((ln) => ln.runs.some((r) => r.img || r.t.trim()));
+      if (hasText(pre)) {
+        const opening = { kind: null, depth: 1, code: false, runs: [{ t: "Opening", f: new Set() }] };
+        top = await make(parent, at++, pre.length && pre[0].title ? pre : [opening, ...pre]);
+      }
+      for (const sec of secs) {
+        const sub = subOf(sec);
+        const ch = await make(parent, at++, [sec[0], ...(sub.secs.length ? sub.pre : sec.slice(1))]);
+        if (!top) top = ch;
+        for (const s2 of sub.secs) await make(ch, ch.children.length, s2);
+        if (sub.secs.length) S.settings.expanded = [...new Set([...S.settings.expanded, ch.key()])];
+      }
+    } else {
       top = await make(parent, index, pre.length && pre[0].title ? pre : [titleLine, ...pre]);
       for (const sec of secs) await make(top, top.children.length, sec);
     }
@@ -1603,7 +1768,7 @@ $("file-book").addEventListener("change", async (e) => {
 
 async function importNotebook(file) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.6.0");
+  const NB = await import("./notebooks.js?v=1.7.0");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -2148,7 +2313,14 @@ function replaceRange(m, text) {
   return { line: page.children.length ? [...page.children].indexOf(div) : 0, pos };
 }
 
+function readOnlyHere() {
+  if (!A.note || !A.note.readOnly) return false;
+  toast(`Read-only: “${A.note.title()}” has ${A.note.readOnly.join(", ")}. Edit it in Ross Writer.`);
+  return true;
+}
+
 function replaceOne() {
+  if (readOnlyHere()) return;
   const ms = findAll();
   if (findCur < 0 || !ms[findCur]) { findGo(false); return; }
   const m = ms[findCur];
@@ -2180,6 +2352,7 @@ function replaceOne() {
 }
 
 function replaceAll() {
+  if (readOnlyHere()) return 0;
   const ms = findAll();
   if (!ms.length) return 0;
   const before = page.innerHTML;
@@ -2238,6 +2411,6 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, openProject, chooseProject, backToNotes, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
