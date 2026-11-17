@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=2.0.0";
+import * as md from "./md.js?v=2.1.0";
 
 const HL = "#ffd54f";
 

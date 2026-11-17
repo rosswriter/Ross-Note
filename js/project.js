@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=2.0.0";
-import * as wordio from "./wordio.js?v=2.0.0";
-import { blockers, patchDocx, sigOf, readComments } from "./wordpatch.js?v=2.0.0";
+import * as md from "./md.js?v=2.1.0";
+import * as wordio from "./wordio.js?v=2.1.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=2.1.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -325,6 +325,45 @@ export class ProjectStore {
     if (now) { now.shown = text; now.shownTitle = n.title(); }
   }
 
+  // ------------------------------------------------------------ comments (the scene's words untouched)
+  // Where a place on the page (line k: 0 the title, then the scene's lines; pos in its words) is in the
+  // Word file: [body paragraph, offset in its words]. The page's words there must be the file's.
+  placeOf(sc, pageLines, line, pos) {
+    if (line < 1) throw new Error("A comment goes on the scene's words, not on its title.");
+    const i = line - 1;
+    const ln = sc.lines[i];
+    if (!ln || ln.src == null) throw new Error("Those words can't take a comment on the tablet (a table or the like): add it in Ross Writer.");
+    const txt = (l) => (l.runs || []).map((r) => (r.img ? md.OBJ : r.t || "")).join("");
+    if (pageLines[line] !== txt(ln)) throw new Error("The page and the scene's file don't match here: wait a moment (it may still be saving) and try again.");
+    let off = pos;
+    for (let k = i - 1; k >= 0 && sc.lines[k].src === ln.src; k--) off += txt(sc.lines[k]).length;
+    return [ln.src, off];
+  }
+
+  // a change to an entry's comments ({kind: add|reply|edit|resolve|delete, ...}, as wordpatch.commentEdit);
+  // for add, a: {line, pos} and b: {line, pos} on the page, with pageLines its lines' words
+  async commentOp(n, op) {
+    const sc = this.scenes.get(n.raw.id);
+    if (!sc || !sc.files) throw new Error("This entry has no Word file to keep comments in yet: type something in it first.");
+    const o = { ...op };
+    if (op.kind === "add") {
+      [o.sp, o.so] = this.placeOf(sc, op.pageLines, op.a.line, op.a.pos);
+      [o.ep, o.eo] = this.placeOf(sc, op.pageLines, op.b.line, op.b.pos);
+    }
+    const blob = await commentEdit(sc.files, o);
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    const keep = n.text;
+    await this.load(n, true);
+    // the page's words are as they were
+    n.text = keep;
+    const now = this.scenes.get(n.raw.id);
+    if (now) { now.shown = keep; now.shownTitle = n.title(); }
+    return n.comments;
+  }
+
   async findTemplate() {
     if (this.template && this.template.files) return this.template;
     for (const n of this.all()) {
@@ -437,4 +476,47 @@ export class ProjectStore {
 
   async hasWordCopy() { return false; }
   async writeWordCopy() { throw new Error("Word copies are for notes in RossNotes"); }
+}
+
+// ------------------------------------------------------------------ a Word document opened by itself
+// File ▸ Open a Word Document…: one .docx, worked on in place like a project's scene (its title line is the
+// file's name, never written into it). Saves straight back into the file; comments as in scenes.
+export class DocxStore extends ProjectStore {
+  constructor(fileHandle) {
+    super(null, fileHandle.name);
+    this.isDoc = true;
+    this.fileHandle = fileHandle;
+    this.canWrite = true;
+    const stem = fileHandle.name.replace(/\.docx$/i, "");
+    this.raw = { id: "doc", title: stem, flag: "", include: true, expanded: true, file: fileHandle.name };
+  }
+
+  get label() { return this.fileName; }
+
+  async scan() {
+    this.data = { format: "word-document", nodes: [this.raw] };
+    const root = new PNote(null, null);
+    const n = new PNote(root, this.raw);
+    root.children.push(n);
+    this.root = root;
+    await this.load(n);
+    if (!this.canWrite && !n.readOnly) n.readOnly = ["no permission to save into it"];
+    return root;
+  }
+
+  // the "folder" the file is in: just the file
+  async sceneFile() {
+    const fh = this.fileHandle;
+    return [{ getFileHandle: async () => fh }, fh.name];
+  }
+
+  async saveProject() { /* no project file */ }
+  async newNote() { throw new Error("A Word document opened by itself is one page: new pages are for notes and projects."); }
+  async move() { return false; }
+  async rename() { return false; }
+  async delete() { throw new Error("Close the document instead (File ▸ Back to My Notes)."); }
+  async keepConflict() {
+    throw new Error(`“${this.fileName}” has changed on another device since you opened it. ` +
+      "Your latest typing wasn't saved into it: copy what you need, then open it again (File ▸ Open a Word Document…).");
+  }
 }

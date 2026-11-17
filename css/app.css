@@ -135,6 +135,15 @@ button { font: inherit; color: inherit; }
 .cpanel .cwho { font-size: 12px; color: var(--ui-muted); margin-bottom: 4px; }
 .cpanel .cwords { font-style: italic; color: var(--ui-muted); margin-bottom: 4px; }
 .cpanel .ctext { white-space: pre-wrap; }
+.cpanel .cacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.cpanel .cacts button { border: 1px solid var(--line); background: var(--ui); color: var(--ui-ink); border-radius: 3px;
+  font: inherit; font-size: 12px; padding: 3px 8px; min-height: 28px; cursor: pointer; }
+.cform { display: flex; flex-direction: column; gap: 10px; min-width: min(420px, 80vw); }
+.cform label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.cform input, .cform textarea { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--paper); color: var(--ink, inherit); }
+.cform textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.cform .cquote { font-style: italic; color: var(--ui-muted); }
 .head .hcomments { flex: none; border: 1px solid currentColor; border-radius: 10px; background: none; color: inherit;
   font: inherit; font-size: 12px; font-weight: 400; padding: 0 8px; opacity: .8; cursor: pointer; }
 .head .hcomments.on { opacity: 1; background: rgba(255,255,255,.15); }
@@ -207,6 +216,12 @@ button { font: inherit; color: inherit; }
   #printdoc .part.newpage { break-before: page; }
   .page span[style*="background"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #printdoc .part.gap { margin-top: 18pt; }
+  #printdoc .pcomments { margin-top: 12pt; padding-top: 6pt; border-top: 0.5pt solid #999; font-size: 9.5pt; break-inside: auto; }
+  #printdoc .pch { font-weight: 700; margin-bottom: 4pt; }
+  #printdoc .pc { margin: 0 0 6pt; padding-left: 6pt; border-left: 2pt solid #e6c229; break-inside: avoid; }
+  #printdoc .pc.reply { margin-left: 14pt; border-left-color: #bbb; }
+  #printdoc .pcwho { color: #555; font-size: 8.5pt; }
+  #printdoc .pcwords { font-style: italic; color: #444; }
   html, body, #app { height: auto; background: #fff; }
   #menubar, #findbar, #dialog, #toolbar, #side, #divider, #pdiv, .head, #chip, #menu, #toast, #start, .pane:not(.active) { display: none !important; }
   #main, #panes, .pane, .scroller { display: block; overflow: visible; background: #fff; }
