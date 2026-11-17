@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.7.0";
-import * as ed from "./editor.js?v=1.7.0";
-import { Store, PICTURES } from "./store.js?v=1.7.0";
-import * as spell from "./spell.js?v=1.7.0";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.0";
+import * as md from "./md.js?v=1.7.1";
+import * as ed from "./editor.js?v=1.7.1";
+import { Store, PICTURES } from "./store.js?v=1.7.1";
+import * as spell from "./spell.js?v=1.7.1";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.1";
 
-export const VERSION = "1.7.0";
+export const VERSION = "1.7.1";
 export const EDITION = "V7-full";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -2031,6 +2031,7 @@ function menuItems(name) {
       { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
       { label: "New Note Under This One", fn: () => newNote(true), off: !n || !!(S.store && S.store.isDoc) },
       "-",
+      { label: "New Ross Writer Project…", fn: () => newProject(), off: !window.showDirectoryPicker },
       { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
       ...(s.lastProject && !(S.store && S.store.isProject && !S.store.isDoc && S.store.fileName === s.lastProject.file)
         ? [{ label: `Reopen “${s.lastProject.name}”`, fn: reopenProject }] : []),
@@ -2354,9 +2355,17 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
+  if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
+    S.newProjectWord = false;
+    const f = e.target.files[0];
+    e.target.value = "";
+    await importWord(f, true);
+    return;
+  }
+  S.newProjectWord = false;
   const f = e.target.files[0];
   e.target.value = "";
   if (f) await importWord(f);
@@ -2478,7 +2487,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.7.0");
+  const NB = await import("./notebooks.js?v=1.7.1");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -2570,6 +2579,110 @@ async function importNotebookNow(file, say) {
 // ------------------------------------------------------------------ a Ross Writer project, brought in as notes
 // The project's folder is only read: its chapters and scenes become notes (a note named after the project,
 // the chapters under it, their scenes under them), each scene's words and pictures from its Word file.
+// ------------------------------------------------------------------ a new Ross Writer project
+// As Ross Writer makes one (Project.create): a folder holding "<title>.rwproj" and an empty Scenes folder.
+// Then it's open here like any project; it can start with a Word document brought in as chapters and scenes.
+const rwSafe = (t) => (String(t || "").replace(/[\\/:*?"<>|\x00-\x1f]+/g, " ").trim().slice(0, 80) || "Untitled").replace(/[. ]+$/, "") || "Untitled";
+
+async function newProject(opts = null) {
+  if (!window.showDirectoryPicker) {
+    dialog("New Ross Writer Project", "This browser can't make folders on this device. Ross Note needs Chrome (version 132 or later on Android).");
+    return null;
+  }
+  let title, start;
+  if (opts) ({ title, start } = opts);
+  else {
+    const box = document.createElement("div");
+    box.className = "choose";
+    const lab = document.createElement("div");
+    lab.className = "lab";
+    lab.textContent = "The project's title";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "wide";
+    inp.placeholder = "e.g. The Book";
+    inp.setAttribute("autocapitalize", "words");
+    box.append(lab, inp);
+    const lab2 = document.createElement("div");
+    lab2.className = "lab";
+    lab2.textContent = "Start it with";
+    box.appendChild(lab2);
+    for (const [v, t, on] of [["word", "A Word document: its headings become the chapters and scenes", true],
+      ["empty", "Nothing yet: one empty chapter", false]]) {
+      const l = document.createElement("label");
+      l.innerHTML = `<input type="radio" name="start" value="${v}"${on ? " checked" : ""}> `;
+      l.append(t);
+      box.appendChild(l);
+    }
+    const p = document.createElement("p");
+    p.textContent = "Next you choose where it goes: a folder named after the project is made there (or, if the folder you " +
+      "choose is empty, the project goes in it). Ross Writer on the laptop opens it as one of its own.";
+    box.appendChild(p);
+    setTimeout(() => inp.focus(), 50);
+    for (;;) {
+      if (!await ask("New Ross Writer Project", box, [["Choose Where…", "go", true]])) return null;
+      title = inp.value.trim();
+      if (title) break;
+      toast("Give the project a title first.");
+    }
+    start = box.querySelector("input[name=start]:checked").value;
+  }
+  // where: the picker straight from the tap
+  let where;
+  try { where = opts && opts.folder ? opts.folder : await window.showDirectoryPicker({ id: "rwnewproject", mode: "readwrite" }); } catch (e) {
+    if (e && e.name === "AbortError") toast("No folder chosen: no project made.");
+    else dialog("New Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    return null;
+  }
+  const name = rwSafe(title);
+  const file = name + ".rwproj";
+  let dir;
+  try {
+    dir = await busy(`Making “${title}”…`, async () => {
+      // an empty folder: the project goes in it; otherwise a new folder for it, named after it ("… (2)" if taken)
+      const there = [];
+      for await (const [n] of where.entries()) { if (!n.startsWith(".")) there.push(n); }
+      let d = where;
+      if (there.length) {
+        let cand = name, k = 2;
+        const taken = new Set(there);
+        while (taken.has(cand)) cand = `${name} (${k++})`;
+        d = await where.getDirectoryHandle(cand, { create: true });
+      }
+      await d.getDirectoryHandle("Scenes", { create: true });
+      const data = { format: "ross-writer-project", version: 1, title, compile: {}, nodes: [] };
+      const fh = await d.getFileHandle(file, { create: true });
+      const w = await fh.createWritable();
+      await w.write(JSON.stringify(data, null, 1));
+      await w.close();
+      return d;
+    }, { after: 0 });
+  } catch (e) {
+    dialog("New Ross Writer Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    return null;
+  }
+  await openProject(dir, file);
+  if (!S.store || !S.store.isProject) return null;
+  if (start === "empty") {
+    const n = await queue(() => S.store.addNote(S.store.root, 0, "Chapter One", "Chapter One\n"));
+    renderTree();
+    await openNote(n);
+  } else if (opts && opts.wordFile) {
+    await importWord(opts.wordFile, true);
+  } else {
+    // a Word document to start it: chosen from a tap of its own (Android lets a picker open only then)
+    const q = document.createElement("div");
+    q.textContent = `“${title}” is made. Now choose the Word document to bring in: its top headings become the chapters, ` +
+      "the headings under them the scenes.";
+    if (await ask("New Ross Writer Project", q, [["Choose the Word Document…", "go", true]])) {
+      S.newProjectWord = true;
+      $("file-docx").click();
+    }
+  }
+  toast(`“${title}” is a Ross Writer project in “${dir.name}”.`, 6000);
+  return dir;
+}
+
 async function chooseProjectFolder() {
   if (!window.showDirectoryPicker) {
     dialog("Import a Ross Writer Project", "This browser can't open a folder. Ross Note needs Chrome or Edge.");
@@ -2589,7 +2702,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.7.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.7.1"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -2925,7 +3038,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.7.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.7.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -3367,7 +3480,7 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, importProject, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { S, P, importProject, newProject, importWord, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
