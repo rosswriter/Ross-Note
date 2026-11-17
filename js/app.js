@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=2.1.3";
-import * as ed from "./editor.js?v=2.1.3";
-import { Store, PICTURES } from "./store.js?v=2.1.3";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.3";
+import * as md from "./md.js?v=2.1.4";
+import * as ed from "./editor.js?v=2.1.4";
+import { Store, PICTURES } from "./store.js?v=2.1.4";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.1.4";
 
-export const VERSION = "2.1.3";
+export const VERSION = "2.1.4";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -176,6 +176,25 @@ function queue(fn) {
   return p;
 }
 
+// What happened while opening a folder, kept between visits (Android can restart the page while its picker is
+// open): shown on the start screen, so it can be read out when something doesn't work.
+function trail(step) {
+  try {
+    const t = JSON.parse(localStorage.getItem("rossnote-trail") || "[]");
+    const d = new Date();
+    t.push(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")} ${step}`);
+    localStorage.setItem("rossnote-trail", JSON.stringify(t.slice(-12)));
+  } catch (e) { /* no record */ }
+}
+function showTrail() {
+  const box = $("start-trail");
+  if (!box) return;
+  let t = [];
+  try { t = JSON.parse(localStorage.getItem("rossnote-trail") || "[]"); } catch (e) { /* none */ }
+  box.hidden = !t.length;
+  box.textContent = t.length ? "What happened last time:\n" + t.join("\n") : "";
+}
+
 // anything that goes wrong is said (and never hidden behind the start screen)
 window.addEventListener("unhandledrejection", (e) => {
   const r = e.reason;
@@ -186,6 +205,7 @@ window.addEventListener("unhandledrejection", (e) => {
 
 async function start() {
   applyLook();
+  trail(`${VERSION} started (${S.settings.where || "notes"})`);
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !location.search.includes("nosw")) {
     navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
   }
@@ -221,6 +241,8 @@ async function start() {
 
 function showStart(kind, handle, file) {
   $("start").hidden = false;
+  trail("start screen: " + kind + (handle ? " (" + handle.name + ")" : ""));
+  showTrail();
   $("start").querySelector("h1").textContent = "Ross Note " + VERSION;
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
   btns.textContent = "";
@@ -281,22 +303,27 @@ function showStart(kind, handle, file) {
 
 async function chooseFolder() {
   let h;
+  trail("folder picker asked for");
   try { h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" }); } catch (e) {
+    trail("folder picker: " + ((e && e.name) || "error") + " " + ((e && e.message) || ""));
     if (e && e.name !== "AbortError") {
       dialog("Choose the RossNotes Folder", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     }
     return;
   }
+  trail(`folder chosen: “${h.name}”`);
   toast(`Opening “${h.name}”…`, 30000);
   try {
     await flushSave();
     if (await asProject(h, true)) return;       // a Ross Writer project, chosen as the notes folder: opened as one
   } catch (e) { console.error(e); }
-  try { await kvSet("root", h); } catch (e) {
+  try { await kvSet("root", h); trail("folder remembered"); } catch (e) {
     // kept for this visit only: Ross Note will ask again next time
+    trail("couldn't remember the folder: " + ((e && e.message) || e));
     console.error(e);
   }
   try { await openRoot(h, false, true); } catch (e) {
+    trail("couldn't open the notes: " + ((e && e.message) || e));
     dialog("Choose the RossNotes Folder", `Couldn't open the notes in “${h.name}”.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
   }
 }
@@ -347,6 +374,7 @@ async function asProject(handle, chosen = false) {
 
 async function openRoot(handle, quiet, checked = false) {
   $("start").hidden = true;
+  trail(`opening the notes in “${handle.name}”`);
   if (!quiet && !checked && await asProject(handle)) return;
   const st = new Store(handle);
   st.onWrite = wordSoon;
@@ -367,6 +395,7 @@ async function openRoot(handle, quiet, checked = false) {
   if (n) await openNote(n, P[0]);
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
+  trail(`notes open: ${S.store.all().length}`);
 }
 
 // ------------------------------------------------------------------ Ross Writer projects
@@ -2138,7 +2167,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.3")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.1.4")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -2243,7 +2272,7 @@ $("file-book").addEventListener("change", async (e) => {
 async function importNotebook(file) {
   if (S.store && S.store.isDoc) { toast("A Word document opened by itself is one page. File ▸ Back to My Notes for notes."); return; }
   await flushSave();
-  const NB = await import("./notebooks.js?v=2.1.3");
+  const NB = await import("./notebooks.js?v=2.1.4");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -2490,7 +2519,7 @@ async function exportNotes(kind) {
     let blob = await wordBlob(notes, pages, name, parts);
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=2.1.3");
+      const { exportComments } = await import("./wordpatch.js?v=2.1.4");
       blob = await exportComments(await blob.arrayBuffer(), notes.map((x) => ({ title: x.title(), comments: x.comments || [] })));
     }
     hideToast();

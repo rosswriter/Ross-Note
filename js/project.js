@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=2.1.3";
-import * as wordio from "./wordio.js?v=2.1.3";
-import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=2.1.3";
+import * as md from "./md.js?v=2.1.4";
+import * as wordio from "./wordio.js?v=2.1.4";
+import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=2.1.4";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";

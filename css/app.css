@@ -205,6 +205,8 @@ button { font: inherit; color: inherit; }
 #start h1 { margin: 8px 0 6px; font-family: Cambria, Caladea, serif; font-size: 30px; }
 #start p { margin: 10px 0; }
 #start .small { font-size: 13px; color: var(--ui-muted); }
+#start-trail { margin-top: 14px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; text-align: left;
+  white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
 #start-buttons { display: flex; flex-direction: column; gap: 10px; align-items: center; margin: 18px 0; }
 .big { min-width: 240px; height: 46px; padding: 0 18px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--ui2); cursor: pointer; font-size: 16px; }
