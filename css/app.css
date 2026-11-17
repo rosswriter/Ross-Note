@@ -117,7 +117,27 @@ button { font: inherit; color: inherit; }
 .head .hname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .head .hwords { flex: none; font-weight: 400; opacity: .75; font-variant-numeric: tabular-nums; }
 .split .pane:not(.active) .head { background: var(--head-off); color: var(--head-off-ink); font-weight: 400; }
+.pbody { flex: 1; min-height: 0; display: flex; }
+.pbody .scroller { flex: 1; min-width: 0; }
 .scroller { flex: 1; overflow: auto; background: var(--paper); -webkit-overflow-scrolling: touch; }
+/* a scene's Word comments, beside the page (under it when the pane is narrow) */
+.cpanel { flex: none; width: 300px; overflow: auto; background: var(--ui); border-left: 1px solid var(--line);
+  font-size: 13px; -webkit-overflow-scrolling: touch; }
+.pane.cbelow .pbody { flex-direction: column; }
+.pane.cbelow .cpanel { width: auto; max-height: 38%; border-left: 0; border-top: 1px solid var(--line); }
+.cpanel .ctop { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--line); font-weight: 600; }
+.cpanel .ctop button { border: 0; background: none; font: inherit; color: var(--ui-muted); cursor: pointer; padding: 2px 6px; }
+.cpanel .citem { margin: 8px; padding: 8px 10px; background: var(--paper); border: 1px solid var(--line);
+  border-left: 3px solid #e6c229; border-radius: 4px; cursor: pointer; }
+.cpanel .citem.reply { margin-left: 24px; border-left-color: var(--line); }
+.cpanel .citem.done { opacity: .6; }
+.cpanel .cwho { font-size: 12px; color: var(--ui-muted); margin-bottom: 4px; }
+.cpanel .cwords { font-style: italic; color: var(--ui-muted); margin-bottom: 4px; }
+.cpanel .ctext { white-space: pre-wrap; }
+.head .hcomments { flex: none; border: 1px solid currentColor; border-radius: 10px; background: none; color: inherit;
+  font: inherit; font-size: 12px; font-weight: 400; padding: 0 8px; opacity: .8; cursor: pointer; }
+.head .hcomments.on { opacity: 1; background: rgba(255,255,255,.15); }
 .app-narrow #side { position: absolute; z-index: 5; top: 0; bottom: 0; left: 0; width: min(85vw, 340px);
   box-shadow: 2px 0 12px rgba(0,0,0,.25); }
 .app-narrow #divider { display: none; }

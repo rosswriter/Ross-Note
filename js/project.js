@@ -12,9 +12,9 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.7.3";
-import * as wordio from "./wordio.js?v=1.7.3";
-import { blockers, patchDocx, sigOf } from "./wordpatch.js?v=1.7.3";
+import * as md from "./md.js?v=2.0.0";
+import * as wordio from "./wordio.js?v=2.0.0";
+import { blockers, patchDocx, sigOf, readComments } from "./wordpatch.js?v=2.0.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -57,7 +57,8 @@ export class PNote {
     this.children = [];
     this.text = null;
     this.modified = 0;
-    this.readOnly = null;         // what keeps it from being written: ["comments", ...], or null
+    this.readOnly = null;         // what keeps it from being written: ["tracked changes", ...], or null
+    this.comments = [];           // its Word comments (wordpatch.readComments), for the list beside the page
   }
   isRoot() { return this.parent === null; }
   folderParts() { return []; }
@@ -180,6 +181,7 @@ export class ProjectStore {
       // just as the page gave it, if that's what was written last (and the title's the same)
       n.text = known.shown != null && known.shownTitle === n.title() ? known.shown : this.withTitle(n, known);
       n.readOnly = known.readOnly;
+      n.comments = known.comments || [];
       n.modified = file.lastModified;
       return n.text;
     }
@@ -197,6 +199,7 @@ export class ProjectStore {
     sc.mtime = file.lastModified;
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;
+    n.comments = sc.comments || [];
     n.modified = file.lastModified;
     n.text = this.withTitle(n, sc);
     if (!sc.readOnly && sc.files) this.template = sc;
@@ -228,7 +231,9 @@ export class ProjectStore {
     const back = this.ownPictures(id, wordio.fromNoteLines(md.parse(text).slice(1)));
     const kept = got.lines.slice(0, got.lines.length - trailing);
     const sigs = back.length === kept.length ? back.map(sigOf).concat(got.lines.slice(kept.length).map(sigOf)) : null;
-    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text };
+    let comments = [];
+    try { comments = await readComments(got.files); } catch (e) { comments = []; }
+    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are

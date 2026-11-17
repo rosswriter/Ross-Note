@@ -7,9 +7,13 @@
 // settings (indent, alignment, style) and the look of its first words (font, size, colour); a new
 // paragraph takes the scene's usual look. So Ross Writer gets back the file it gave, with your words in it.
 //
-// Scenes with things this can't keep (comments, footnotes, tracked changes, tables...) aren't written
+// Word comments are kept: a paragraph you didn't touch keeps its comment marks as they were; in one you
+// changed they stay at the same words (moved with the words round them); a comment whose words you deleted
+// goes, as in Word. readComments() gives them for the page's list.
+//
+// Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf } from "./wordio.js?v=1.7.3";
+import { unzip, zip, imageSize, extOf } from "./wordio.js?v=2.0.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -24,7 +28,6 @@ const TEXT_WIDTH_EMU = 5760720;
 
 // ------------------------------------------------------------------ what the tablet can't keep
 const BLOCKERS = [
-  [/<w:commentReference\b|<w:commentRangeStart\b/, "comments"],
   [/<w:footnoteReference\b|<w:endnoteReference\b/, "footnotes"],
   [/<w:(ins|del|moveFrom|moveTo)\b|<w:(rPr|pPr|sectPr|tblPr|tcPr|trPr)Change\b/, "tracked changes"],
   [/<w:tbl\b/, "a table"],
@@ -148,6 +151,143 @@ function sortPpr(ppr) {
   };
   const kids = [...ppr.children].map((c, k) => [rank(c), k, c]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   for (const [, , c] of kids) ppr.appendChild(c);
+}
+
+// ------------------------------------------------------------------ comments
+const W14 = "http://schemas.microsoft.com/office/word/2010/wordml";
+const W15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+const W16CID = "http://schemas.microsoft.com/office/word/2016/wordml/cid";
+const W16CEX = "http://schemas.microsoft.com/office/word/2018/wordml/cex";
+const isW = (e, local) => e.namespaceURI === W && e.localName === local;
+const isRef = (e) => isW(e, "r") && !!wkid(e, "commentReference");
+
+// a paragraph's words as the page has them (a picture one character, a tab a space), and where in them
+// each comment mark sits: [{node, kind: "start"|"end"|"ref", id, off}]
+function textAndMarks(p) {
+  let text = "";
+  const marks = [];
+  const walk = (el) => {
+    for (const c of el.children) {
+      if (c.namespaceURI !== W) {
+        if (c.localName === "AlternateContent") walk(c);
+        continue;
+      }
+      const l = c.localName;
+      if (l === "commentRangeStart" || l === "commentRangeEnd") {
+        marks.push({ node: c, kind: l === "commentRangeStart" ? "start" : "end", id: wval(c, "id"), off: text.length });
+      } else if (isRef(c)) {
+        marks.push({ node: c, kind: "ref", id: wval(wkid(c, "commentReference"), "id"), off: text.length });
+      } else if (l === "t") text += c.textContent;
+      else if (l === "tab" || l === "noBreakHyphen") text += l === "tab" ? " " : "-";
+      else if (l === "drawing" || l === "pict") text += OBJ;
+      else if (l === "pPr" || l === "rPr" || l === "del" || l === "moveFrom") continue;
+      else walk(c);
+    }
+  };
+  walk(p);
+  return { text, marks };
+}
+
+// the place in a new paragraph's words for a mark that was at off in the old words
+function mapOffset(oldT, newT, off, kind) {
+  let pre = 0;
+  const mx = Math.min(oldT.length, newT.length);
+  while (pre < mx && oldT[pre] === newT[pre]) pre++;
+  let suf = 0;
+  while (suf < mx - pre && oldT[oldT.length - 1 - suf] === newT[newT.length - 1 - suf]) suf++;
+  if (off <= pre) return off;
+  if (off >= oldT.length - suf) return newT.length - (oldT.length - off);
+  // in the words that changed: a start before them, an end after them (the comment covers the change)
+  return kind === "start" ? pre : newT.length - suf;
+}
+
+// a mark into a new paragraph at offset off of its words (a run split there if need be)
+function placeAt(doc, p, off, node) {
+  let at = 0;
+  const runs = [...p.getElementsByTagNameNS(W, "r")].filter((r) => !isRef(r));
+  for (const r of runs) {
+    const t = wkid(r, "t");
+    const len = t ? t.textContent.length : wkid(r, "drawing") || wkid(r, "pict") ? 1 : 0;
+    if (off <= at) { r.parentNode.insertBefore(node, r); return; }
+    if (off < at + len && t) {
+      const k = off - at;
+      const second = r.cloneNode(true);
+      wkid(second, "t").textContent = t.textContent.slice(k);
+      t.textContent = t.textContent.slice(0, k);
+      r.parentNode.insertBefore(second, r.nextSibling);
+      r.parentNode.insertBefore(node, second);
+      return;
+    }
+    at += len;
+  }
+  p.appendChild(node);
+}
+
+function partByType(rels, mainPart, type) {
+  for (const r of rels.getElementsByTagNameNS(PR, "Relationship")) {
+    if ((r.getAttribute("Type") || "").endsWith("/" + type)) return resolveTarget(mainPart, r.getAttribute("Target"));
+  }
+  return null;
+}
+
+// the scene's comments, for the list beside the page: [{id, author, initials, date, text, words, parent, done}]
+export async function readComments(files) {
+  const get = async (name) => (files.has(name) ? dec(await files.get(name)()) : null);
+  const relsT = await get("word/_rels/document.xml.rels");
+  if (!relsT) return [];
+  const rels = parse(relsT);
+  const cName = partByType(rels, "word/document.xml", "comments");
+  const cT = cName && await get(cName);
+  if (!cT) return [];
+  const cdoc = parse(cT);
+  const out = [], byPara = new Map();
+  for (const c of cdoc.getElementsByTagNameNS(W, "comment")) {
+    const paras = [...c.getElementsByTagNameNS(W, "p")];
+    const text = paras.map((p) => textAndMarks(p).text.split(OBJ).join("")).join("\n").trim();
+    const item = { id: wval(c, "id"), author: wval(c, "author") || "", initials: wval(c, "initials") || "",
+      date: wval(c, "date") || "", text, words: "", parent: null, done: false };
+    out.push(item);
+    const last = paras[paras.length - 1];
+    const pid = last && (last.getAttributeNS(W14, "paraId") || last.getAttribute("w14:paraId"));
+    if (pid) byPara.set(pid, item);
+  }
+  const exName = partByType(rels, "word/document.xml", "commentsExtended");
+  const exT = exName && await get(exName);
+  if (exT) {
+    for (const e of parse(exT).getElementsByTagNameNS(W15, "commentEx")) {
+      const item = byPara.get(e.getAttributeNS(W15, "paraId") || e.getAttribute("w15:paraId"));
+      if (!item) continue;
+      const done = e.getAttributeNS(W15, "done") || e.getAttribute("w15:done");
+      item.done = done === "1" || done === "true";
+      const par = byPara.get(e.getAttributeNS(W15, "paraIdParent") || e.getAttribute("w15:paraIdParent"));
+      if (par) item.parent = par.id;
+    }
+  }
+  // the words each one is on
+  const dT = await get("word/document.xml");
+  if (dT) {
+    const open = new Set(), words = new Map();
+    const body = parse(dT).getElementsByTagNameNS(W, "body")[0];
+    const walk = (el) => {
+      for (const c of el.children) {
+        if (c.namespaceURI !== W) { walk(c); continue; }
+        const l = c.localName;
+        if (l === "commentRangeStart") open.add(wval(c, "id"));
+        else if (l === "commentRangeEnd") open.delete(wval(c, "id"));
+        else if (l === "t" || l === "tab") {
+          const t = l === "t" ? c.textContent : " ";
+          for (const id of open) words.set(id, (words.get(id) || "") + t);
+        } else if (l === "del" || l === "moveFrom" || l === "rPr" || l === "pPr") continue;
+        else {
+          walk(c);
+          if (l === "p") for (const id of open) words.set(id, (words.get(id) || "") + "\n");
+        }
+      }
+    };
+    if (body) walk(body);
+    for (const item of out) item.words = (words.get(item.id) || "").replace(/\s+/g, " ").trim();
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ the package
@@ -522,7 +662,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes) {
     if (!groupOf.has(ln.src)) groupOf.set(ln.src, []);
     groupOf.get(ln.src).push(i);
   });
-  const used = new Set();
+  const used = new Set(), marked = new Set();
   const outEls = [];
   for (let j = 0; j < lines.length;) {
     const i = matched[j];
@@ -539,7 +679,21 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes) {
     const tmpl = pi >= 0 && old[pi].src != null ? { el: srcEl(pi), key: kindKey(old[pi]) } : null;
     const oneToOne = !!tmpl && !used.has(old[pi].src) && (groupOf.get(old[pi].src) || []).length === 1;
     if (oneToOne) used.add(old[pi].src);
-    outEls.push(await buildP(lines[j], j, tmpl, oneToOne));
+    const np = await buildP(lines[j], j, tmpl, oneToOne);
+    // the old paragraph's comment marks, at the same words in the changed one
+    if (tmpl && !marked.has(old[pi].src)) {
+      marked.add(old[pi].src);
+      const was = textAndMarks(tmpl.el);
+      if (was.marks.length) {
+        const now = textAndMarks(np).text;
+        // (marks add no words, so the places don't move); marks at one place keep their order: each goes
+        // in after the ones before it there (a comment's end before its reference)
+        const todo = was.marks.map((m, k) => [mapOffset(was.text, now, m.off, m.kind), k, m]);
+        todo.sort((a, b) => a[1] - b[1]);
+        for (const [off, , m] of todo) placeAt(doc, np, off, m.node.cloneNode(true));
+      }
+    }
+    outEls.push(np);
     j++;
   }
   for (const c of [...body.children]) body.removeChild(c);
@@ -550,6 +704,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes) {
   }
   for (const el of outEls) body.appendChild(el);
   if (sectPr) body.appendChild(sectPr);
+  const commentsChanged = await fixComments(doc, body, all, mainPart, relsDoc);
 
   // --- relationships nothing uses any more (pictures and links of paragraphs that went)
   const docXml = ser(doc);
@@ -584,12 +739,89 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes) {
   all.set("[Content_Types].xml", ser(ctDoc));
   if (stylesChanged) all.set(stylesName, ser(stylesDoc));
   if (numChanged) all.set(numName, ser(numDoc));
+  for (const [name, d] of commentsChanged) all.set(name, ser(d));
   const order = ["[Content_Types].xml", ...[...all.keys()].filter((k) => k !== "[Content_Types].xml")];
   return zip(order.map((name) => {
     const data = all.get(name);
     const media = /\.(png|jpe?g|gif|bmp|webp|tiff?|emf|wmf)$/i.test(name);
     return [name, typeof data === "string" ? withDecl(data) : data, !media];
   }));
+}
+
+// Every comment's marks whole again (a start without its end, an end without its reference: the missing ones
+// put in its paragraph), and the comments whose words are all gone taken out of the comments parts.
+async function fixComments(doc, body, all, mainPart, relsDoc) {
+  const changed = new Map();
+  const cName = partByType(relsDoc, mainPart, "comments");
+  if (!cName || !all.has(cName)) return changed;
+  const cdoc = parse(dec(all.get(cName)));
+  const comments = [...cdoc.getElementsByTagNameNS(W, "comment")];
+  const find = (local) => {
+    const m = new Map();
+    for (const e of body.getElementsByTagNameNS(W, local)) {
+      const id = wval(e, "id");
+      if (!m.has(id)) m.set(id, e);
+    }
+    return m;
+  };
+  const starts = find("commentRangeStart"), ends = find("commentRangeEnd"), refs = find("commentReference");
+  const paraOf = (e) => { let x = e; while (x && !isW(x, "p")) x = x.parentNode; return x; };
+  const mk = (local, id) => { const e = doc.createElementNS(W, "w:" + local); e.setAttributeNS(W, "w:id", id); return e; };
+  const refRun = (id) => { const r = doc.createElementNS(W, "w:r"); r.appendChild(mk("commentReference", id)); return r; };
+  const gone = new Set();
+  for (const c of comments) {
+    const id = wval(c, "id");
+    const s0 = starts.get(id), e0 = ends.get(id), r0 = refs.get(id);
+    if (!s0 && !e0 && !r0) { gone.add(id); continue; }
+    if (s0 && !e0) {
+      const p = paraOf(s0);
+      const e = mk("commentRangeEnd", id);
+      p.appendChild(e);
+      if (!r0) p.appendChild(refRun(id));
+    } else if (!s0 && e0) {
+      const p = paraOf(e0);
+      const ppr = wkid(p, "pPr");
+      p.insertBefore(mk("commentRangeStart", id), ppr ? ppr.nextSibling : p.firstChild);
+      if (!r0) e0.parentNode.insertBefore(refRun(id), e0.nextSibling);
+    } else if (s0 && e0 && !r0) e0.parentNode.insertBefore(refRun(id), e0.nextSibling);
+  }
+  if (!gone.size) return changed;
+  // out of comments.xml, and out of the parts Word keeps beside it (by the comment's paragraph ids)
+  const paraIds = new Set();
+  for (const c of comments) {
+    if (!gone.has(wval(c, "id"))) continue;
+    for (const p of c.getElementsByTagNameNS(W, "p")) {
+      const pid = p.getAttributeNS(W14, "paraId") || p.getAttribute("w14:paraId");
+      if (pid) paraIds.add(pid);
+    }
+    c.parentNode.removeChild(c);
+  }
+  changed.set(cName, cdoc);
+  const attr = (e, ns, pre, name) => e.getAttributeNS(ns, name) || e.getAttribute(pre + ":" + name);
+  const exName = partByType(relsDoc, mainPart, "commentsExtended");
+  if (exName && all.has(exName)) {
+    const d = parse(dec(all.get(exName)));
+    for (const e of [...d.getElementsByTagNameNS(W15, "commentEx")]) if (paraIds.has(attr(e, W15, "w15", "paraId"))) e.parentNode.removeChild(e);
+    changed.set(exName, d);
+  }
+  const durable = new Set();
+  const idsName = partByType(relsDoc, mainPart, "commentsIds");
+  if (idsName && all.has(idsName)) {
+    const d = parse(dec(all.get(idsName)));
+    for (const e of [...d.getElementsByTagNameNS(W16CID, "commentId")]) {
+      if (paraIds.has(attr(e, W16CID, "w16cid", "paraId"))) { durable.add(attr(e, W16CID, "w16cid", "durableId")); e.parentNode.removeChild(e); }
+    }
+    changed.set(idsName, d);
+  }
+  const cexName = partByType(relsDoc, mainPart, "commentsExtensible");
+  if (cexName && all.has(cexName) && durable.size) {
+    const d = parse(dec(all.get(cexName)));
+    for (const e of [...d.getElementsByTagNameNS(W16CEX, "commentExtensible")]) {
+      if (durable.has(attr(e, W16CEX, "w16cex", "durableId"))) e.parentNode.removeChild(e);
+    }
+    changed.set(cexName, d);
+  }
+  return changed;
 }
 
 const xt = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

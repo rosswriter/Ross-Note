@@ -1,11 +1,11 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.7.3";
-import * as ed from "./editor.js?v=1.7.3";
-import { Store, PICTURES } from "./store.js?v=1.7.3";
-import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.7.3";
+import * as md from "./md.js?v=2.0.0";
+import * as ed from "./editor.js?v=2.0.0";
+import { Store, PICTURES } from "./store.js?v=2.0.0";
+import { ProjectStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=2.0.0";
 
-export const VERSION = "1.7.3";
+export const VERSION = "2.0.0";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -20,8 +20,21 @@ const S = {
 const P = [0, 1].map((k) => {
   const el = $("pane" + k);
   const head = el.querySelector(".head");
-  head.innerHTML = '<span class="hname"></span><span class="hwords"></span>';
-  return { k, el, head, hname: head.firstChild, hwords: head.lastChild, scroller: el.querySelector(".scroller"),
+  head.innerHTML = '<span class="hname"></span><button type="button" class="hcomments" hidden></button><span class="hwords"></span>';
+  // the page and, beside it (or under it when the pane is narrow), the scene's comments
+  const scroller = el.querySelector(".scroller");
+  const pbody = document.createElement("div");
+  pbody.className = "pbody";
+  scroller.before(pbody);
+  pbody.appendChild(scroller);
+  const cpanel = document.createElement("aside");
+  cpanel.className = "cpanel";
+  cpanel.hidden = true;
+  pbody.appendChild(cpanel);
+  const hc = head.querySelector(".hcomments");
+  hc.addEventListener("click", (e) => { e.preventDefault(); toggleComments(); });
+  hc.addEventListener("mousedown", (e) => e.preventDefault());
+  return { k, el, head, hname: head.firstChild, hcomments: hc, hwords: head.lastChild, scroller, cpanel,
     page: el.querySelector(".page"), note: null, dirty: false, timer: 0 };
 });
 let A = P[0];            // the pane you're working in
@@ -77,6 +90,7 @@ function layout() {
   for (const b of document.querySelectorAll("[data-cmd=splith],[data-cmd=splitv]")) {
     b.classList.toggle("on", split === (b.dataset.cmd === "splith" ? "h" : "v"));
   }
+  if (typeof renderComments === "function") renderComments();
 }
 
 // Ctrl+\ side by side, Ctrl+Shift+\ top and bottom; the same again goes back to one
@@ -467,6 +481,100 @@ function updateHead() {
       (n.readOnly ? `  (read-only: it has ${n.readOnly.join(", ")}; edit it in Ross Writer)` : "") : "No note open";
   }
   wordsSoon();
+  renderComments();
+}
+
+// ------------------------------------------------------------------ Word comments (Ross Writer scenes)
+// The scene's comments listed beside the page: who, when, the words they're on, what they say. They're
+// kept in the Word file as you edit (wordpatch.js); here they're read only. Tap one to go to its words.
+function toggleComments() {
+  S.settings.showComments = !S.settings.showComments;
+  saveSettings();
+  renderComments();
+}
+
+function commentDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+const shownComments = new WeakMap();
+function renderComments() {
+  for (const p of P) {
+    const cs = (p.note && p.note.comments) || [];
+    const open = cs.filter((c) => !c.done).length;
+    p.hcomments.hidden = !cs.length;
+    p.hcomments.textContent = cs.length ? `${cs.length} comment${cs.length === 1 ? "" : "s"}${open < cs.length ? ` (${cs.length - open} resolved)` : ""}` : "";
+    p.hcomments.classList.toggle("on", !!S.settings.showComments);
+    p.hcomments.title = S.settings.showComments ? "Hide the comments" : "Show the comments";
+    const show = !!S.settings.showComments && cs.length > 0 && !p.el.hidden;
+    p.cpanel.hidden = !show;
+    p.el.classList.toggle("cbelow", p.el.clientWidth < 760);
+    if (!show) continue;
+    const key = JSON.stringify(cs);
+    if (shownComments.get(p.cpanel) === key) continue;
+    shownComments.set(p.cpanel, key);
+    p.cpanel.textContent = "";
+    const top = document.createElement("div");
+    top.className = "ctop";
+    top.textContent = "Comments";
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = "✕";
+    x.title = "Hide the comments";
+    x.onclick = toggleComments;
+    top.appendChild(x);
+    p.cpanel.appendChild(top);
+    const replies = (id) => cs.filter((c) => c.parent === id);
+    const item = (c, reply) => {
+      const it = document.createElement("div");
+      it.className = "citem" + (reply ? " reply" : "") + (c.done ? " done" : "");
+      const who = document.createElement("div");
+      who.className = "cwho";
+      who.textContent = [c.author || "Someone", commentDate(c.date), c.done ? "resolved" : ""].filter(Boolean).join(" · ");
+      it.appendChild(who);
+      if (c.words && !reply) {
+        const q = document.createElement("div");
+        q.className = "cwords";
+        q.textContent = "“" + (c.words.length > 140 ? c.words.slice(0, 140) + "…" : c.words) + "”";
+        it.appendChild(q);
+      }
+      const t = document.createElement("div");
+      t.className = "ctext";
+      t.textContent = c.text;
+      it.appendChild(t);
+      it.onclick = () => goToWords(p, c.words || (cs.find((o) => o.id === c.parent) || {}).words || "");
+      p.cpanel.appendChild(it);
+      for (const r of replies(c.id)) item(r, true);
+    };
+    for (const c of cs) if (!c.parent || !cs.some((o) => o.id === c.parent)) item(c, false);
+  }
+}
+
+// the words a comment is on, found in the page, selected and scrolled to
+function goToWords(p, words) {
+  const want = (words || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!want) return;
+  const lines = [...p.page.children];
+  const starts = [];
+  let at = 0;
+  const text = lines.map((d) => { const t = ed.lineText(d); starts.push(at); at += t.length + 1; return t; }).join(" ");
+  const k = text.replace(/\s/g, " ").indexOf(want);
+  if (k < 0) { toast("Those words aren't in the page any more."); return; }
+  const where = (off) => {
+    let i = 0;
+    while (i + 1 < starts.length && starts[i + 1] <= off) i++;
+    return ed.pointAt(lines[i], off - starts[i]);
+  };
+  const r = document.createRange();
+  r.setStart(...where(k));
+  r.setEnd(...where(k + want.length));
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  const div = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const line = div && div.closest(".ln");
+  if (line) line.scrollIntoView({ block: "center" });
 }
 
 // ------------------------------------------------------------------ word count (as the laptop counts)
@@ -646,6 +754,8 @@ async function saveNow(pane) {
     await S.store.write(note, text);
     // the same note open in the other pane shows what was just saved
     for (const q of P) if (q !== pane && q.note === note && !q.dirty) refill(q);
+    // a scene's comments as the saved file has them now (one on deleted words is gone)
+    if (note.comments) renderComments();
   }
   const title = md.titleOfLines(lines) || "Untitled";
   if (md.safeName(title) !== note.name) {
@@ -1496,6 +1606,7 @@ function menuItems(name) {
     ];
     case "view": return [
       { label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Shift+O" },
+      { label: "Show Comments", on: !!s.showComments, fn: toggleComments, off: !(A.note && A.note.comments && A.note.comments.length) },
       "-",
       { label: "Split Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
       { label: "Split Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
@@ -1625,6 +1736,7 @@ function showKeys() {
     "Hide / show the note list: Ctrl+Shift+L    Light / dark: Ctrl+Shift+D",
     "Search the notes: Ctrl+Shift+F",
     "Ross Writer projects: File ▸ Open a Ross Writer Project (scenes saved back into their Word files)",
+    "Comments in a Ross Writer scene: tap “N comments” in the name bar (View ▸ Show Comments); tap one to go to its words",
     "Find: ^p a line's end, ^t a tab    Word count: in the name bar",
     "Word copy (RossNotes/Word Copies, kept up to date): File ▸ Update Word Copy",
     "Move a note: Alt+Up / Down / Left / Right",
@@ -1718,7 +1830,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.7.3")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=2.0.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -1821,7 +1933,7 @@ $("file-book").addEventListener("change", async (e) => {
 
 async function importNotebook(file) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.7.3");
+  const NB = await import("./notebooks.js?v=2.0.0");
   const W = await wordModule();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = NB.kindOf(bytes);
@@ -2464,6 +2576,6 @@ function showHeadings() {
 }
 
 // for the tests
-window.RN = { S, P, openProject, chooseProject, backToNotes, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+window.RN = { S, P, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
