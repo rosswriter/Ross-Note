@@ -1,13 +1,13 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.1";
-import * as ed from "./editor.js?v=1.9.1";
-import { Store, PICTURES } from "./store.js?v=1.9.1";
-import * as spell from "./spell.js?v=1.9.1";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.9.1";
+import * as md from "./md.js?v=1.9.2";
+import * as ed from "./editor.js?v=1.9.2";
+import { Store, PICTURES } from "./store.js?v=1.9.2";
+import * as spell from "./spell.js?v=1.9.2";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.9.2";
 
-export const VERSION = "1.9.1";
-export const EDITION = "V7-full";
+export const VERSION = "1.9.2";
+export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
 const SPACINGS = [["Single", 100], ["1.15", 115], ["1.5", 150], ["Double", 200]];
@@ -164,7 +164,7 @@ function enterPlace(store) {
   // the last place's search results go with it
   if ($("results")) $("results").hidden = true;
   // what to offer to reopen (File ▸ Reopen …): Android asks again for each folder after a restart, so
-  // V7-full never reopens a project or a document by itself at the start; one tap does it
+  // V9 never reopens a project or a document by itself at the start; one tap does it
   if (store.isDoc) s.lastDoc = { name: store.label || store.fileName };
   else if (store.isProject) s.lastProject = { name: store.label, file: store.fileName };
   saveSettings();
@@ -275,6 +275,19 @@ async function start() {
   if (test === "opfs") return openRoot(await navigator.storage.getDirectory(), true);
   let handle = null;
   try { handle = await kvGet("root"); } catch (e) { /* none */ }
+  // 1.9.2: where you were (a project, a document, or your notes), straight back if Android still lets
+  // Ross Note in; otherwise one tap, on the start screen
+  const where = S.settings.where;
+  if (where === "project" || where === "doc") {
+    let h = null, f = null;
+    try { h = await kvGet(where === "doc" ? "docFile" : "project"); f = where === "doc" ? true : await kvGet("projectFile"); } catch (e) { h = null; }
+    if (h && f) {
+      let mode = "prompt";
+      try { mode = h.queryPermission ? await h.queryPermission({ mode: "readwrite" }) : "granted"; } catch (e) { /* asked */ }
+      if (mode === "granted") return where === "doc" ? openDocFile(h) : openProject(h, f);
+      return showStart("again", handle, { where, h, f });
+    }
+  }
   if (handle && handle.kind === "directory") {
     const mode = handle.queryPermission ? await handle.queryPermission({ mode: "readwrite" }) : "granted";
     if (mode === "granted") return openRoot(handle);
@@ -283,7 +296,7 @@ async function start() {
   showStart(window.showDirectoryPicker ? "first" : "unsupported");
 }
 
-function showStart(kind, handle) {
+function showStart(kind, handle, was = null) {
   $("start").hidden = false;
   $("start").querySelector("h1").textContent = "Ross Note " + EDITION + " (" + VERSION + ")";
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
@@ -295,14 +308,30 @@ function showStart(kind, handle) {
     b.onclick = fn;
     btns.appendChild(b);
   };
-  if (kind === "again") {
+  if (kind === "again" && was) {
+    const name = was.where === "doc" ? (S.settings.lastDoc || {}).name || was.h.name : (S.settings.lastProject || {}).name || was.h.name;
+    msg.textContent = `You were working in “${name}”.`;
+    button("Carry on where I was", true, async () => {
+      let r = "denied";
+      try { r = await was.h.requestPermission({ mode: "readwrite" }); } catch (e) { r = "denied"; }
+      if (r !== "granted") { toast(`Android didn't let Ross Note into “${was.h.name}”.`); return; }
+      if (was.where === "doc") openDocFile(was.h); else openProject(was.h, was.f);
+    });
+    if (handle) button("Open my notes", false, async () => {
+      const r = await handle.requestPermission({ mode: "readwrite" });
+      if (r === "granted") openRoot(handle);
+    });
+    note.textContent = "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
+      "one tap and you're back at the same place in the same note.";
+  } else if (kind === "again") {
     msg.textContent = `Your notes are in the folder “${handle.name}”.`;
-    button("Open my notes", true, async () => {
+    button("Carry on where I was", true, async () => {
       const r = await handle.requestPermission({ mode: "readwrite" });
       if (r === "granted") openRoot(handle);
     });
     button("Choose another folder…", false, chooseFolder);
-    note.textContent = "Android asks once each time Ross Note starts afresh.";
+    note.textContent = "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
+      "one tap and you're back at the same place in the same note.";
   } else if (kind === "first") {
     msg.textContent = "Choose your RossNotes folder: the one your sync app (Drivesync) keeps in step with your laptop.";
     button("Choose the RossNotes folder…", true, chooseFolder);
@@ -352,6 +381,94 @@ async function openRoot(handle, quiet) {
   if (n) await openNote(n, P[0]);
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
+  restoreSpot();
+  if (!quiet) setTimeout(lostPick, 400);
+}
+
+// ------------------------------------------------------------------ 1.9.2: steady as a word processor
+// Where you are (each pane's note, its scroll and caret) is kept whenever Ross Note is put aside, closed or
+// reloaded, and put back when it starts again. A reload by accident is hard to do: F5 and Ctrl+Shift+R do nothing
+// here, the page doesn't pull down to reload, and the browser asks before leaving or reloading.
+function keepSpot() {
+  if (!S.store) return;          // nothing open yet: nothing to keep (and newer settings aren't written over)
+  try {
+    S.settings.spot = { where: S.settings.where, panes: P.map((p) => {
+      if (!p.note) return null;
+      const inIt = p.page.contains(window.getSelection().anchorNode);
+      const c = inIt ? ed.caret(p.page) : (p.lastCaret && p.lastCaret.key === p.note.key() ? p.lastCaret.c : null);
+      return { key: p.note.key(), top: p.scroller.scrollTop, c };
+    }), active: P.indexOf(A) };
+    saveSettings();
+  } catch (e) { /* kept as before */ }
+}
+let spotDone = false;
+function restoreSpot() {
+  if (spotDone) return;
+  spotDone = true;
+  const sp = S.settings.spot;
+  if (!sp || !sp.panes || sp.where !== S.settings.where) return;
+  setTimeout(() => {
+    sp.panes.forEach((x, k) => {
+      const p = P[k];
+      if (!x || !p || !p.note || p.note.key() !== x.key) return;
+      p.scroller.scrollTop = x.top || 0;
+      if (x.c && k === (sp.active || 0)) {
+        try { p.page.focus({ preventScroll: true }); ed.setCaret(p.page, x.c); p.scroller.scrollTop = x.top || 0; } catch (e) { /* the top */ }
+      }
+    });
+  }, 300);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepSpot(); });
+// the caret in each pane, kept as it moves (a reload can come when the selection is somewhere else)
+document.addEventListener("selectionchange", () => {
+  const n = window.getSelection().anchorNode;
+  for (const p of P) if (p.note && n && p.page.contains(n)) { try { p.lastCaret = { key: p.note.key(), c: ed.caret(p.page) }; } catch (e) { /* as it was */ } }
+});
+window.addEventListener("pagehide", keepSpot);
+window.addEventListener("beforeunload", (e) => {
+  keepSpot();
+  if (S.store && !location.search.includes("test=")) { e.preventDefault(); e.returnValue = ""; }   // "Leave site?"
+});
+document.addEventListener("keydown", (e) => {
+  const k = e.key;
+  // (Ctrl+R alone is Align Right, which keeps the browser from reloading too)
+  if (k === "F5" || ((e.ctrlKey || e.metaKey) && e.shiftKey && (k === "r" || k === "R"))) {
+    e.preventDefault();
+    toast("Ross Note doesn't reload: everything is saved as you type.", 3000);
+  }
+}, true);
+setInterval(() => { if (document.visibilityState === "visible" && S.store) keepSpot(); }, 15000);
+
+// ------------------------------------------------------------------ 1.9.2: a folder choice lost to a restart
+// On Android, choosing a folder or a file hands Ross Note over to the system's picker; when the tablet is short
+// of memory, Android closes Ross Note meanwhile and starts it afresh when you come back, so what you chose never
+// arrives (and Ross Note opens on your notes). A note is kept while a picker is open; finding it on starting
+// again, Ross Note says what happened and offers to choose again.
+const PICK_KEY = "rossnote-v7full-picking";
+function pickStart(what) {
+  S.picking = true;
+  try { localStorage.setItem(PICK_KEY, JSON.stringify({ what, t: Date.now() })); } catch (e) { /* not kept */ }
+}
+function pickEnd() {
+  try { localStorage.removeItem(PICK_KEY); } catch (e) { /* none */ }
+  setTimeout(() => { S.picking = false; }, 1500);
+}
+let lostPickSeen = false;
+async function lostPick() {
+  if (lostPickSeen) return;
+  lostPickSeen = true;
+  let was = null;
+  try { was = JSON.parse(localStorage.getItem(PICK_KEY) || "null"); localStorage.removeItem(PICK_KEY); } catch (e) { was = null; }
+  if (!was || Date.now() - was.t > 15 * 60 * 1000) return;
+  const what = was.what === "doc" ? "the Word document" : "the project's folder";
+  const q = document.createElement("div");
+  q.innerHTML = `<p>Android closed Ross Note while you were choosing ${what}, and started it afresh when you came back, ` +
+    "so what you chose didn't reach it. This happens when the tablet is short of memory.</p>" +
+    "<p>Choose it again now. Closing other apps first helps. Once it has opened, File ▸ Reopen opens it " +
+    "again without the picker.</p>";
+  const v = await ask(was.what === "doc" ? "Open a Word Document" : "Open a Ross Writer Project", q,
+    [[was.what === "doc" ? "Choose the document again…" : "Choose the folder again…", "go", true]]);
+  if (v === "go") (was.what === "doc" ? chooseWordDoc : chooseProject)();
 }
 
 // ------------------------------------------------------------------ Ross Writer projects
@@ -365,11 +482,12 @@ async function chooseProject() {
   }
   toast("Choose the project's folder: the one holding the .rwproj file…", 8000);
   let h;
+  pickStart("project");
   try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
     if (e && e.name === "AbortError") toast("No folder chosen.");
     else dialog("Open a Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return;
-  }
+  } finally { pickEnd(); }
   toast(`Looking in “${h.name}”…`, 8000);
   let files;
   try { files = await findProjectFiles(h); } catch (e) {
@@ -428,6 +546,7 @@ async function openProject(handle, file) {
   else for (const p of P) { p.page.textContent = ""; p.page.contentEditable = "false"; }
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
+  restoreSpot();
   const ro = st.all().filter((x) => x.readOnly && !x.raw.pdf).length;
   toast(`${st.label}: ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}` +
     (ro ? ` (${ro} read-only here: comments, footnotes or the like)` : ""));
@@ -444,12 +563,13 @@ async function chooseWordDoc() {
   toast("Choose the Word document or Markdown note…", 8000);
   let fh = null;
   if (window.showOpenFilePicker) {
+    pickStart("doc");
     try {
       [fh] = await window.showOpenFilePicker({ id: "worddoc", multiple: false });
     } catch (e) {
       if (e && e.name === "AbortError") { toast("No file chosen."); return; }
       fh = null;      // the file picker can't: the folder way instead
-    }
+    } finally { pickEnd(); }
   }
   if (!fh) fh = await chooseDocInFolder();
   if (!fh) return;
@@ -463,11 +583,12 @@ async function chooseDocInFolder() {
     return null;
   }
   let dir;
+  pickStart("doc");
   try { dir = await window.showDirectoryPicker({ id: "docfolder", mode: "readwrite" }); } catch (e) {
     if (e && e.name === "AbortError") toast("No folder chosen.");
     else dialog("Open a Word Document or Note", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return null;
-  }
+  } finally { pickEnd(); }
   const names = [];
   try { for await (const [name, h] of dir.entries()) if (h.kind === "file" && DOC_RE.test(name) && !name.startsWith("~$")) names.push(name); } catch (e) { /* none */ }
   names.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" }));
@@ -2580,7 +2701,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -2726,7 +2847,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.1");
+  const NB = await import("./notebooks.js?v=1.9.2");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -2798,7 +2919,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.1");
+  const NB = await import("./notebooks.js?v=1.9.2");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3013,7 +3134,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.1"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.2"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3349,7 +3470,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.2");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -4556,7 +4677,7 @@ function toggleClassic() {
 }
 
 // for the tests
-window.RN = { toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

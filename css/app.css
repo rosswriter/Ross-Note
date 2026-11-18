@@ -34,7 +34,7 @@ body.classicfont { --pagefont: Cambria, Caladea, "Liberation Serif", "Noto Serif
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bar); color: var(--ui-ink);
   font: 15px/1.35 var(--uifont); }
-body { overscroll-behavior: none; }
+html, body { overscroll-behavior: none; }   /* no pull-to-reload (1.9.2) */
 button { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 

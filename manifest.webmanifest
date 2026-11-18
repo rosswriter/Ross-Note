@@ -1,14 +1,14 @@
 {
-  "name": "Ross Note V7-full",
-  "short_name": "Ross Note V7",
+  "name": "Ross Note V9",
+  "short_name": "Ross Note V9",
   "description": "Ross Note with Ross Writer projects, Word documents and comments edited in place.",
   "id": "./?edition=v7full",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#fff9c4",
-  "theme_color": "#1b523d",
+  "background_color": "#FBF8F1",
+  "theme_color": "#3B78B4",
   "lang": "en-GB",
   "categories": ["productivity", "utilities"],
   "icons": [
