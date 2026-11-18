@@ -4,7 +4,7 @@ import * as md from "./md.js?v=1.9.2";
 import * as ed from "./editor.js?v=1.9.2";
 import { Store, PICTURES } from "./store.js?v=1.9.2";
 import * as spell from "./spell.js?v=1.9.2";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.9.2";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.2";
 
 export const VERSION = "1.9.2";
 export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
@@ -141,7 +141,9 @@ async function setSplit(kind) {
 // each keeps its own open notes and open branches in the list
 function placeId(store) {
   if (store && store.isDoc) return "doc:" + store.fileName;
-  return store && store.isProject ? "project:" + store.handle.name + "/" + store.fileName : "notes";
+  if (store && store.isProject) return "project:" + store.handle.name + "/" + store.fileName;
+  return store && store.handle && typeof S.settings.firstNotes === "string" && store.handle.name !== S.settings.firstNotes ?
+    "notes:" + store.handle.name : "notes";      // the first notes folder keeps the old "notes"
 }
 function enterPlace(store) {
   const s = S.settings;
@@ -155,12 +157,17 @@ function enterPlace(store) {
     if (p) Object.assign(s, { open: p.open || "", open2: p.open2 || "", expanded: p.expanded || [] });
     else Object.assign(s, { open: "", open2: "", expanded: [] });
   }
-  else if (!store.isDoc && !store.isProject && s.where && s.where !== "notes") {
-    // starting up after a session that ended in a project or a document: the notes' own open notes
-    const p = s.places.notes || {};
+  else if (!store.isDoc && !store.isProject && s.where && (s.where !== "notes" || (typeof s.notesName === "string" && store.handle &&
+      s.notesName !== store.handle.name))) {
+    // starting up after a session that ended in a project, a document or another notes folder: this one's own
+    const p = s.places[placeId(store)] || {};
     Object.assign(s, { open: p.open || "", open2: p.open2 || "", expanded: p.expanded || [] });
   }
   s.where = store.isDoc ? "doc" : store.isProject ? "project" : "notes";
+  if (!store.isDoc && !store.isProject && store.handle) {
+    if (typeof s.firstNotes !== "string") s.firstNotes = store.handle.name;
+    s.notesName = store.handle.name;
+  }
   // the last place's search results go with it
   if ($("results")) $("results").hidden = true;
   // what to offer to reopen (File ▸ Reopen …): Android asks again for each folder after a restart, so
@@ -179,7 +186,11 @@ function idb() {
     r.onerror = () => bad(r.error);
   });
 }
+// tests only (?test=opfs): folders are kept in memory, as headless Chromium crashes reading a test-storage
+// folder back out of IndexedDB (a folder you chose on the tablet is kept in IndexedDB as always)
+const KV_TEST = /[?&]test=opfs/.test(location.search) ? new Map() : null;
 async function kvGet(k) {
+  if (KV_TEST && KV_TEST.has(k)) return KV_TEST.get(k);
   const db = await idb();
   return new Promise((ok) => {
     const r = db.transaction("kv").objectStore("kv").get(k);
@@ -188,6 +199,7 @@ async function kvGet(k) {
   });
 }
 async function kvSet(k, v) {
+  if (KV_TEST && v && typeof v === "object") { KV_TEST.set(k, v); return; }
   const db = await idb();
   return new Promise((ok) => {
     const t = db.transaction("kv", "readwrite");
@@ -291,11 +303,14 @@ async function start() {
   if (handle && handle.kind === "directory") {
     const mode = handle.queryPermission ? await handle.queryPermission({ mode: "readwrite" }) : "granted";
     if (mode === "granted") return openRoot(handle);
-    return showStart("again", handle);
+    return showStart("again", handle, { where: "notes", h: handle });
   }
   showStart(window.showDirectoryPicker ? "first" : "unsupported");
 }
 
+// 1.9.2: the start screen: Carry on where I was, Open my notes, Open a Ross Writer Project, Open a Word Document,
+// Choose another folder (another set of notes, or the folder holding the projects). Each is one tap: Android
+// lets a web app into a folder or a file only from a tap.
 function showStart(kind, handle, was = null) {
   $("start").hidden = false;
   $("start").querySelector("h1").textContent = "Ross Note " + EDITION + " (" + VERSION + ")";
@@ -307,45 +322,109 @@ function showStart(kind, handle, was = null) {
     b.textContent = text;
     b.onclick = fn;
     btns.appendChild(b);
+    return b;
   };
-  if (kind === "again" && was) {
-    const name = was.where === "doc" ? (S.settings.lastDoc || {}).name || was.h.name : (S.settings.lastProject || {}).name || was.h.name;
+  if (kind === "unsupported") {
+    msg.textContent = "This browser can't open a folder on this device. Ross Note needs Chrome or Edge (on Android, version 132 or later).";
+    note.textContent = "";
+    return;
+  }
+  const into = async (h) => {
+    let r = "denied";
+    try { r = h.queryPermission && (await h.queryPermission({ mode: "readwrite" })) === "granted" ? "granted" : await h.requestPermission({ mode: "readwrite" }); } catch (e) { r = "denied"; }
+    if (r !== "granted") toast(`Android didn't let Ross Note into “${h.name}”.`);
+    return r === "granted";
+  };
+  if (was && was.h) {
+    const name = was.where === "doc" ? (S.settings.lastDoc || {}).name || was.h.name :
+      was.where === "project" ? (S.settings.lastProject || {}).name || was.h.name : was.h.name;
     msg.textContent = `You were working in “${name}”.`;
     button("Carry on where I was", true, async () => {
-      let r = "denied";
-      try { r = await was.h.requestPermission({ mode: "readwrite" }); } catch (e) { r = "denied"; }
-      if (r !== "granted") { toast(`Android didn't let Ross Note into “${was.h.name}”.`); return; }
-      if (was.where === "doc") openDocFile(was.h); else openProject(was.h, was.f);
+      if (!await into(was.h)) return;
+      if (was.where === "doc") openDocFile(was.h);
+      else if (was.where === "project") openProject(was.h, was.f);
+      else openRoot(was.h);
     });
-    if (handle) button("Open my notes", false, async () => {
-      const r = await handle.requestPermission({ mode: "readwrite" });
-      if (r === "granted") openRoot(handle);
-    });
-    note.textContent = "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
-      "one tap and you're back at the same place in the same note.";
-  } else if (kind === "again") {
-    msg.textContent = `Your notes are in the folder “${handle.name}”.`;
-    button("Carry on where I was", true, async () => {
-      const r = await handle.requestPermission({ mode: "readwrite" });
-      if (r === "granted") openRoot(handle);
-    });
-    button("Choose another folder…", false, chooseFolder);
-    note.textContent = "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
-      "one tap and you're back at the same place in the same note.";
   } else if (kind === "first") {
     msg.textContent = "Choose your RossNotes folder: the one your sync app (Drivesync) keeps in step with your laptop.";
     button("Choose the RossNotes folder…", true, chooseFolder);
-    note.textContent = "Ross Note reads and saves the notes in that folder, as the laptop does: one Markdown file for each note.";
-  } else {
-    msg.textContent = "This browser can't open a folder on this device. Ross Note needs Chrome or Edge (on Android, version 132 or later).";
-    note.textContent = "";
   }
+  if (handle && !(was && was.where === "notes")) button(`Open my notes (“${handle.name}”)`, false, async () => { if (await into(handle)) openRoot(handle); });
+  else if (handle) button("Open my notes", false, async () => { if (await into(handle)) openRoot(handle); });
+  button("Open a Ross Writer Project…", false, chooseProject);
+  if (window.showOpenFilePicker || window.showDirectoryPicker) button("Open a Word Document…", false, chooseWordDoc);
+  if (kind !== "first") button("Choose another folder…", false, chooseAnotherFolder);
+  note.textContent = kind === "first" ?
+    "Ross Note reads and saves the notes in that folder, as the laptop does: one Markdown file for each note." :
+    "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
+    "one tap and you're back at the same place in the same note.";
+}
+
+// ------------------------------------------------------------------ 1.9.2: more than one set of notes
+// Any folder of Markdown notes can be opened as your notes; the last few are remembered (kv "noteFolders"),
+// each keeping its own open notes and branches (places "notes:<folder>"). The one open is "my notes".
+async function noteFolders() {
+  let list = [];
+  try { list = (await kvGet("noteFolders")) || []; } catch (e) { list = []; }
+  return list.filter((h) => h && h.kind === "directory");
+}
+async function rememberNoteFolder(h) {
+  let list = await noteFolders();
+  const out = [h];
+  for (const x of list) {
+    let same = false;
+    try { same = await x.isSameEntry(h); } catch (e) { same = x.name === h.name; }
+    if (!same && out.length < 6) out.push(x);
+  }
+  try { await kvSet("noteFolders", out); } catch (e) { /* this visit only */ }
+}
+
+async function chooseAnotherFolder() {
+  const list = await noteFolders();
+  let cur = null;
+  try { cur = S.notes ? S.notes.handle : await kvGet("root"); } catch (e) { cur = null; }
+  const others = [];
+  for (const h of list) {
+    let same = false;
+    try { same = cur ? await h.isSameEntry(cur) : false; } catch (e) { same = cur && h.name === cur.name; }
+    if (!same) others.push(h);
+  }
+  const box = document.createElement("div");
+  box.className = "choose";
+  const p = document.createElement("p");
+  p.textContent = "Which folder?";
+  box.appendChild(p);
+  const opts = [];
+  const add = (label, value, on) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="fold" value="${opts.length}"${on ? " checked" : ""}> `;
+    l.append(label);
+    box.appendChild(l);
+    opts.push(value);
+  };
+  others.forEach((h, k) => add(`Notes: “${h.name}”`, { kind: "notes", h }, k === 0));
+  add("Another folder of notes…", { kind: "newnotes" }, !others.length);
+  add("The folder holding my Ross Writer projects…", { kind: "projects" }, false);
+  const v = await ask("Choose Another Folder", box, [["Open", "go", true]]);
+  if (v !== "go") return;
+  const o = opts[+box.querySelector("input:checked").value];
+  if (o.kind === "projects") return chooseProjectsFolder();
+  if (o.kind === "newnotes") return chooseFolder();
+  let r = "denied";
+  try { r = (await o.h.queryPermission({ mode: "readwrite" })) === "granted" ? "granted" : await o.h.requestPermission({ mode: "readwrite" }); } catch (e) { r = "denied"; }
+  if (r !== "granted") { toast(`Android didn't let Ross Note into “${o.h.name}”.`); return; }
+  try { await kvSet("root", o.h); } catch (e) { /* this visit only */ }
+  await rememberNoteFolder(o.h);
+  return openRoot(o.h);
 }
 
 async function chooseFolder() {
   try {
-    const h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" });
+    pickStart("notes");
+    let h;
+    try { h = await window.showDirectoryPicker({ id: "rossnotes", mode: "readwrite" }); } finally { pickEnd(); }
     await kvSet("root", h);
+    await rememberNoteFolder(h);
     openRoot(h);
   } catch (e) {
     if (e && e.name !== "AbortError") toast("Couldn't open that folder: " + e.message);
@@ -382,6 +461,7 @@ async function openRoot(handle, quiet) {
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
   restoreSpot();
+  rememberNoteFolder(handle).catch(() => {});      // in the list of notes folders to switch between
   if (!quiet) setTimeout(lostPick, 400);
 }
 
@@ -460,7 +540,7 @@ async function lostPick() {
   let was = null;
   try { was = JSON.parse(localStorage.getItem(PICK_KEY) || "null"); localStorage.removeItem(PICK_KEY); } catch (e) { was = null; }
   if (!was || Date.now() - was.t > 15 * 60 * 1000) return;
-  const what = was.what === "doc" ? "the Word document" : "the project's folder";
+  const what = was.what === "doc" ? "the Word document" : was.what === "notes" ? "the folder of notes" : "the project's folder";
   const q = document.createElement("div");
   q.innerHTML = `<p>Android closed Ross Note while you were choosing ${what}, and started it afresh when you came back, ` +
     "so what you chose didn't reach it. This happens when the tablet is short of memory.</p>" +
@@ -468,19 +548,32 @@ async function lostPick() {
     "again without the picker.</p>";
   const v = await ask(was.what === "doc" ? "Open a Word Document" : "Open a Ross Writer Project", q,
     [[was.what === "doc" ? "Choose the document again…" : "Choose the folder again…", "go", true]]);
-  if (v === "go") (was.what === "doc" ? chooseWordDoc : chooseProject)();
+  if (v === "go") (was.what === "doc" ? chooseWordDoc : was.what === "notes" ? chooseFolder : chooseProject)();
 }
 
 // ------------------------------------------------------------------ Ross Writer projects
 // A project folder (made by Ross Writer: <name>.rwproj and Scenes/) somewhere your sync app keeps;
 // its entries are edited here and saved back into their Word files (project.js)
 async function chooseProject() {
-  // the folder picker first, straight from the tap (Android allows it only then); saving after
+  // 1.9.2: the folder holding your projects, once chosen, is remembered: after that, your projects are listed
+  // here and the Android folder picker isn't needed
   if (!window.showDirectoryPicker) {
     dialog("Open a Ross Writer Project", "This browser can't open folders on this device. Ross Note needs Chrome (version 132 or later on Android).");
     return;
   }
-  toast("Choose the project's folder: the one holding the .rwproj file…", 8000);
+  let root = null;
+  try { root = await kvGet("projectsRoot"); } catch (e) { root = null; }
+  if (root && root.kind === "directory") {
+    let mode = "prompt";
+    try { mode = root.queryPermission ? await root.queryPermission({ mode: "readwrite" }) : "granted"; } catch (e) { /* asked */ }
+    if (mode !== "granted") { try { mode = await root.requestPermission({ mode: "readwrite" }); } catch (e) { mode = "denied"; } }
+    if (mode === "granted") return pickFromFolder(root, true);
+  }
+  return chooseProjectsFolder();
+}
+
+async function chooseProjectsFolder() {
+  toast("Choose the folder that holds your Ross Writer projects (or one project's own folder)…", 8000);
   let h;
   pickStart("project");
   try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
@@ -488,30 +581,56 @@ async function chooseProject() {
     else dialog("Open a Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return;
   } finally { pickEnd(); }
-  toast(`Looking in “${h.name}”…`, 8000);
-  let files;
-  try { files = await findProjectFiles(h); } catch (e) {
+  return pickFromFolder(h, false);
+}
+
+async function pickFromFolder(h, remembered) {
+  let found;
+  try { found = await busy(`Looking for projects in “${h.name}”…`, () => findProjects(h), { after: 0 }); } catch (e) {
     dialog("Open a Ross Writer Project", `Couldn't read the folder “${h.name}”.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return;
   }
-  if (!files.length) {
+  if (!found.length) {
     // what is there, so it's clear which folder this was
     const seen = [];
     try { for await (const [name, e] of h.entries()) { seen.push(e.kind === "directory" ? name + "/" : name); if (seen.length >= 25) break; } } catch (e) { /* none */ }
-    dialog("Open a Ross Writer Project", `There's no Ross Writer project (.rwproj file) in “${h.name}”.\n\n` +
+    const q = document.createElement("div");
+    q.style.whiteSpace = "pre-wrap";
+    q.textContent = `There's no Ross Writer project (.rwproj file) in “${h.name}” or the folders inside it.\n\n` +
       (seen.length ? "This folder holds:\n" + seen.sort().map((x) => "  " + x).join("\n") : "This folder looks empty to Ross Note.") +
-      "\n\nChoose the project's own folder: the one holding the .rwproj file and the Scenes folder.");
+      "\n\nChoose the folder that holds your projects, or a project's own folder (the one with the .rwproj file and the Scenes folder).";
+    const v = await ask("Open a Ross Writer Project", q, [["Choose another folder…", "other", true]]);
+    if (v === "other") chooseProjectsFolder();
     return;
   }
-  let file = files[0];
-  if (files.length > 1) {
-    const q = document.createElement("div");
-    q.textContent = `“${h.name}” holds ${files.length} projects. Which one?`;
-    const v = await ask("Open a Ross Writer Project", q, files.map((f, k) => [f.replace(/\.rwproj$/i, ""), f, k === 0]));
-    if (!v) return;
-    file = v;
+  // a folder holding projects (not a project's own): remembered, so next time they're listed straight away
+  const own = found.length === 1 && found[0].dir === h;
+  if (!own || !remembered) {
+    let had = null;
+    try { had = await kvGet("projectsRoot"); } catch (e) { had = null; }
+    if (!own || !had) { try { await kvSet("projectsRoot", h); } catch (e) { /* this visit only */ } }
   }
-  await openProject(h, file);
+  if (found.length === 1 && !remembered) return openProject(found[0].dir, found[0].file);
+  const box = document.createElement("div");
+  box.className = "choose";
+  const p = document.createElement("p");
+  p.textContent = `In “${h.name}”:`;
+  box.appendChild(p);
+  const cur = S.store && S.store.isProject ? S.store.fileName : (S.settings.lastProject || {}).file;
+  let firstOn = found.findIndex((x) => x.file === cur);
+  if (firstOn < 0) firstOn = 0;
+  found.forEach((x, k) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="rwp" value="${k}"${k === firstOn ? " checked" : ""}> `;
+    const where = x.path.split("/").slice(1).join(" › ");
+    l.append(x.file.replace(/\.rwproj$/i, "") + (where ? "   (" + where + ")" : ""));
+    box.appendChild(l);
+  });
+  const v = await ask("Open a Ross Writer Project", box, [["Open", "go", true], ["Another folder…", "other"]]);
+  if (v === "other") return chooseProjectsFolder();
+  if (v !== "go") return;
+  const x = found[+box.querySelector("input:checked").value];
+  return openProject(x.dir, x.file);
 }
 
 async function openProject(handle, file) {
@@ -2335,6 +2454,7 @@ function menuItems(name) {
       "-",
       { label: "New Ross Writer Project…", fn: () => newProject(), off: !window.showDirectoryPicker },
       { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
+      { label: "Choose Another Folder…", fn: chooseAnotherFolder, off: !window.showDirectoryPicker },
       ...(s.lastProject && !(S.store && S.store.isProject && !S.store.isDoc && S.store.fileName === s.lastProject.file)
         ? [{ label: `Reopen “${s.lastProject.name}”`, fn: reopenProject }] : []),
       { label: "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
@@ -4677,7 +4797,7 @@ function toggleClassic() {
 }
 
 // for the tests
-window.RN = { lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

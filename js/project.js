@@ -81,6 +81,24 @@ export async function findProjectFiles(dir) {
   return out.sort();
 }
 
+// 1.9.2: every project in a folder and the folders inside it (Android's picker gives a folder, not the .rwproj
+// file: the one holding your projects will do). A project's own folder isn't looked into further.
+const SKIP_DIRS = new Set(["scenes", "trash", "research", "node_modules", "word copies", "backups"]);
+export async function findProjects(dir, depth = 3, path = "", out = [], seen = { n: 0 }) {
+  if (seen.n++ > 400) return out;
+  const subs = [];
+  let here = [];
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind === "file" && name.toLowerCase().endsWith(PROJECT_EXT)) here.push(name);
+    else if (h.kind === "directory" && !name.startsWith(".") && !SKIP_DIRS.has(name.toLowerCase())) subs.push([name, h]);
+  }
+  for (const f of here.sort()) out.push({ dir, file: f, path: path ? path + "/" + dir.name : dir.name });
+  if (here.length || depth <= 0) return out;
+  subs.sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [name, h] of subs) await findProjects(h, depth - 1, path ? path + "/" + dir.name : dir.name, out, seen);
+  return out;
+}
+
 export class ProjectStore {
   constructor(dirHandle, fileName) {
     this.isProject = true;
