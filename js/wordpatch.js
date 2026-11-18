@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf } from "./wordio.js?v=1.7.1";
+import { unzip, zip, imageSize, extOf } from "./wordio.js?v=1.8.3";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -63,7 +63,9 @@ function sigOf(ln) {
     else runs.push([t, f, h, ""]);
   }
   const k = ln.kind || "";
-  return JSON.stringify([k, k === "ul" || k === "ol" ? ln.depth || 1 : 0, ln.code ? 1 : 0, runs]);
+  const sig = [k, k === "ul" || k === "ol" ? ln.depth || 1 : 0, ln.code ? 1 : 0, runs];
+  if (ln.align && !ln.code) sig.push(ln.align);       // (unaligned lines' signatures as before 1.8.3)
+  return JSON.stringify(sig);
 }
 
 // a picture's file name, wherever it's written from (wordio's name, or a note's picture)
@@ -649,6 +651,17 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes) {
         il.setAttributeNS(W, "w:val", String(lvl));
       }
     } else dropNum();
+    // alignment: the line's own, as Word's jc; a line put back to the left loses its centring
+    if (!ln.code) {
+      const jc = ppr && wkid(ppr, "jc");
+      const want = ln.align === "justify" ? "both" : ln.align || null;
+      if (want) {
+        const j2 = jc || ensurePpr().appendChild(doc.createElementNS(W, "w:jc"));
+        j2.setAttributeNS(W, "w:val", want);
+      } else if (jc && ["center", "right", "end", "both", "distribute"].includes(jc.getAttributeNS(W, "val") || jc.getAttribute("w:val"))) {
+        ppr.removeChild(jc);
+      }
+    }
     if (ppr) { sortPpr(ppr); if (ppr.children.length) p.appendChild(ppr); }
     // the look of the words: the old paragraph's, or one like it; headings and the like without one
     // take their style's own (no run look), plain text the scene's usual

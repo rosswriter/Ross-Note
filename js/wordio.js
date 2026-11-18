@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.7.1";
+import * as md from "./md.js?v=1.8.3";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -307,9 +307,11 @@ export async function readDocx(buf, opts = {}) {
 
   const paragraph = (p) => {
     const ppr = kid(p, "pPr");
-    let sid = null, num = null;
+    let sid = null, num = null, align = null;
     if (ppr) {
       sid = kid(ppr, "pStyle") ? wv(kid(ppr, "pStyle")) : null;
+      // the paragraph's own alignment (Word's both / distribute: justified; end: right)
+      if (kid(ppr, "jc")) align = { center: "center", right: "right", end: "right", both: "justify", distribute: "justify" }[wv(kid(ppr, "jc"))] || null;
       const np = kid(ppr, "numPr");
       if (np && kid(np, "numId")) num = [wv(kid(np, "numId")), kid(np, "ilvl") ? +wv(kid(np, "ilvl")) || 0 : 0];
     }
@@ -334,7 +336,7 @@ export async function readDocx(buf, opts = {}) {
     for (const r of out) { if (r === null) parts.push([]); else parts[parts.length - 1].push(r); }
     return parts.map((runs, k) => ({
       kind: k === 0 || kind === "quote" ? kind : (kind === "ul" || kind === "ol" || heading ? null : kind),
-      depth, runs: tidyRuns(runs), code, title: isTitle && k === 0,
+      depth, runs: tidyRuns(runs), code, title: isTitle && k === 0, align: code ? null : align,
     }));
   };
 
@@ -412,6 +414,7 @@ export function toNoteLines(lines, picture) {
       return { kind: null, runs: [{ t, f: new Set() }], raw: t, code: true };
     }
     const out = { kind: ln.kind, mark: null, runs: [] };
+    if (ln.align) out.align = ln.align;
     if ((ln.kind === "ul" || ln.kind === "ol") && ln.depth > 1) {
       const lead = "  ".repeat(ln.depth - 1);
       out.mark = ln.kind === "ul" ? "ul:" + lead + "- " : "ol:" + lead + "\u0000. ";
@@ -433,7 +436,7 @@ export function fromNoteLines(lines) {
     }
     const heading = !!ln.kind && ln.kind[0] === "h";
     return {
-      kind: ln.kind, depth: depthOf[k] || 1, code: false,
+      kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null,
       runs: ln.runs.map((r) => (r.img ? { t: OBJ, f: new Set(), img: r.img }
         : { t: r.t.split(OBJ).join(""), f: heading ? new Set([...r.f].filter((x) => x !== "b")) : r.f, href: r.href || null })),
     };
@@ -598,6 +601,7 @@ export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria
     }
     if (ln.pageBreak) ppr += "<w:pageBreakBefore/>";
     else if (ln.gapBefore) ppr += '<w:spacing w:before="360"/>';
+    if (ln.align && !ln.code) ppr += `<w:jc w:val="${ln.align === "justify" ? "both" : ln.align}"/>`;
     let out = "<w:p>" + (ppr ? `<w:pPr>${ppr}</w:pPr>` : "");
     for (const r of ln.runs || []) {
       if (r.img) { out += await pictureXml(r.img); continue; }
@@ -709,12 +713,13 @@ export function htmlText(lines) {
       counters = new Map([...counters].filter(([k]) => k <= d));
       counters.set(d, (counters.get(d) || 0) + 1);
     } else if (kind !== "ul") counters = new Map();
+    const ta = ln.align && !ln.code ? `text-align:${ln.align};` : "";
     if (ln.code) out.push(`<div style="font-family:monospace">${body || "&nbsp;"}</div>`);
-    else if (kind && kind[0] === "h") { const h = Math.min(3, +kind[1]); out.push(`<h${h}>${body}</h${h}>`); }
-    else if (kind === "ul") out.push(`<div style="margin-left:${d}em">• ${body}</div>`);
-    else if (kind === "ol") out.push(`<div style="margin-left:${d}em">${counters.get(d)}. ${body}</div>`);
-    else if (kind === "quote") out.push(`<blockquote style="margin:0 0 0 2em;color:#555">${body}</blockquote>`);
-    else out.push(`<div>${body || "<br>"}</div>`);
+    else if (kind && kind[0] === "h") { const h = Math.min(3, +kind[1]); out.push(`<h${h}${ta ? ` style="${ta}"` : ""}>${body}</h${h}>`); }
+    else if (kind === "ul") out.push(`<div style="margin-left:${d}em;${ta}">• ${body}</div>`);
+    else if (kind === "ol") out.push(`<div style="margin-left:${d}em;${ta}">${counters.get(d)}. ${body}</div>`);
+    else if (kind === "quote") out.push(`<blockquote style="margin:0 0 0 2em;color:#555;${ta}">${body}</blockquote>`);
+    else out.push(`<p style="margin:0;${ta}">${body || "<br>"}</p>`);
   }
   return `<html><body>${out.join("\n")}</body></html>`;
 }
