@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.0";
-import * as ed from "./editor.js?v=1.9.0";
-import { Store, PICTURES } from "./store.js?v=1.9.0";
-import * as spell from "./spell.js?v=1.9.0";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.9.0";
+import * as md from "./md.js?v=1.9.1";
+import * as ed from "./editor.js?v=1.9.1";
+import { Store, PICTURES } from "./store.js?v=1.9.1";
+import * as spell from "./spell.js?v=1.9.1";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, FLAG_COLOURS } from "./project.js?v=1.9.1";
 
-export const VERSION = "1.9.0";
+export const VERSION = "1.9.1";
 export const EDITION = "V7-full";
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -2580,7 +2580,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -2726,7 +2726,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.0");
+  const NB = await import("./notebooks.js?v=1.9.1");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -2798,7 +2798,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.0");
+  const NB = await import("./notebooks.js?v=1.9.1");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3013,7 +3013,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.1"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3349,7 +3349,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -3910,6 +3910,15 @@ function pageMenu(e, p) {
   const canComment = !!(S.store && S.store.isProject && p.note && p.note.comments);
   items.push({ label: "Comment…", keys: "Ctrl+Alt+M", off: !canComment, fn: addComment });
   items.push({ label: "Highlight", keys: "Ctrl+Shift+H", off: ro || !has, fn: COMMANDS.highlight });
+  // 1.9.1: the split, straight from here
+  const sp = S.settings.split;
+  items.push("-");
+  items.push({ label: "Split Side by Side", on: sp === "h", keys: "Ctrl+\\", fn: () => setSplit("h") });
+  items.push({ label: "Split Top and Bottom", on: sp === "v", keys: "Ctrl+Shift+\\", fn: () => setSplit("v") });
+  if (sp) {
+    items.push({ label: "One Note Only", fn: () => setSplit("") });
+    items.push({ label: "Switch Pane", keys: "Shift+F6", fn: switchPane });
+  }
   showMenu({ getBoundingClientRect: () => new DOMRect(e.clientX, e.clientY, 0, 0) }, items);
 }
 

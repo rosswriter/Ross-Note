@@ -514,3 +514,14 @@ body.classic .head { background: var(--head-off); color: var(--head-off-ink); bo
 body.classic .pane.active .head { background: var(--head); color: var(--head-ink); }
 body.classic .head .hname { display: block; }
 body.classic.pageview .page { max-width: calc(var(--measure) + 120px); border-top: 0; }
+
+/* 1.9.1: the split as clear as Ross Note's and Ross Writer's: a wide divider in a colour of its own (side by side
+   and top and bottom alike), and over each half a bar with the note's name; the half you're in: blue, bold */
+body:not(.classic) #pdiv { width: 9px; background: #8C96A3; border: 0; }
+body:not(.classic) #panes.split-v #pdiv { width: auto; height: 9px; }
+body:not(.classic) #pdiv:hover { background: var(--band); }
+body:not(.classic).dark #pdiv, .dark body:not(.classic) #pdiv { background: #4F5866; }
+body:not(.classic) #panes.split .head { background: #E2E6EC; color: #5B6470; font-weight: 400; }
+body:not(.classic) #panes.split .pane.active .head { background: var(--band); color: #FFFFFF; font-weight: 600; }
+body:not(.classic).dark #panes.split .head, .dark body:not(.classic) #panes.split .head { background: #2A2D33; color: #9AA0A8; }
+body:not(.classic).dark #panes.split .pane.active .head, .dark body:not(.classic) #panes.split .pane.active .head { background: var(--band); color: #FFFFFF; }
