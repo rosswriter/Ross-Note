@@ -4,11 +4,11 @@
 // kept copy is used straight away, with no wait on the network. (The notes themselves are in your folder.)
 // its own name (not "ross-note-"), so Ross Note 1.6 on the same site never clears it, nor it 1.6's
 const PREFIX = "rossnote-v7full-";
-const CACHE = PREFIX + "1.9.6";
-const V = "?v=1.9.6";
+const CACHE = PREFIX + "1.9.9";
+const V = "?v=1.9.9";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css" + V,
-  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V,
+  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V, "js/edition.js" + V, "js/rtf.js" + V,
   "vendor/sqljs/sql-wasm.js", "vendor/sqljs/sql-wasm.wasm",
   "fonts/Caladea-Regular.woff2", "fonts/Caladea-Bold.woff2", "fonts/Caladea-Italic.woff2", "fonts/Caladea-BoldItalic.woff2",
   "fonts/literata-latin-400-normal.woff2", "fonts/literata-latin-400-italic.woff2", "fonts/literata-latin-700-normal.woff2",
