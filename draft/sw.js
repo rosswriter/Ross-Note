@@ -4,11 +4,11 @@
 // kept copy is used straight away, with no wait on the network. (The notes themselves are in your folder.)
 // its own name (not "ross-note-"), so Ross Note 1.6 on the same site never clears it, nor it 1.6's
 const PREFIX = "rossdraft-";
-const CACHE = PREFIX + "1.9.16";
-const V = "?v=1.9.16";
+const CACHE = PREFIX + "1.9.17";
+const V = "?v=1.9.17";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css" + V,
-  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V, "js/edition.js" + V, "js/rtf.js" + V, "js/compile.js" + V, "js/scriv.js" + V, "js/export.js" + V, "js/research.js" + V,
+  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V, "js/edition.js" + V, "js/rtf.js" + V, "js/compile.js" + V, "js/scriv.js" + V, "js/export.js" + V, "js/research.js" + V, "js/epub.js" + V,
   "vendor/scrivtemplate/Novel.scriv/Novel.scrivx", "vendor/scrivtemplate/Novel.scriv/Files/styles.xml", "vendor/scrivtemplate/Novel.scriv/Files/version.txt", "vendor/scrivtemplate/Novel.scriv/Files/search.indexes", "vendor/scrivtemplate/Novel.scriv/Files/Data/docs.checksum", "vendor/scrivtemplate/Novel.scriv/Settings/compile.xml", "vendor/scrivtemplate/Novel.scriv/Settings/recents.txt", "vendor/scrivtemplate/Novel.scriv/Settings/templateinfo.xml", "vendor/scrivtemplate/Novel.scriv/Settings/favorites.xml", "vendor/scrivtemplate/Novel.scriv/Settings/projectpreferences.xml", "vendor/scrivtemplate/Novel.scriv/Settings/ui.ini", "vendor/scrivtemplate/Novel.scriv/Settings/ui-common.xml",
   "vendor/sqljs/sql-wasm.js", "vendor/sqljs/sql-wasm.wasm",
   "fonts/Caladea-Regular.woff2", "fonts/Caladea-Bold.woff2", "fonts/Caladea-Italic.woff2", "fonts/Caladea-BoldItalic.woff2",

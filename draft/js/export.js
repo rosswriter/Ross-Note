@@ -8,12 +8,12 @@
 //                labels; PDF entries as PDF documents in Research.
 // The project itself is never changed. Everything goes in a new folder named after it ("… (2)" if taken).
 
-import * as md from "./md.js?v=1.9.16";
+import * as md from "./md.js?v=1.9.17";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { NOTE_RE } from "./wordio.js?v=1.8.3";
 
 export const KINDS = {
-  copy: { label: "A Ross Writer project", scriv: "A Ross Writer project made from it: the same tree, each entry its own Word file (the Scrivener project is only read)",
+  copy: { label: "A Ross Writer project", scriv: "A Ross Writer project made from it: the same tree, each entry its own Word file, its notes as footnotes (the original is only read)",
     rw: "A copy of the project: the same files, opened by Ross Writer and RossDraft just like the original (for a backup, another device, a cloud drive)" },
   readable: { label: "Readable folders", all: "Chapters as folders and scenes as Word files named by their titles, notes in text files and a Contents list (for reading or sending to someone)" },
   scrivener: { label: "A Scrivener project", rw: "A new .scriv that Scrivener 3 opens: the same tree, text, synopses, notes (and comments and footnotes, in Notes), Include in Compile, flags as labels" },
@@ -62,7 +62,7 @@ const all = (store) => store.all();
 export async function exportRoss(store, where, progress = () => {}) {
   const title = store.label;
   const dir = await where.getDirectoryHandle(await freeName(where, safeName(title)), { create: true });
-  if (!store.isScriv) {
+  if (!store.isScriv && !store.isEpub) {
     // a copy: the project file, its Scenes and Attachments (and the idea cards), the same layout
     for await (const [name, h] of store.handle.entries()) {
       if (h.kind === "file" && (name === store.fileName || name === "Ideas.json")) await put(dir, name, await h.getFile());
@@ -72,7 +72,7 @@ export async function exportRoss(store, where, progress = () => {}) {
     }
     return { dir, file: store.fileName, count: all(store).length };
   }
-  // from Scrivener: a Ross Writer project made from it (as Ross Writer's import_scriv)
+  // from Scrivener (as Ross Writer's import_scriv) or an e-book: a Ross Writer project made from it
   const scenes = await dir.getDirectoryHandle("Scenes", { create: true });
   const nodes = [];
   let k = 0;
@@ -96,7 +96,7 @@ export async function exportRoss(store, where, progress = () => {}) {
       } else {
         const wl = bodyOf(n);
         raw.file = "Scenes/" + raw.id + ".docx";
-        await put(scenes, raw.id + ".docx", await wordio.writeDocx(wl, (img) => store.pictureBytes(img), n.title(), "Cambria"));
+        await put(scenes, raw.id + ".docx", await wordio.writeDocx(wl, (img) => store.pictureBytes(img), n.title(), "Cambria", { notes: n.fnotes || null }));
       }
       out.push(raw);
       if (n.children.length) { raw.children = []; await visit(n.children, raw.children, trash); }
@@ -196,7 +196,7 @@ function notesFor(n, wl) {
 }
 
 export async function exportScrivener(store, where, progress = () => {}) {
-  const SV = await import("./scriv.js?v=1.9.16");
+  const SV = await import("./scriv.js?v=1.9.17");
   const [sdir, xname] = await SV.makeScrivener(where, store.label);
   const sc = new SV.ScrivStore(sdir, xname);
   sc.noBackup = true;
