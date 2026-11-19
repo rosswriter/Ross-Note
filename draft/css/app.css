@@ -612,8 +612,8 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 #start.raised { background: radial-gradient(ellipse at 50% 30%, #fbf8f0 0%, #f1ebdc 55%, #e2d9c3 100%); color: #1d2a3a; }
 #start.raised h1 { color: #1d2a3a; }
 #start.raised p, #start.raised .small { color: #6b6556; }
-#start.raised #start-buttons { gap: 14px; }
-#start.raised #start-buttons button { border: 0; border-radius: 12px; min-height: 52px; font-weight: 600; position: relative; top: 0;
+#start.raised #start-buttons { gap: 11px; margin: 16px 0 14px; }
+#start.raised #start-buttons button { border: 0; border-radius: 10px; min-height: 40px; height: 40px; width: min(260px, 80vw); padding: 0 14px; font-size: 15px; font-weight: 600; position: relative; top: 0;
   color: #25313f; background: linear-gradient(180deg, #fff 0%, #f6f2e8 50%, #efe9db 52%, #f4efe3 100%);
   box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 rgba(0,0,0,.06), 0 5px 0 #cfc5ad, 0 9px 16px rgba(80,60,20,.18);
   transition: top .08s, box-shadow .08s; -webkit-tap-highlight-color: transparent; }
@@ -633,3 +633,85 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 .dark #start.raised #start-buttons button:not(.main):active, .dark #start.raised #start-buttons button:not(.main).down {
   box-shadow: inset 0 2px 4px rgba(0,0,0,.4), 0 1px 0 #0a1320, 0 2px 4px rgba(0,0,0,.5); }
 .dark #start.raised #start-trail { color: #cfd9e6; border-color: rgba(255,255,255,.15); }
+
+/* 1.9.12: the fonts the page can use (bundled; SIL Open Font License) */
+@font-face { font-family: "Inter"; src: url("../fonts/inter-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("../fonts/inter-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("../fonts/lora-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("../fonts/lora-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("../fonts/lora-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Lora"; src: url("../fonts/lora-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("../fonts/source-serif-4-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("../fonts/source-serif-4-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("../fonts/source-serif-4-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("../fonts/source-serif-4-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/courier-prime-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/courier-prime-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/courier-prime-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/courier-prime-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
+#dialog .fonts { white-space: normal; }
+#dialog .fonts-list { display: flex; flex-direction: column; gap: 2px; max-height: 52vh; overflow: auto; margin-bottom: 12px; }
+#dialog .fontrow { display: grid; grid-template-columns: 22px 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+#dialog .fontrow:hover { background: var(--ui2); }
+#dialog .fontrow:has(input:checked) { background: rgba(59,120,180,.14); }
+#dialog .fontrow input { grid-row: 1 / span 2; width: 18px; height: 18px; }
+#dialog .fontrow .fname { font-size: 13px; font-weight: 600; }
+#dialog .fontrow .fname small { font-weight: 400; color: var(--ui-muted); margin-left: 6px; }
+#dialog .fontrow .fsample { font-size: 19px; line-height: 1.3; }
+#dialog .fonts-size { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+#dialog .fonts-size button { min-width: 40px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--ui2); font: inherit; cursor: pointer; }
+#dialog .fonts-size .fsize { min-width: 28px; text-align: center; font-size: 16px; }
+#dialog .fonts-size .freset { margin-left: 8px; padding: 0 10px; }
+
+/* 1.9.12: the start screen, compact and uncluttered (both editions) */
+#start.raised .card { max-width: 400px; }
+#start.raised img { width: 60px; height: 60px; }
+#start.raised h1 { font-size: 25px; margin: 10px 0 4px; }
+#start.raised #start-msg { font-size: 14px; margin: 6px 0 0; }
+#start.raised #start-buttons button.main { height: 44px; min-height: 44px; font-size: 15.5px; }
+#start.raised #start-buttons button:active, #start.raised #start-buttons button.down { top: 4px; }
+#start.raised .small { font-size: 12.5px; margin-top: 4px; }
+#start .small .ver { opacity: .75; font-size: 11.5px; }
+#start.raised #start-buttons { gap: 13px; }
+
+/* RossDraft 1.1: the Compile dialog */
+#dialog .compile { white-space: normal; font-size: 14px; }
+#dialog:has(.compile) .box { max-width: 680px; }
+#dialog .compile .cmp-head { font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+#dialog .compile .cmp-head .cmp-n { font-weight: 400; color: var(--ui-muted); margin-right: auto; }
+#dialog .compile .cmp-head button { font: inherit; font-size: 12.5px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--ui2); cursor: pointer; }
+#dialog .compile .cmp-list { max-height: 26vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px 0; margin-bottom: 10px; }
+#dialog .compile .cmp-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; }
+#dialog .compile .cmp-row:hover { background: var(--ui2); }
+#dialog .compile .cmp-opts { display: flex; flex-direction: column; gap: 6px; }
+#dialog .compile .cmp-opts > label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#dialog .compile .o-break { width: 110px; font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line); }
+#dialog .compile .o-author { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); width: 220px; }
+#dialog .compile .o-au { padding-left: 26px; }
+#dialog .compile .cmp-lay { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; padding: 6px 8px; border-radius: 8px; background: var(--ui2); }
+#dialog .compile .cmp-lay label { display: block; }
+#dialog .compile .cmp-lay small { color: var(--ui-muted); }
+#dialog .compile p.muted { margin: 10px 0 0; font-size: 12.5px; color: var(--ui-muted); }
+#dialog:has(.compile) .big { min-width: 0; padding: 0 16px; }
+
+/* RossDraft 1.2: footnotes and endnotes */
+.page sup.fnref { font-family: Inter, sans-serif; font-size: 0.62em; font-weight: 600; color: #2F6296; background: rgba(59,120,180,.12);
+  border-radius: 4px; padding: 0 3px; margin: 0 1px; cursor: pointer; user-select: all; vertical-align: super; line-height: 0; }
+.dark .page sup.fnref { color: #8ab4f8; background: rgba(138,180,248,.16); }
+.page sup.fnref.flash { outline: 2px solid #e6c229; }
+@media print { .page sup.fnref { background: none; color: inherit; font-family: inherit; } }
+.fnl { padding: 8px 10px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.fnl .fn-add { display: flex; gap: 6px; }
+.fnl .fn-add button, .fnl .fn-head button { font: inherit; font-size: 12.5px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--ui2); color: var(--ui-ink); cursor: pointer; }
+.fnl .fn-add button:disabled, .fnl .fn-head button:disabled { opacity: .5; cursor: default; }
+.fnl .fn-head { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 4px; }
+.fnl .fn-head b { margin-right: auto; }
+.fnl textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.4; padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--ui); color: var(--ui-ink); resize: vertical; }
+.fnl .fn-empty { color: var(--ui-muted); font-size: 13px; margin: 4px 0; }
+.ptabs .ptab { white-space: nowrap; }

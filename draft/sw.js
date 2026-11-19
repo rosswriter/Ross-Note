@@ -4,16 +4,17 @@
 // kept copy is used straight away, with no wait on the network. (The notes themselves are in your folder.)
 // its own name (not "ross-note-"), so Ross Note 1.6 on the same site never clears it, nor it 1.6's
 const PREFIX = "rossdraft-";
-const CACHE = PREFIX + "1.9.9";
-const V = "?v=1.9.9";
+const CACHE = PREFIX + "1.9.12";
+const V = "?v=1.9.12";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css" + V,
-  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V, "js/edition.js" + V, "js/rtf.js" + V,
+  "js/app.js" + V, "js/md.js" + V, "js/editor.js" + V, "js/store.js" + V, "js/wordio.js" + V, "js/notebooks.js" + V, "js/rwimport.js" + V, "js/spell.js" + V, "js/project.js" + V, "js/wordpatch.js" + V, "js/edition.js" + V, "js/rtf.js" + V, "js/compile.js" + V,
   "vendor/sqljs/sql-wasm.js", "vendor/sqljs/sql-wasm.wasm",
   "fonts/Caladea-Regular.woff2", "fonts/Caladea-Bold.woff2", "fonts/Caladea-Italic.woff2", "fonts/Caladea-BoldItalic.woff2",
   "fonts/literata-latin-400-normal.woff2", "fonts/literata-latin-400-italic.woff2", "fonts/literata-latin-700-normal.woff2",
   "fonts/literata-latin-700-italic.woff2", "fonts/inter-latin-400-normal.woff2", "fonts/inter-latin-500-normal.woff2",
   "fonts/inter-latin-600-normal.woff2",
+  "fonts/eb-garamond-latin-400-normal.woff2", "fonts/eb-garamond-latin-400-italic.woff2", "fonts/eb-garamond-latin-700-normal.woff2", "fonts/eb-garamond-latin-700-italic.woff2", "fonts/lora-latin-400-normal.woff2", "fonts/lora-latin-400-italic.woff2", "fonts/lora-latin-700-normal.woff2", "fonts/lora-latin-700-italic.woff2", "fonts/source-serif-4-latin-400-normal.woff2", "fonts/source-serif-4-latin-400-italic.woff2", "fonts/source-serif-4-latin-700-normal.woff2", "fonts/source-serif-4-latin-700-italic.woff2", "fonts/courier-prime-latin-400-normal.woff2", "fonts/courier-prime-latin-400-italic.woff2", "fonts/courier-prime-latin-700-normal.woff2", "fonts/courier-prime-latin-700-italic.woff2", "fonts/inter-latin-400-italic.woff2", "fonts/inter-latin-700-italic.woff2",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png",
 ];
 
