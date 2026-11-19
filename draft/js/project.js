@@ -15,6 +15,7 @@
 import * as md from "./md.js?v=1.8.3";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.8.3";
+import * as rtf from "./rtf.js?v=1.9.9";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -668,4 +669,86 @@ export class MdFileStore {
 
   // the order is the project file's, written with each change
   async writeOrder() { /* nothing to do */ }
+}
+
+// ------------------------------------------------------------------ an RTF document opened by itself (RossDraft 1.0.2)
+// Read into the page as a Word document is (rtf.readRtf), saved straight back into it (rtf.writeRtf) in its own
+// font, size and page, each untouched paragraph with its own spacing. Tables, pictures, footnotes, tracked
+// changes, comments, drawings or embedded objects: read-only (they can't be written back faithfully).
+// Before the first save the original is kept: "<name> (original).rtf" beside it when its folder is known,
+// otherwise in RossDraft's storage (keepOriginal, set by the app).
+export class RtfStore extends MdFileStore {
+  constructor(fileHandle, dirHandle = null) {
+    super(fileHandle);
+    this.isMd = false;
+    this.isRtf = true;
+    this.dir = dirHandle;
+    this.raw = { id: "md", title: fileHandle.name.replace(/\.rtf$/i, ""), file: fileHandle.name };
+    this.look = null;
+    this.paras = [];
+    this.kept = false;
+    this.keepOriginal = null;
+  }
+
+  async load(n) {
+    const f = await this.fileHandle.getFile();
+    const got = rtf.readRtf(new Uint8Array(await f.arrayBuffer()));
+    this.look = got.look;
+    this.paras = got.paras;
+    const lines = wordio.toNoteLines(got.lines, () => null);
+    const text = md.serialize(lines, { dir: [] });
+    n.text = text;
+    n.modified = f.lastModified;
+    n.readOnly = got.blockers.length ? got.blockers : (this.canWrite ? null : ["no permission to save into it"]);
+    const t = md.titleOf(text);
+    if (t) this.raw.title = t;
+    return text;
+  }
+
+  async scan() {
+    const root = await super.scan();
+    return root;
+  }
+
+  async keepFirst() {
+    if (this.kept) return;
+    const f = await this.fileHandle.getFile();
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const name = this.fileName.replace(/\.rtf$/i, "") + " (original).rtf";
+    if (this.dir) {
+      let there = false;
+      try { await this.dir.getFileHandle(name); there = true; } catch (e) { there = false; }
+      if (!there) {
+        const h = await this.dir.getFileHandle(name, { create: true });
+        const w = await h.createWritable();
+        await w.write(bytes);
+        await w.close();
+      }
+      this.keptWhere = name;
+    } else if (this.keepOriginal) {
+      await this.keepOriginal(this.fileName, bytes);
+      this.keptWhere = "RossDraft";
+    }
+    this.kept = true;
+  }
+
+  async write(n, text) {
+    if (n.readOnly) throw new Error(`“${this.fileName}” can't be saved here: it has ${n.readOnly.join(", ")}.`);
+    await this.keepFirst();
+    const lines = wordio.fromNoteLines(md.parse(text));
+    const isEmpty = (ln) => !ln.kind && !ln.code && !(ln.runs || []).some((r) => r.img || (r.t || "").trim());
+    while (lines.length && isEmpty(lines[lines.length - 1])) lines.pop();
+    const out = await rtf.writeRtf(lines, { look: this.look, paras: this.paras, title: this.raw.title });
+    const w = await this.fileHandle.createWritable();
+    await w.write(new Blob([out], { type: "application/rtf" }));
+    await w.close();
+    // read back what's there now: the next save is made against it
+    const f = await this.fileHandle.getFile();
+    const got = rtf.readRtf(new Uint8Array(await f.arrayBuffer()));
+    this.paras = got.paras;
+    n.text = text;
+    n.modified = f.lastModified;
+    const t = md.titleOf(text);
+    if (t) this.raw.title = t;
+  }
 }

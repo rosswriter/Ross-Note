@@ -1,13 +1,13 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.7";
-import * as ed from "./editor.js?v=1.9.7";
-import { Store, PICTURES } from "./store.js?v=1.9.7";
-import * as spell from "./spell.js?v=1.9.7";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.7";
+import * as md from "./md.js?v=1.9.9";
+import * as ed from "./editor.js?v=1.9.9";
+import { Store, PICTURES } from "./store.js?v=1.9.9";
+import * as spell from "./spell.js?v=1.9.9";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.9";
 
-export const VERSION = "1.9.7";
-import { ED } from "./edition.js?v=1.9.7";
+export const VERSION = "1.9.9";
+import { ED } from "./edition.js?v=1.9.9";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -203,6 +203,7 @@ async function kvGet(k) {
 }
 async function kvSet(k, v) {
   if (KV_TEST && v && typeof v === "object") { KV_TEST.set(k, v); return; }
+  if (KV_TEST && v == null) KV_TEST.delete(k);
   const db = await idb();
   return new Promise((ok) => {
     const t = db.transaction("kv", "readwrite");
@@ -317,6 +318,14 @@ async function start() {
 // lets a web app into a folder or a file only from a tap.
 function showStart(kind, handle, was = null) {
   $("start").hidden = false;
+  // RossDraft 1.0: the raised start screen (paper; midnight in dark mode), and buttons that sink when tapped.
+  if (ED.project && !$("start").classList.contains("raised")) {
+    $("start").classList.add("raised");
+    const up = () => $("start").querySelectorAll(".down").forEach(x => x.classList.remove("down"));
+    $("start").addEventListener("pointerdown", e => { const b = e.target.closest("#start-buttons button"); if (b) b.classList.add("down"); });
+    ["pointerup", "pointercancel"].forEach(t => window.addEventListener(t, up));
+    $("start").addEventListener("pointerout", e => { const b = e.target.closest && e.target.closest(".down"); if (b && !b.contains(e.relatedTarget)) b.classList.remove("down"); });
+  }
   $("start").querySelector("h1").textContent = ED.name + " (" + SHOWN + ")";
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
   btns.textContent = "";
@@ -361,7 +370,7 @@ function showStart(kind, handle, was = null) {
   else if (handle) button("Open my notes", false, async () => { if (await into(handle)) openRoot(handle); });
   else if (ED.project) button("Choose the RossNotes folder…", false, chooseFolder);
   if (!(ED.project && !was)) button("Open a Ross Writer Project…", false, chooseProject);
-  if (window.showOpenFilePicker || window.showDirectoryPicker) button("Open a Word Document…", false, chooseWordDoc);
+  if (window.showOpenFilePicker || window.showDirectoryPicker) button(OPEN_DOC, false, chooseWordDoc);
   if (kind !== "first") button("Choose another folder…", false, chooseAnotherFolder);
   note.textContent = ED.project && !was ? "RossDraft edits Ross Writer projects in place: the chapters and scenes, their " +
     "synopses and notes, status and targets, as Ross Writer on the laptop sees them." : kind === "first" ?
@@ -482,7 +491,7 @@ async function openRoot(handle, quiet) {
 // "notes"), Include in Compile ("include"), and in the .rwproj's "meta": status{id}, scene_targets{id},
 // target, deadline (yyyy-mm-dd), days[7] (Monday first), day{date, start} (today's starting total).
 const DRAFT_STATUSES = [["", "None"], ["draft", "Draft"], ["revised", "Revised"], ["final", "Final"]];
-function draftOn() { return !!(ED.project && S.store && S.store.isProject); }
+function draftOn() { return !!(ED.project && S.store && S.store.isProject && !S.store.isDoc); }   // a project (not a document opened by itself)
 function pmeta() {
   if (!draftOn()) return {};
   const d = S.store.data;
@@ -862,7 +871,7 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    // 1.9.7: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // 1.9.9: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
     // each half scrolls by itself, and what's saved from one shows in the other
     const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
     for (const q of panes) {
@@ -1197,14 +1206,20 @@ async function openProject(handle, file) {
 
 // ------------------------------------------------------------------ a Word document by itself
 // File ▸ Open a Word Document…: edited and commented in place, saved straight back into it (DocxStore)
-const DOC_RE = /\.(docx|md|markdown|mdown|mkd|txt)$/i;
+const DOC_RE = ED.project ? /\.(docx|rtf|md|markdown|mdown|mkd|txt)$/i : /\.(docx|md|markdown|mdown|mkd|txt)$/i;
+// RossDraft 1.0.2: "Open a Document…" takes RTF too (and says what it takes)
+const DOC_WHAT = ED.project ? "a Word document (.docx), an RTF document (.rtf) or a Markdown note (.md)" :
+  "a Word document (.docx) or a Markdown note (.md)";
+const OPEN_DOC = ED.project ? "Open a Document…" : "Open a Word Document…";
+let docDir = null;      // the folder a document was chosen from (an RTF's original is kept beside it)
 
 // File ▸ Open a Word Document or Note…: Android's file picker, showing every file (it often doesn't know a
 // synced .docx or .md for what it is, and would grey it out). Where that picker isn't there or won't
 // open: the folder picker (which works wherever RossNotes does), then the Word and Markdown files in it.
 async function chooseWordDoc() {
-  toast("Choose the Word document or Markdown note…", 8000);
+  toast(ED.project ? "Choose the document (Word, RTF or Markdown)…" : "Choose the Word document or Markdown note…", 8000);
   let fh = null;
+  docDir = null;
   if (window.showOpenFilePicker) {
     pickStart("doc");
     try {
@@ -1236,7 +1251,8 @@ async function chooseDocInFolder() {
   try { for await (const [name, h] of dir.entries()) if (h.kind === "file" && DOC_RE.test(name) && !name.startsWith("~$")) names.push(name); } catch (e) { /* none */ }
   names.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" }));
   if (!names.length) {
-    dialog("Open a Word Document or Note", `There are no Word documents (.docx) or Markdown notes (.md) in “${dir.name}”.`);
+    dialog("Open a Word Document or Note", ED.project ? `There are no Word, RTF or Markdown documents in “${dir.name}”.` :
+      `There are no Word documents (.docx) or Markdown notes (.md) in “${dir.name}”.`);
     return null;
   }
   const box = document.createElement("div");
@@ -1250,12 +1266,13 @@ async function chooseDocInFolder() {
   const v = await ask(`Open from “${dir.name}”`, box, [["Open", "go", true]]);
   if (!v) return null;
   const k = +box.querySelector('input[name="docpick"]:checked').value;
+  docDir = dir;
   return dir.getFileHandle(names[k]);
 }
 
 async function openDocFile(fh, ask = false) {
   if (!DOC_RE.test(fh.name)) {
-    dialog("Open a Word Document or Note", `“${fh.name}” isn't a Word document (.docx) or a Markdown note (.md). ` +
+    dialog("Open a Word Document or Note", `“${fh.name}” isn't ${DOC_WHAT}. ` +
       "Older .doc files: save them as .docx in Word or LibreOffice first.");
     return;
   }
@@ -1267,16 +1284,24 @@ async function openDocFile(fh, ask = false) {
     } catch (e) { ro = true; }
   }
   if (/\.docx$/i.test(fh.name)) await openWordDoc(fh, ro);
+  else if (/\.rtf$/i.test(fh.name)) await openMdFile(fh, ro, "rtf");
   else await openMdFile(fh, ro);
 }
 
-async function openMdFile(fh, readOnly = false) {
+async function openMdFile(fh, readOnly = false, kind = "md") {
   $("start").hidden = true;
   await flushSave();
-  const st = new MdFileStore(fh);
+  let dir = docDir;
+  if (kind === "rtf" && !dir) { try { const d = await kvGet("docDir"); if (d && d.kind === "directory" && await sameEntryIn(d, fh)) dir = d; } catch (e) { dir = null; } }
+  const st = kind === "rtf" ? new RtfStore(fh, dir) : new MdFileStore(fh);
+  if (kind === "rtf") {
+    // no folder to keep it beside: the original is kept here, File ▸ Save the Original RTF… gives it back
+    st.keepOriginal = async (name, bytes) => { await kvSet("rtfOriginal", { name, bytes }); };
+    try { await kvSet("docDir", dir || null); } catch (e) { /* kept for this visit only */ }
+  }
   st.canWrite = !readOnly;
   try { await busy("Opening " + fh.name + "…", () => queue(() => st.scan()), { after: 0 }); } catch (e) {
-    dialog("Open a Note", `Couldn't open “${fh.name}”.\n\n${(e && e.message) || e}`);
+    dialog(kind === "rtf" ? "Open an RTF Document" : "Open a Note", `Couldn't open “${fh.name}”.\n\n${(e && e.message) || e}`);
     if (!S.store) start();
     return;
   }
@@ -1514,7 +1539,7 @@ function updateCount() {
   goalSoon();
   const n = S.store ? S.store.all().length : 0;
   const proj = S.store && S.store.isProject;
-  $("count").textContent = S.store && S.store.isDoc ? `${S.store.isMd ? "Note" : "Word"}: ${S.store.label} · ${ED.name} ${SHOWN}` :
+  $("count").textContent = S.store && S.store.isDoc ? `${S.store.isRtf ? "RTF" : S.store.isMd ? "Note" : "Word"}: ${S.store.label} · ${ED.name} ${SHOWN}` :
     `${n} ${proj ? (n === 1 ? "entry" : "entries") : n === 1 ? "note" : "notes"} · ` +
     `${S.store ? (proj ? "Ross Writer: " + S.store.label : S.store.handle.name) : ""} · ${ED.name} ${SHOWN}`;
   document.body.classList.toggle("in-project", !!proj);
@@ -3073,7 +3098,7 @@ function menuItems(name) {
       { label: "Choose Another Folder…", fn: chooseAnotherFolder, off: !window.showDirectoryPicker },
       ...(s.lastProject && !(S.store && S.store.isProject && !S.store.isDoc && S.store.fileName === s.lastProject.file)
         ? [{ label: `Reopen “${s.lastProject.name}”`, fn: reopenProject }] : []),
-      { label: "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
+      { label: ED.project ? "Open a Document (Word, RTF, Markdown)…" : "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
       ...(s.lastDoc && !(S.store && S.store.isDoc) ? [{ label: `Reopen “${s.lastDoc.name}”`, fn: reopenDoc }] : []),
       ...(S.store && (S.store.isProject || S.store.isDoc) ? [{ label: "Back to My Notes (RossNotes)", fn: backToNotes }] : []),
       "-",
@@ -3084,6 +3109,8 @@ function menuItems(name) {
       { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
+      ...(ED.project ? [{ label: "Save As RTF…", fn: () => exportNotes("rtf"), off: !n }] : []),
+      ...(S.store && S.store.isRtf && S.store.keptWhere === "RossDraft" ? [{ label: "Save the Original RTF…", fn: () => saveOriginalRtf() }] : []),
       "-",
       { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
       { label: "Copy This Note for Email", fn: () => copyForEmail(), off: !n },
@@ -3465,7 +3492,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.7")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.9")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3611,7 +3638,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.7");
+  const NB = await import("./notebooks.js?v=1.9.9");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3683,7 +3710,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.7");
+  const NB = await import("./notebooks.js?v=1.9.9");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3898,7 +3925,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.7"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.9"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -4174,6 +4201,45 @@ async function wordBlob(notes, pages, name, parts = null) {
   return W.writeDocx(lines, bytes, name);
 }
 
+// RossDraft 1.0.2: File ▸ Save As RTF…: the chosen notes as one RTF document (rtf.js), for any word processor,
+// old ones included. An RTF document that's open keeps its own font, size and page.
+async function rtfBlob(notes, pages, name, parts = null) {
+  parts = parts || await joinedParts(notes, []);
+  const W = await wordModule();
+  const R = await import("./rtf.js?v=1.9.9");
+  const lines = [];
+  parts.forEach(([, text], k) => {
+    const nl = md.parse(text);
+    for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
+    const part = W.fromNoteLines(nl);
+    while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
+    if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
+    lines.push(...part);
+  });
+  const bytes = async (img) => {
+    try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
+      try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
+    }
+  };
+  const own = S.store && S.store.isRtf ? { look: S.store.look, paras: S.store.paras } : {};
+  const out = await R.writeRtf(lines, { ...own, pictureBytes: bytes, title: name });
+  return new Blob([out], { type: "application/rtf" });
+}
+
+// an RTF opened without its folder: its original, as it was before RossDraft first saved into it
+async function saveOriginalRtf() {
+  let o = null;
+  try { o = await kvGet("rtfOriginal"); } catch (e) { o = null; }
+  if (!o || !o.bytes) { dialog("Save the Original RTF", "There's no original kept: it's kept when RossDraft first saves into an RTF document."); return; }
+  const saved = await saveFile(new Blob([o.bytes], { type: "application/rtf" }), o.name.replace(/\.rtf$/i, "") + " (original).rtf",
+    "Rich Text Format (RTF)", ".rtf", "application/rtf");
+  if (saved) toast("Saved " + saved);
+}
+
+async function sameEntryIn(dir, fh) {
+  try { const h = await dir.getFileHandle(fh.name); return h.isSameEntry ? await h.isSameEntry(fh) : false; } catch (e) { return false; }
+}
+
 // ------------------------------------------------------------------ Word copies (as the laptop keeps them)
 // RossNotes/Word Copies/<the note's place>.docx: the note and the notes under it, as Export as Word
 // makes them; the same file each time, so your sync app carries the latest to the laptop and Drive
@@ -4217,8 +4283,8 @@ async function wordFlush() {
 async function exportNotes(kind) {
   if (!S.note) return null;
   await flushSave();
-  const label = { word: "Export as Word", pdf: "Export as PDF", md: "Export as Markdown" }[kind];
-  const got = await chooseNotes(label, kind !== "md", kind !== "md");
+  const label = { word: "Export as Word", pdf: "Export as PDF", md: "Export as Markdown", rtf: "Save As RTF" }[kind];
+  const got = await chooseNotes(label, kind !== "md", kind === "word" || kind === "pdf");
   if (!got) return null;
   const { notes, pages } = got;
   const withComments = got.comments && notes.some((x) => x.comments && x.comments.length);
@@ -4230,11 +4296,17 @@ async function exportNotes(kind) {
     if (saved) toast("Saved " + saved);
     return saved;
   }
+  if (kind === "rtf") {
+    const blob = await busy("Making the RTF document…", () => rtfBlob(notes, pages, name, parts), { after: 0 });
+    const saved = await saveFile(blob, name + ".rtf", "Rich Text Format (RTF)", ".rtf", "application/rtf");
+    if (saved) toast("Saved " + saved);
+    return saved;
+  }
   if (kind === "word") {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.7");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.9");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -5446,6 +5518,6 @@ function toggleClassic() {
 
 // for the tests
 window.RN = { draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
-  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
