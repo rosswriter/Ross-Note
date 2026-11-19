@@ -634,7 +634,7 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
   box-shadow: inset 0 2px 4px rgba(0,0,0,.4), 0 1px 0 #0a1320, 0 2px 4px rgba(0,0,0,.5); }
 .dark #start.raised #start-trail { color: #cfd9e6; border-color: rgba(255,255,255,.15); }
 
-/* 1.9.12: the fonts the page can use (bundled; SIL Open Font License) */
+/* 1.9.17: the fonts the page can use (bundled; SIL Open Font License) */
 @font-face { font-family: "Inter"; src: url("../fonts/inter-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: "Inter"; src: url("../fonts/inter-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
 @font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
@@ -668,7 +668,7 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 #dialog .fonts-size .fsize { min-width: 28px; text-align: center; font-size: 16px; }
 #dialog .fonts-size .freset { margin-left: 8px; padding: 0 10px; }
 
-/* 1.9.12: the start screen, compact and uncluttered (both editions) */
+/* 1.9.17: the start screen, compact and uncluttered (both editions) */
 #start.raised .card { max-width: 400px; }
 #start.raised img { width: 60px; height: 60px; }
 #start.raised h1 { font-size: 25px; margin: 10px 0 4px; }
@@ -715,3 +715,20 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
   border: 1px solid var(--line); background: var(--ui); color: var(--ui-ink); resize: vertical; }
 .fnl .fn-empty { color: var(--ui-muted); font-size: 13px; margin: 4px 0; }
 .ptabs .ptab { white-space: nowrap; }
+
+/* RossDraft 1.4: a research PDF in the page's place */
+.pdfbox { min-height: 100%; }
+.pdfview { display: flex; flex-direction: column; min-height: 100%; background: #6b6f76; }
+.pdfview .pdfbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: var(--ui); border-bottom: 1px solid var(--line); font-size: 13px; }
+.pdfview .pdfbar .pdfinfo { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-muted); }
+.pdfview .pdfbar button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--ui2); color: var(--ui-ink); cursor: pointer; min-width: 34px; }
+.pdfview .pdfpages { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; overflow-x: auto; }
+.pdfview .pdfpage { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); flex: none; }
+.pdfview .pdfpage canvas { display: block; }
+
+/* 1.9.17: Help ▸ Device Check */
+#dialog .devcheck { white-space: normal; }
+#dialog .devcheck pre { white-space: pre-wrap; word-break: break-word; font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  max-height: 46vh; overflow: auto; background: var(--ui2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; }
+#start .devlink { margin-top: 8px; background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 12px; color: inherit; opacity: .7; text-decoration: underline; cursor: pointer; }

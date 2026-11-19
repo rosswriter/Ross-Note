@@ -1,13 +1,14 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.12";
-import * as ed from "./editor.js?v=1.9.12";
-import { Store, PICTURES } from "./store.js?v=1.9.12";
-import * as spell from "./spell.js?v=1.9.12";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.12";
+import * as md from "./md.js?v=1.9.17";
+import * as ed from "./editor.js?v=1.9.17";
+import { Store, PICTURES } from "./store.js?v=1.9.17";
+import * as spell from "./spell.js?v=1.9.17";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.17";
 
-export const VERSION = "1.9.12";
-import { ED } from "./edition.js?v=1.9.12";
+if (ED.project) alsoScrivener();
+export const VERSION = "1.9.17";
+import { ED } from "./edition.js?v=1.9.17";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -144,7 +145,7 @@ async function setSplit(kind) {
 // ------------------------------------------------------------------ places: RossNotes, or a Ross Writer project
 // each keeps its own open notes and open branches in the list
 function placeId(store) {
-  if (store && store.isDoc) return "doc:" + store.fileName;
+  if (store && (store.isDoc || store.isEpub)) return "doc:" + store.fileName;
   if (store && store.isProject) return "project:" + store.handle.name + "/" + store.fileName;
   return store && store.handle && typeof S.settings.firstNotes === "string" && store.handle.name !== S.settings.firstNotes ?
     "notes:" + store.handle.name : "notes";      // the first notes folder keeps the old "notes"
@@ -167,7 +168,7 @@ function enterPlace(store) {
     const p = s.places[placeId(store)] || {};
     Object.assign(s, { open: p.open || "", open2: p.open2 || "", expanded: p.expanded || [] });
   }
-  s.where = store.isDoc ? "doc" : store.isProject ? "project" : "notes";
+  s.where = store.isDoc || store.isEpub ? "doc" : store.isProject ? "project" : "notes";
   if (!store.isDoc && !store.isProject && store.handle) {
     if (typeof s.firstNotes !== "string") s.firstNotes = store.handle.name;
     s.notesName = store.handle.name;
@@ -176,7 +177,7 @@ function enterPlace(store) {
   if ($("results")) $("results").hidden = true;
   // what to offer to reopen (File ▸ Reopen …): Android asks again for each folder after a restart, so
   // V9 never reopens a project or a document by itself at the start; one tap does it
-  if (store.isDoc) s.lastDoc = { name: store.label || store.fileName };
+  if (store.isDoc || store.isEpub) s.lastDoc = { name: store.isEpub ? store.fileName : store.label || store.fileName };
   else if (store.isProject) s.lastProject = { name: store.label, file: store.fileName };
   saveSettings();
 }
@@ -193,6 +194,46 @@ function idb() {
 // tests only (?test=opfs): folders are kept in memory, as headless Chromium crashes reading a test-storage
 // folder back out of IndexedDB (a folder you chose on the tablet is kept in IndexedDB as always)
 const KV_TEST = /[?&]test=opfs/.test(location.search) ? new Map() : null;
+
+// ------------------------------------------------------------------ 1.9.17: the device check's log
+// What happened when you opened something, kept on the tablet (the last 120 steps), so a tablet that won't open
+// folders or files (Honor's MagicOS) shows where it fails: Help ▸ Device Check….
+const DIAG_KEY = ED.key + "-diag";
+function diag(event, detail = "") {
+  try {
+    const l = JSON.parse(localStorage.getItem(DIAG_KEY) || "[]");
+    l.push([Date.now(), event, String(detail == null ? "" : detail).slice(0, 400)]);
+    localStorage.setItem(DIAG_KEY, JSON.stringify(l.slice(-120)));
+  } catch (e) { /* not kept */ }
+}
+const diagErr = (e) => `${(e && e.name) || "Error"}: ${(e && e.message) || e}`;
+let keepAsked = false;
+// the pickers: what was asked, what came back (or why not)
+for (const name of ["showDirectoryPicker", "showOpenFilePicker", "showSaveFilePicker"]) {
+  const orig = window[name];
+  if (typeof orig !== "function") continue;
+  window[name] = async function (opts) {
+    diag(name + " asked", JSON.stringify(opts || {}));
+    try {
+      const got = await orig.call(window, opts);
+      diag(name + " gave", Array.isArray(got) ? got.map((h) => h.kind + " " + h.name).join(", ") : got.kind + " " + got.name);
+      // 1.9.17: a folder came back: Chrome asked to keep what the app remembers (the folders), so the picker
+      // is seldom needed again
+      if (!keepAsked && navigator.storage && navigator.storage.persist) {
+        keepAsked = true;
+        navigator.storage.persist().then((ok) => diag("storage kept", ok ? "yes" : "no")).catch(() => {});
+      }
+      return got;
+    } catch (e) { diag(name + " failed", diagErr(e)); throw e; }
+  };
+}
+document.addEventListener("visibilitychange", () => diag("app " + document.visibilityState));
+window.addEventListener("pagehide", (e) => diag("page closing", e.persisted ? "kept in memory" : "unloaded"));
+window.addEventListener("pageshow", (e) => { if (e.persisted) diag("page back", "from memory"); });
+document.addEventListener("freeze", () => diag("app frozen (by the system)"));
+document.addEventListener("resume", () => diag("app resumed"));
+window.addEventListener("error", (e) => diag("error", (e.message || "") + (e.filename ? " @" + e.filename.split("/").pop() + ":" + e.lineno : "")));
+window.addEventListener("unhandledrejection", (e) => diag("error (async)", diagErr(e.reason)));
 async function kvGet(k) {
   if (KV_TEST && KV_TEST.has(k)) return KV_TEST.get(k);
   const db = await idb();
@@ -208,9 +249,9 @@ async function kvSet(k, v) {
   const db = await idb();
   return new Promise((ok) => {
     const t = db.transaction("kv", "readwrite");
-    t.objectStore("kv").put(v, k);
+    try { t.objectStore("kv").put(v, k); } catch (e) { diag("couldn't keep " + k, diagErr(e)); ok(); return; }
     t.oncomplete = () => ok();
-    t.onerror = () => ok();
+    t.onerror = () => { diag("couldn't keep " + k, diagErr(t.error)); ok(); };
   });
 }
 
@@ -281,6 +322,10 @@ window.addEventListener("error", (ev) => { if (ev.error) toast("Something went w
 window.addEventListener("unhandledrejection", (ev) => toast("Something went wrong: " + whatWentWrong(ev.reason), 15000));
 
 async function start() {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    diag("started", `${nav ? nav.type : "?"}${document.wasDiscarded ? ", after the system closed it" : ""}; last place: ${S.settings.where || "none"}`);
+  } catch (e) { /* none */ }
   applyLook();
   const boot = busyEl();
   boot.hidden = true;
@@ -331,8 +376,9 @@ async function start() {
 // Choose another folder (another set of notes, or the folder holding the projects). Each is one tap: Android
 // lets a web app into a folder or a file only from a tap.
 function showStart(kind, handle, was = null) {
+  diag("start screen", kind + (was ? ", carry on: " + was.where : "") + (handle ? ", notes: " + handle.name : ""));
   $("start").hidden = false;
-  // RossDraft 1.0, and Ross Note V9 1.9.12: the raised start screen (paper; midnight in dark mode), compact
+  // RossDraft 1.0, and Ross Note V9 1.9.17: the raised start screen (paper; midnight in dark mode), compact
   // buttons that sink when tapped.
   if (!$("start").classList.contains("raised")) {
     $("start").classList.add("raised");
@@ -395,6 +441,14 @@ function showStart(kind, handle, was = null) {
   ver.textContent = "Version " + SHOWN;
   note.appendChild(document.createElement("br"));
   note.appendChild(ver);
+  // 1.9.17: a way to the device check from here (a tablet that won't open folders never gets past this screen)
+  const dc = document.createElement("button");
+  dc.type = "button";
+  dc.className = "devlink";
+  dc.textContent = "Trouble opening? Device Check";
+  dc.onclick = () => deviceCheck();
+  note.appendChild(document.createElement("br"));
+  note.appendChild(dc);
 }
 
 // ------------------------------------------------------------------ 1.9.2: more than one set of notes
@@ -464,11 +518,13 @@ async function chooseFolder() {
     await rememberNoteFolder(h);
     openRoot(h);
   } catch (e) {
-    if (e && e.name !== "AbortError") toast("Couldn't open that folder: " + e.message);
+    if (e && e.name === "AbortError") pickedNothing("folder", chooseFolder);
+    else toast("Couldn't open that folder: " + e.message);
   }
 }
 
 async function openRoot(handle, quiet) {
+  diag("opening notes", handle && handle.name);
   $("start").hidden = true;
   await flushSave();
   const st = new Store(handle);
@@ -620,7 +676,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.12")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.17")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -636,7 +692,7 @@ async function compileDialog() {
   const box = document.createElement("div");
   box.className = "compile";
   const row = (n) => `<label class="cmp-row" style="padding-left:${6 + 18 * n.ancestors().length}px"><input type="checkbox" data-k="${escapeHtml(n.key())}"` +
-    `${n.raw.include !== false ? " checked" : ""}> ${escapeHtml(n.title())}</label>`;
+    `${(S.store.compileTicked ? S.store.compileTicked(n) : n.raw.include !== false) ? " checked" : ""}> ${escapeHtml(n.title())}</label>`;
   const breaks = ["* * *", "#", "~", "* * * *"];
   box.innerHTML = `<div class="cmp-what"><div class="cmp-head">What goes in <span class="cmp-n"></span>
       <button type="button" data-all="1">All</button><button type="button" data-all="0">None</button>
@@ -664,7 +720,7 @@ async function compileDialog() {
   box.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-all]");
     if (!b) return;
-    for (const x of ticks()) x.checked = b.dataset.all === "inc" ? (S.store.find(x.dataset.k) || { raw: {} }).raw.include !== false : b.dataset.all === "1";
+    for (const x of ticks()) { const n = S.store.find(x.dataset.k); x.checked = b.dataset.all === "inc" ? !!n && (S.store.compileTicked ? S.store.compileTicked(n) : n.raw.include !== false) : b.dataset.all === "1"; }
     count();
   });
   box.addEventListener("change", count);
@@ -753,12 +809,12 @@ async function compileBook(kind, chosen, o) {
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.12");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.17");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.12");
+    const R = await import("./rtf.js?v=1.9.17");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -902,7 +958,7 @@ async function targetsDialog() {
 function escapeHtml(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
 // -- the side panel's Synopsis and Notes tab (beside Comments), for the entry the caret is in
-function inspectorOn(p) { return draftOn() && !!p.note && !p.el.hidden; }
+function inspectorOn(p) { return draftOn() && !S.store.isEpub && !!p.note && !p.el.hidden; }
 // RossDraft 1.2: the Footnotes tab, for a scene (or a Word document) of the page, not a page of several
 function fnOn(p) { return ED.project && !!p.note && !!p.note.fnotes && !p.joined && !p.el.hidden; }
 function inspectedNote(p) {
@@ -1247,7 +1303,7 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    // 1.9.12: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // 1.9.17: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
     // each half scrolls by itself, and what's saved from one shows in the other
     const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
     for (const q of panes) {
@@ -1435,6 +1491,7 @@ setInterval(() => { if (document.visibilityState === "visible" && S.store) keepS
 // again, Ross Note says what happened and offers to choose again.
 const PICK_KEY = ED.key + "-picking";
 function pickStart(what) {
+  diag("choosing", what);
   S.picking = true;
   try { localStorage.setItem(PICK_KEY, JSON.stringify({ what, t: Date.now() })); } catch (e) { /* not kept */ }
 }
@@ -1442,6 +1499,18 @@ function pickEnd() {
   try { localStorage.removeItem(PICK_KEY); } catch (e) { /* none */ }
   setTimeout(() => { S.picking = false; }, 1500);
 }
+// 1.9.17: the picker came back with nothing. Cancelled, or (on Honor's MagicOS, now and then) empty even after
+// Allow: what to do, and Try Again from a fresh tap (Android opens a picker only from one)
+async function pickedNothing(what, retry) {
+  const q = document.createElement("div");
+  q.innerHTML = `<p>No ${what} came back from the picker.</p>` +
+    "<p>If you did choose one: some tablets (Honor's MagicOS among them) now and then hand back nothing even so. Try again: it usually works the next time.</p>" +
+    (what === "folder" ? "<p>Choosing a folder: go <b>into</b> it, tap <b>Use this folder</b>, then <b>Allow</b>. Android won't give the top of the " +
+      "tablet's storage or the Download folder itself: choose a folder inside one of those.</p>" : "") +
+    "<p>Once it has opened, the app remembers it: <b>Carry on</b> brings you back without the picker.</p>";
+  if (await ask(what === "folder" ? "No Folder Came Back" : "No File Came Back", q, [["Try Again", "go", true]]) === "go") retry();
+}
+
 let lostPickSeen = false;
 async function lostPick() {
   if (lostPickSeen) return;
@@ -1486,7 +1555,7 @@ async function chooseProjectsFolder() {
   let h;
   pickStart("project");
   try { h = await window.showDirectoryPicker({ id: "rwproject", mode: "readwrite" }); } catch (e) {
-    if (e && e.name === "AbortError") toast("No folder chosen.");
+    if (e && e.name === "AbortError") pickedNothing("folder", chooseProjectsFolder);
     else dialog("Open a Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return;
   } finally { pickEnd(); }
@@ -1505,7 +1574,7 @@ async function pickFromFolder(h, remembered) {
     try { for await (const [name, e] of h.entries()) { seen.push(e.kind === "directory" ? name + "/" : name); if (seen.length >= 25) break; } } catch (e) { /* none */ }
     const q = document.createElement("div");
     q.style.whiteSpace = "pre-wrap";
-    q.textContent = `There's no Ross Writer project (.rwproj file) in “${h.name}” or the folders inside it.\n\n` +
+    q.textContent = `There's no ${ED.project ? "Ross Writer or Scrivener project (.rwproj file, or .scriv folder)" : "Ross Writer project (.rwproj file)"} in “${h.name}” or the folders inside it.\n\n` +
       (seen.length ? "This folder holds:\n" + seen.sort().map((x) => "  " + x).join("\n") : "This folder looks empty to Ross Note.") +
       "\n\nChoose the folder that holds your projects, or a project's own folder (the one with the .rwproj file and the Scenes folder).";
     const v = await ask("Open a Ross Writer Project", q, [["Choose another folder…", "other", true]]);
@@ -1532,7 +1601,7 @@ async function pickFromFolder(h, remembered) {
     const l = document.createElement("label");
     l.innerHTML = `<input type="radio" name="rwp" value="${k}"${k === firstOn ? " checked" : ""}> `;
     const where = x.path.split("/").slice(1).join(" › ");
-    l.append(x.file.replace(/\.rwproj$/i, "") + (where ? "   (" + where + ")" : ""));
+    l.append(x.file.replace(/\.rwproj$/i, "").replace(/\.scrivx$/i, " (Scrivener)") + (where ? "   (" + where + ")" : ""));
     box.appendChild(l);
   });
   const v = await ask("Open a Ross Writer Project", box, [["Open", "go", true], ["Another folder…", "other"]]);
@@ -1542,20 +1611,44 @@ async function pickFromFolder(h, remembered) {
   return openProject(x.dir, x.file);
 }
 
-async function openProject(handle, file) {
+async function openProject(handle, file, made = null, fileHandle = null) {
+  diag("opening project", (handle && handle.name) + " / " + file);
   $("start").hidden = true;
   await flushSave();
-  const st = new ProjectStore(handle, file);
+  let st;
+  if (made) st = made;       // (an e-book: EpubStore)
+  else if (/\.scrivx$/i.test(file)) {
+    // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
+    if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
+    const SV = await import("./scriv.js?v=1.9.17");
+    st = new SV.ScrivStore(handle, file);
+    const locks = await st.findLocks();
+    if (locks.length) {
+      const q = document.createElement("div");
+      q.style.whiteSpace = "pre-wrap";
+      q.textContent = `Scrivener seems to have “${st.label}” open: it leaves a lock file in the project while it does ` +
+        `(${locks.join(", ")}).\n\nIf Scrivener is open on this project (here or on another computer), close it there first: ` +
+        "two programs saving one project can lose work. If it isn't (Scrivener didn't close properly), open it anyway.";
+      const v = await ask("Scrivener Has It Open?", q, [["Open Read-Only", "ro", true], ["Open Anyway", "go"]]);
+      if (!v) { if (!S.store) start(); return; }
+      if (v === "ro") st.readOnlyAll = ["open read-only here (Scrivener had it open)"];
+    }
+  } else st = new ProjectStore(handle, file);
+  st._diag = true;
   try {
     await busy("Opening the project…", (say) => queue(async () => {
       st.onProgress = (k, n) => say(`Opening the project: ${k} of ${n} scenes`);
       try { await st.scan(); } finally { st.onProgress = null; }
     }), { after: 0 });
   } catch (e) {
-    dialog("Open a Ross Writer Project", `Couldn't open “${file}”.\n\n${e.message || e}`);
+    dialog(st.isEpub ? "Open an E-book" : st.isScriv ? "Open a Scrivener Project" : "Open a Ross Writer Project", `Couldn't open “${file}”.\n\n${e.message || e}`);
+    if (!S.store) start();
     return;
   }
-  try { await kvSet("project", handle); await kvSet("projectFile", file); } catch (e) { /* kept for this visit only */ }
+  try {
+    if (st.isEpub) await kvSet("docFile", fileHandle);
+    else { await kvSet("project", handle); await kvSet("projectFile", file); }
+  } catch (e) { /* kept for this visit only */ }
   const fresh = !(S.settings.places || {})[placeId(st)];
   enterPlace(st);
   for (const p of P) { p.note = null; p.dirty = false; }
@@ -1576,15 +1669,17 @@ async function openProject(handle, file) {
   updateCount();
   restoreSpot();
   const ro = st.all().filter((x) => x.readOnly && !x.raw.pdf).length;
-  toast(`${st.label}: ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}` +
-    (ro ? ` (${ro} read-only here: comments, footnotes or the like)` : ""));
+  if (st.isEpub) { toast(`“${st.label}”${st.author ? " by " + st.author : ""}: an e-book, ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}, to read. ` +
+    "File ▸ Export Project… makes a project of it to edit.", 7000); return; }
+  toast(`${st.label}${st.isScriv ? " (Scrivener)" : ""}: ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}` +
+    (st.readOnlyAll ? " — read-only" : ro ? ` (${ro} read-only here: ${st.isScriv ? "Scrivener's inline notes, tables, pictures or research files" : "comments, footnotes or the like"})` : ""));
 }
 
 // ------------------------------------------------------------------ a Word document by itself
 // File ▸ Open a Word Document…: edited and commented in place, saved straight back into it (DocxStore)
-const DOC_RE = ED.project ? /\.(docx|rtf|md|markdown|mdown|mkd|txt)$/i : /\.(docx|md|markdown|mdown|mkd|txt)$/i;
+const DOC_RE = ED.project ? /\.(docx|rtf|epub|md|markdown|mdown|mkd|txt)$/i : /\.(docx|md|markdown|mdown|mkd|txt)$/i;
 // RossDraft 1.0.2: "Open a Document…" takes RTF too (and says what it takes)
-const DOC_WHAT = ED.project ? "a Word document (.docx), an RTF document (.rtf) or a Markdown note (.md)" :
+const DOC_WHAT = ED.project ? "a Word document (.docx), an RTF document (.rtf), an e-book (.epub) or a Markdown note (.md)" :
   "a Word document (.docx) or a Markdown note (.md)";
 const OPEN_DOC = ED.project ? "Open a Document…" : "Open a Word Document…";
 let docDir = null;      // the folder a document was chosen from (an RTF's original is kept beside it)
@@ -1593,7 +1688,7 @@ let docDir = null;      // the folder a document was chosen from (an RTF's origi
 // synced .docx or .md for what it is, and would grey it out). Where that picker isn't there or won't
 // open: the folder picker (which works wherever RossNotes does), then the Word and Markdown files in it.
 async function chooseWordDoc() {
-  toast(ED.project ? "Choose the document (Word, RTF or Markdown)…" : "Choose the Word document or Markdown note…", 8000);
+  toast(ED.project ? "Choose the document (Word, RTF, e-book or Markdown)…" : "Choose the Word document or Markdown note…", 8000);
   let fh = null;
   docDir = null;
   if (window.showOpenFilePicker) {
@@ -1601,7 +1696,7 @@ async function chooseWordDoc() {
     try {
       [fh] = await window.showOpenFilePicker({ id: "worddoc", multiple: false });
     } catch (e) {
-      if (e && e.name === "AbortError") { toast("No file chosen."); return; }
+      if (e && e.name === "AbortError") { pickedNothing("file", chooseWordDoc); return; }
       fh = null;      // the file picker can't: the folder way instead
     } finally { pickEnd(); }
   }
@@ -1619,7 +1714,7 @@ async function chooseDocInFolder() {
   let dir;
   pickStart("doc");
   try { dir = await window.showDirectoryPicker({ id: "docfolder", mode: "readwrite" }); } catch (e) {
-    if (e && e.name === "AbortError") toast("No folder chosen.");
+    if (e && e.name === "AbortError") pickedNothing("folder", chooseWordDoc);
     else dialog("Open a Word Document or Note", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return null;
   } finally { pickEnd(); }
@@ -1627,7 +1722,7 @@ async function chooseDocInFolder() {
   try { for await (const [name, h] of dir.entries()) if (h.kind === "file" && DOC_RE.test(name) && !name.startsWith("~$")) names.push(name); } catch (e) { /* none */ }
   names.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" }));
   if (!names.length) {
-    dialog("Open a Word Document or Note", ED.project ? `There are no Word, RTF or Markdown documents in “${dir.name}”.` :
+    dialog("Open a Word Document or Note", ED.project ? `There are no Word, RTF, e-book or Markdown documents in “${dir.name}”.` :
       `There are no Word documents (.docx) or Markdown notes (.md) in “${dir.name}”.`);
     return null;
   }
@@ -1651,6 +1746,12 @@ async function openDocFile(fh, ask = false) {
     dialog("Open a Word Document or Note", `“${fh.name}” isn't ${DOC_WHAT}. ` +
       "Older .doc files: save them as .docx in Word or LibreOffice first.");
     return;
+  }
+  // RossDraft 1.5: an e-book, opened to read (epub.js)
+  if (/\.epub$/i.test(fh.name)) {
+    if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
+    const EP = await import("./epub.js?v=1.9.17");
+    return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
   if (ask) {
@@ -1917,7 +2018,7 @@ function updateCount() {
   const proj = S.store && S.store.isProject;
   $("count").textContent = S.store && S.store.isDoc ? `${S.store.isRtf ? "RTF" : S.store.isMd ? "Note" : "Word"}: ${S.store.label} · ${ED.name} ${SHOWN}` :
     `${n} ${proj ? (n === 1 ? "entry" : "entries") : n === 1 ? "note" : "notes"} · ` +
-    `${S.store ? (proj ? "Ross Writer: " + S.store.label : S.store.handle.name) : ""} · ${ED.name} ${SHOWN}`;
+    `${S.store ? (proj ? (S.store.isEpub ? "E-book: " : S.store.isScriv ? "Scrivener: " : "Ross Writer: ") + S.store.label : S.store.handle.name) : ""} · ${ED.name} ${SHOWN}`;
   document.body.classList.toggle("in-project", !!proj);
 }
 
@@ -2302,6 +2403,125 @@ function showText(text, pane = A) {
   loadPictures(pane.page);
   pane.page.dataset.loaded = "1";
   spellSoon(0);
+  showPdfIn(pane);
+}
+
+// RossDraft 1.4: a PDF entry (research) shown in the page's place (research.js), read-only
+async function showPdfIn(pane) {
+  if (pane.pdfv) { try { pane.pdfv.destroy(); } catch (e) { /* gone */ } pane.pdfv = null; }
+  if (pane.pdfbox) pane.pdfbox.hidden = true;
+  pane.page.hidden = false;
+  const n = pane.note;
+  if (!ED.project || !n || !n.raw || !n.raw.pdf || pane.joined || !S.store || !S.store.pdfFile) return;
+  const f = await S.store.pdfFile(n);
+  if (!f || pane.note !== n) return;
+  if (!pane.pdfbox) {
+    pane.pdfbox = document.createElement("div");
+    pane.pdfbox.className = "pdfbox";
+    pane.page.parentNode.insertBefore(pane.pdfbox, pane.page.nextSibling);
+  }
+  pane.pdfbox.hidden = false;
+  pane.page.hidden = true;
+  try {
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.17"), { after: 400 });
+    const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
+    if (pane.note !== n) { v.destroy(); return; }
+    pane.pdfv = v;
+  } catch (e) {
+    pane.pdfbox.hidden = true;
+    pane.page.hidden = false;
+    toast("The PDF couldn't be shown here: " + ((e && e.message) || e));
+  }
+}
+async function sharePdf(file) {
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  const saved = await saveFile(file, file.name, "PDF", ".pdf", "application/pdf");
+  if (saved) toast("Saved " + saved);
+}
+
+// File ▸ Export Project… (as Ross Writer's): a Ross Writer project (a copy; from Scrivener, one made from it),
+// readable folders, or a Scrivener project (export.js). The project itself is never changed.
+async function exportProject() {
+  if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
+  if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
+  await flushSave();
+  const X = await import("./export.js?v=1.9.17");
+  const scr = !!(S.store.isScriv || S.store.isEpub);
+  const box = document.createElement("div");
+  box.className = "choose";
+  const p = document.createElement("p");
+  p.textContent = `Export “${S.store.label}” as:`;
+  box.appendChild(p);
+  const opts = [["copy", X.KINDS.copy.label, scr ? X.KINDS.copy.scriv : X.KINDS.copy.rw],
+    ["readable", X.KINDS.readable.label, X.KINDS.readable.all], ...(S.store.isScriv ? [] : [["scrivener", X.KINDS.scrivener.label, X.KINDS.scrivener.rw]])];
+  opts.forEach(([v, label, what], k) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="xk" value="${v}"${k ? "" : " checked"}> <span><b>${escapeHtml(label)}</b><br><small>${escapeHtml(what)}</small></span>`;
+    box.appendChild(l);
+  });
+  const n2 = document.createElement("p");
+  n2.className = "muted";
+  n2.textContent = "Next you choose where: a new folder named after the project is made there. Nothing there is overwritten, and the project itself isn't changed.";
+  box.appendChild(n2);
+  if (await ask("Export Project", box, [["Choose Where…", "go", true]]) !== "go") return;
+  const kind = box.querySelector("input[name=xk]:checked").value;
+  let where;
+  try { where = await window.showDirectoryPicker({ id: "rdexport", mode: "readwrite" }); } catch (e) {
+    if (e && e.name !== "AbortError") dialog("Export Project", `The folder picker didn't open.\n\n${(e && e.message) || e}`);
+    return;
+  }
+  return exportProjectTo(kind, where);
+}
+async function exportProjectTo(kind, where) {
+  const X = await import("./export.js?v=1.9.17");
+  let got;
+  try {
+    got = await busy("Exporting…", (say) => queue(async () => {
+      const prog = (k, n) => say(`Exporting: ${k} of ${n}`);
+      if (kind === "copy") return X.exportRoss(S.store, where, prog);
+      if (kind === "readable") return X.exportReadable(S.store, where, prog);
+      return X.exportScrivener(S.store, where, prog);
+    }), { after: 0 });
+  } catch (e) {
+    dialog("Export Project", `The project couldn't be exported.\n\n${(e && e.message) || e}`);
+    return null;
+  }
+  const what = kind === "readable" ? "readable folders" : kind === "scrivener" ? "a Scrivener project" : "a Ross Writer project";
+  const q = document.createElement("div");
+  q.textContent = `Exported as ${what}: “${got.dir.name}” in “${where.name}”.`;
+  if (kind !== "readable" && !RN_TEST_NOASK) {
+    if (await ask("Export Project", q, [["Open It", "open"], ["OK", "ok", true]]) === "open") await openProject(got.dir, got.file);
+  } else toast(q.textContent, 6000);
+  return got;
+}
+let RN_TEST_NOASK = false;
+
+// Notes ▸ Add a PDF…: a research PDF as an entry where you are (copied into the project, left out of Compile)
+function addPdfEntry() {
+  if (!draftOn() || !S.store.addPdf) { toast("A PDF entry goes into a Ross Writer or Scrivener project: open one first."); return; }
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = ".pdf,application/pdf";
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") { dialog("Add a PDF", `“${f.name}” isn't a PDF.`); return; }
+    await flushSave();
+    const cur = S.note;
+    const parent = cur ? cur.parent : S.store.root;
+    const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+    let n;
+    try { n = await busy("Adding “" + f.name + "”…", () => queue(() => S.store.addPdf(parent, index, f.name.replace(/\.pdf$/i, ""), f)), { after: 0 }); } catch (e) {
+      dialog("Add a PDF", `Couldn't add it.\n\n${(e && e.message) || e}`);
+      return;
+    }
+    renderTree();
+    await openNote(n);
+    toast(`“${n.title()}” is in the project (left out of Compile).`);
+  };
+  inp.click();
 }
 
 // ------------------------------------------------------------------ spelling
@@ -2910,7 +3130,7 @@ const COMMANDS = {
   left: () => setAlign(null), center: () => setAlign("center"), right: () => setAlign("right"), justify: () => setAlign("justify"),
 };
 
-// ------------------------------------------------------------------ 1.9.12: Fonts (Ctrl+D)
+// ------------------------------------------------------------------ 1.9.17: Fonts (Ctrl+D)
 // The writing page's typeface and size (the page's look: the files keep their own; a note's Markdown has no fonts).
 // All are bundled (SIL Open Font License), so the page looks the same on the tablet and the laptop, offline too.
 const SERIF = '"Liberation Serif", "Noto Serif", serif';
@@ -3514,11 +3734,13 @@ function menuItems(name) {
       { label: "New Note Under This One", fn: () => newNote(true), off: !n || !!(S.store && S.store.isDoc) },
       "-",
       { label: "New Ross Writer Project…", fn: () => newProject(), off: !window.showDirectoryPicker },
-      { label: "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
+      ...(ED.project ? [{ label: "New Scrivener Project…", fn: () => newProject({ scrivener: true }), off: !window.showDirectoryPicker }] : []),
+      { label: ED.project ? "Open a Project (Ross Writer or Scrivener)…" : "Open a Ross Writer Project…", fn: chooseProject, off: !window.showDirectoryPicker },
+      ...(ED.project ? [{ label: "Scrivener Backups…", fn: () => scrivBackups() }] : []),
       { label: "Choose Another Folder…", fn: chooseAnotherFolder, off: !window.showDirectoryPicker },
       ...(s.lastProject && !(S.store && S.store.isProject && !S.store.isDoc && S.store.fileName === s.lastProject.file)
         ? [{ label: `Reopen “${s.lastProject.name}”`, fn: reopenProject }] : []),
-      { label: ED.project ? "Open a Document (Word, RTF, Markdown)…" : "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
+      { label: ED.project ? "Open a Document (Word, RTF, E-book, Markdown)…" : "Open a Word Document or Note…", fn: chooseWordDoc, off: !window.showOpenFilePicker && !window.showDirectoryPicker },
       ...(s.lastDoc && !(S.store && S.store.isDoc) ? [{ label: `Reopen “${s.lastDoc.name}”`, fn: reopenDoc }] : []),
       ...(S.store && (S.store.isProject || S.store.isDoc) ? [{ label: "Back to My Notes (RossNotes)", fn: backToNotes }] : []),
       "-",
@@ -3530,7 +3752,7 @@ function menuItems(name) {
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
       ...(ED.project ? [{ label: "Save As RTF…", fn: () => exportNotes("rtf"), off: !n }] : []),
-      ...(draftOn() ? [{ label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" }] : []),
+      ...(draftOn() ? [{ label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" }, { label: "Export Project…", fn: exportProject }] : []),
       ...(S.store && S.store.isRtf && S.store.keptWhere === "RossDraft" ? [{ label: "Save the Original RTF…", fn: () => saveOriginalRtf() }] : []),
       "-",
       { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
@@ -3632,6 +3854,7 @@ function menuItems(name) {
         { label: "Include in Compile", on: !!n && n.raw.include !== false, fn: () => toggleInclude(n), off: !n },
         { label: "Targets and Status…", fn: targetsDialog },
         { label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" },
+        { label: "Add a PDF…", fn: addPdfEntry },
       ] : []),
     ];
     case "view": return [
@@ -3700,12 +3923,81 @@ function menuItems(name) {
     ];
     case "help": return [
       { label: "Keyboard Shortcuts", fn: showKeys, keys: "F1" },
+      { label: "Device Check…", fn: deviceCheck },
       { label: "About Ross Note", fn: () => dialog("About Ross Note",
         `${ED.name} (${SHOWN})\nA simple, fast tree of notes, with Ross Writer projects and Word documents edited in place.\n\nYour notes are the Markdown files in the folder “${S.store ? S.store.handle.name : ""}”, ` +
         "one for each note, the same as on the laptop. Your sync app keeps them in step.") },
     ];
   }
   return [];
+}
+
+// Help ▸ Device Check…: this tablet and browser, what the app may do with folders and files, the folders it
+// remembers (and whether it may still go into them), and the log of what happened; Test the Folder Picker tries
+// the picker by itself. The report can be copied or shared.
+async function deviceCheck() {
+  const out = [];
+  const line = (k, v) => out.push(`${k}: ${v}`);
+  line("App", `${ED.name} ${SHOWN}`);
+  line("Browser", navigator.userAgent);
+  try {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      const h = await navigator.userAgentData.getHighEntropyValues(["model", "platformVersion", "fullVersionList"]);
+      line("Device", `${h.model || "?"}, Android ${h.platformVersion || "?"}; ${(h.fullVersionList || []).map((b) => b.brand + " " + b.version).filter((x) => !/Not.A.Brand/i.test(x)).join(", ")}`);
+    }
+  } catch (e) { /* not told */ }
+  line("Installed as an app", matchMedia("(display-mode: standalone)").matches ? "yes" : "no (in a browser tab)");
+  line("Folder picker", typeof window.showDirectoryPicker === "function" ? "yes" : "NO (this browser can't open folders)");
+  line("File picker", typeof window.showOpenFilePicker === "function" ? "yes" : "no");
+  try { line("Storage kept", (await navigator.storage.persisted()) ? "yes" : "no (the system may clear it)"); } catch (e) { line("Storage kept", "?"); }
+  for (const [k, label] of [["root", "My notes folder"], ["projectsRoot", "Projects folder"], ["project", "Last project"], ["docFile", "Last document"]]) {
+    let h = null;
+    try { h = await kvGet(k); } catch (e) { h = null; }
+    if (!h || !h.name) { line(label, "none remembered"); continue; }
+    let mode = "?";
+    try { mode = h.queryPermission ? await h.queryPermission({ mode: "readwrite" }) : "?"; } catch (e) { mode = diagErr(e); }
+    line(label, `“${h.name}”, permission: ${mode}`);
+  }
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(DIAG_KEY) || "[]"); } catch (e) { log = []; }
+  const fmt = (t) => { const d = new Date(t); return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " " + d.toTimeString().slice(0, 8); };
+  const report = () => out.join("\n") + "\n\nWhat happened (newest last):\n" + (log.length ? log.slice(-60).map(([t, e, d]) => `${fmt(t)}  ${e}${d ? " — " + d : ""}`).join("\n") : "(nothing yet)");
+  const box = document.createElement("div");
+  box.className = "devcheck";
+  const pre = document.createElement("pre");
+  pre.textContent = report();
+  const p = document.createElement("p");
+  p.textContent = "Try opening your folder or project the way that fails, then come back here: the steps are kept, even if the app is closed and started again. Copy or share this report.";
+  box.append(p, pre);
+  setTimeout(() => { pre.scrollTop = pre.scrollHeight; }, 50);
+  const v = await ask("Device Check", box, [["Test the Folder Picker…", "test", true], ["Copy", "copy"], ["Share…", "share"], ["Clear the Log", "clear"]]);
+  if (v === "copy") { try { await navigator.clipboard.writeText(report()); toast("The report is copied."); } catch (e) { toast("Couldn't copy: " + diagErr(e)); } }
+  else if (v === "share") { try { await navigator.share({ title: "Device Check", text: report() }); } catch (e) { if (!(e && e.name === "AbortError")) toast("Couldn't share: " + diagErr(e)); } }
+  else if (v === "clear") { try { localStorage.removeItem(DIAG_KEY); } catch (e) { /* none */ } toast("The log is cleared."); }
+  else if (v === "test") {
+    // the picker by itself: what it gives, whether the folder can be read and remembered
+    diag("test", "the folder picker");
+    let h = null;
+    try { h = await window.showDirectoryPicker({ id: "devcheck", mode: "readwrite" }); } catch (e) { diag("test: no folder", diagErr(e)); return deviceCheck(); }
+    try {
+      const names = [];
+      for await (const [n] of h.entries()) { names.push(n); if (names.length >= 12) break; }
+      diag("test: read the folder", `“${h.name}”: ${names.length ? names.join(", ") : "empty"}`);
+    } catch (e) { diag("test: couldn't read the folder", diagErr(e)); }
+    try { diag("test: permission", await h.queryPermission({ mode: "readwrite" })); } catch (e) { diag("test: permission", diagErr(e)); }
+    try {
+      await kvSet("devcheck", h);
+      const back = await kvGet("devcheck");
+      diag("test: remembered", back && back.name === h.name ? "yes" : "NO");
+    } catch (e) { diag("test: couldn't remember it", diagErr(e)); }
+    try {
+      const t = await h.getFileHandle(".rossdraft-test", { create: true });
+      const w = await t.createWritable(); await w.write("ok"); await w.close();
+      await h.removeEntry(".rossdraft-test");
+      diag("test: write", "yes");
+    } catch (e) { diag("test: couldn't write", diagErr(e)); }
+    return deviceCheck();
+  }
 }
 
 function showMenuNamed(name) {
@@ -3758,6 +4050,7 @@ function focusSearch() {
 }
 
 function dialog(title, text) {
+  diag("box", title + ": " + text);
   $("dialog").querySelector("h2").textContent = title;
   $("dialog").querySelector(".body").textContent = text;
   $("dialog-close").textContent = "Close";
@@ -3911,6 +4204,7 @@ for (const p of P) p.scroller.addEventListener("click", (e) => {
 // ------------------------------------------------------------------ toasts
 let toastTimer = 0;
 function toast(msg, ms = 3500) {
+  diag("message", msg);
   const t = $("toast");
   t.textContent = msg;
   t.hidden = false;
@@ -3921,7 +4215,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.12")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.17")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3990,8 +4284,10 @@ async function importWordNow(file, W, got, stem, pre, secs, split, say) {
     return false;
   };
   const cur = S.note;
-  const parent = cur ? cur.parent : S.store.root;
-  const index = cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
+  const into = S.importInto && S.store.all().includes(S.importInto) ? S.importInto : null;    // (a new Scrivener project's Draft)
+  S.importInto = null;
+  const parent = into || (cur ? cur.parent : S.store.root);
+  const index = into ? into.children.length : cur ? parent.children.indexOf(cur) + 1 : parent.children.length;
   let top;
   const orders = new Set();
   const total = split ? secs.length + 1 : 1;
@@ -4067,7 +4363,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.12");
+  const NB = await import("./notebooks.js?v=1.9.17");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4139,7 +4435,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.12");
+  const NB = await import("./notebooks.js?v=1.9.17");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4237,12 +4533,15 @@ async function importNotebookNow(file, say) {
 const rwSafe = (t) => (String(t || "").replace(/[\\/:*?"<>|\x00-\x1f]+/g, " ").trim().slice(0, 80) || "Untitled").replace(/[. ]+$/, "") || "Untitled";
 
 async function newProject(opts = null) {
+  // RossDraft 1.3: opts.scrivener: a new Scrivener project (Scrivener 3's Novel template), the same way
+  const scr = !!(opts && opts.scrivener);
+  const KIND = scr ? "New Scrivener Project" : "New Ross Writer Project";
   if (!window.showDirectoryPicker) {
-    dialog("New Ross Writer Project", "This browser can't make folders on this device. Ross Note needs Chrome (version 132 or later on Android).");
+    dialog(KIND, "This browser can't make folders on this device. Ross Note needs Chrome (version 132 or later on Android).");
     return null;
   }
   let title, start;
-  if (opts) ({ title, start } = opts);
+  if (opts && opts.title) ({ title, start } = opts);
   else {
     const box = document.createElement("div");
     box.className = "choose";
@@ -4267,12 +4566,15 @@ async function newProject(opts = null) {
       box.appendChild(l);
     }
     const p = document.createElement("p");
-    p.textContent = "Next you choose where it goes: a folder named after the project is made there (or, if the folder you " +
+    p.textContent = scr ? "Next you choose where it goes: a project folder (“…scriv”) is made there, from Scrivener's own Novel " +
+      "template. Scrivener 3 (Windows, Mac, iPad) and Ross Writer on the laptop open it." :
+      "Next you choose where it goes: a folder named after the project is made there (or, if the folder you " +
       "choose is empty, the project goes in it). Ross Writer on the laptop opens it as one of its own.";
     box.appendChild(p);
+    if (scr) box.querySelector('input[value="empty"]').parentNode.lastChild.textContent = "Nothing yet: one chapter with one scene";
     setTimeout(() => inp.focus(), 50);
     for (;;) {
-      if (!await ask("New Ross Writer Project", box, [["Choose Where…", "go", true]])) return null;
+      if (!await ask(KIND, box, [["Choose Where…", "go", true]])) return null;
       title = inp.value.trim();
       if (title) break;
       toast("Give the project a title first.");
@@ -4283,9 +4585,10 @@ async function newProject(opts = null) {
   let where;
   try { where = opts && opts.folder ? opts.folder : await window.showDirectoryPicker({ id: "rwnewproject", mode: "readwrite" }); } catch (e) {
     if (e && e.name === "AbortError") toast("No folder chosen: no project made.");
-    else dialog("New Ross Writer Project", `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
+    else dialog(KIND, `The folder picker didn't open.\n\n${(e && e.name) || "Error"}: ${(e && e.message) || e}`);
     return null;
   }
+  if (scr) return newScrivener(where, title, start, opts);
   const name = rwSafe(title);
   const file = name + ".rwproj";
   let dir;
@@ -4335,6 +4638,64 @@ async function newProject(opts = null) {
   return dir;
 }
 
+async function newScrivener(where, title, start, opts) {
+  const SV = await import("./scriv.js?v=1.9.17");
+  let made;
+  try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
+    dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
+    return null;
+  }
+  const [dir, xname] = made;
+  await openProject(dir, xname);
+  if (!S.store || !S.store.isScriv) return null;
+  const draft = S.store.root.children.find((c) => c.raw.scrivType === "DraftFolder") || S.store.root;
+  if (start === "empty") {
+    // as Ross Writer's new_blank: a chapter (a folder) with a scene in it, ready to write in
+    const ch = await queue(() => S.store.addNote(draft, draft.children.length, "Chapter 1", "Chapter 1\n"));
+    ch.raw.scrivType = "Folder";
+    const sc = await queue(() => S.store.addNote(ch, 0, "Scene 1", "Scene 1\n"));
+    S.settings.expanded = [...new Set([...(S.settings.expanded || []), draft.key(), ch.key()])];
+    renderTree();
+    await openNote(sc);
+  } else if (opts && opts.wordFile) {
+    S.importInto = draft;
+    await importWord(opts.wordFile, true);
+  } else {
+    const q = document.createElement("div");
+    q.textContent = `“${title}” is made. Now choose the Word document to bring in: its top headings become the chapters, ` +
+      "the headings under them the scenes, in Scrivener's Draft.";
+    if (await ask("New Scrivener Project", q, [["Choose the Word Document…", "go", true]])) {
+      S.importInto = draft;
+      S.newProjectWord = true;
+      $("file-docx").click();
+    }
+  }
+  toast(`“${title}” is a Scrivener project in “${where.name}”.`, 6000);
+  return dir;
+}
+
+// RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
+async function scrivBackups() {
+  const SV = await import("./scriv.js?v=1.9.17");
+  const list = await SV.listBackups();
+  if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
+  const box = document.createElement("div");
+  box.className = "choose";
+  const p = document.createElement("p");
+  p.textContent = "Kept before RossDraft first saved into each project, newest first. Save one out, then unzip it to get the project back as it was.";
+  box.appendChild(p);
+  list.forEach(([name], k) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="bk" value="${k}"${k ? "" : " checked"}> `;
+    l.append(name);
+    box.appendChild(l);
+  });
+  if (await ask("Scrivener Backups", box, [["Save Out…", "go", true]]) !== "go") return;
+  const [name, h] = list[+box.querySelector("input:checked").value];
+  const saved = await saveFile(await h.getFile(), name, "Zip file", ".zip", "application/zip");
+  if (saved) toast("Saved " + saved);
+}
+
 async function chooseProjectFolder() {
   if (!window.showDirectoryPicker) {
     dialog("Import a Ross Writer Project", "This browser can't open a folder. Ross Note needs Chrome or Edge.");
@@ -4354,7 +4715,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.12"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.17"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -4646,7 +5007,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.12");
+  const R = await import("./rtf.js?v=1.9.17");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -4738,7 +5099,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.12");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.17");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -5170,6 +5531,7 @@ for (const p of P) p.page.addEventListener("input", () => { clearTimeout(findTim
 // The note (or the selection), and in a Ross Writer project its chapter and the whole project. Click it for more.
 const wcCache = new WeakMap();   // note -> [text, words] (the notes not on screen are counted once, until they change)
 function wordsOfNote(n) {
+  if (n.raw && n.raw.pdf) return 0;     // (a research PDF: no words of the project's)
   for (const p of P) if (p.note === n) return wordsIn(pageWords(p.page));
   const t = n.text || "";
   const had = wcCache.get(n);
@@ -5950,6 +6312,6 @@ function toggleClassic() {
 
 // for the tests
 window.RN = { draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
-  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

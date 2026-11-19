@@ -15,7 +15,7 @@
 import * as md from "./md.js?v=1.8.3";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.12";
+import * as rtf from "./rtf.js?v=1.9.17";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -84,13 +84,16 @@ export async function findProjectFiles(dir) {
 
 // 1.9.2: every project in a folder and the folders inside it (Android's picker gives a folder, not the .rwproj
 // file: the one holding your projects will do). A project's own folder isn't looked into further.
+// RossDraft 1.3: Scrivener projects (.scrivx in a .scriv folder) are found too
+let EXTS = [PROJECT_EXT];
+export function alsoScrivener() { EXTS = [PROJECT_EXT, ".scrivx"]; }
 const SKIP_DIRS = new Set(["scenes", "trash", "research", "node_modules", "word copies", "backups"]);
 export async function findProjects(dir, depth = 3, path = "", out = [], seen = { n: 0 }) {
   if (seen.n++ > 400) return out;
   const subs = [];
   let here = [];
   for await (const [name, h] of dir.entries()) {
-    if (h.kind === "file" && name.toLowerCase().endsWith(PROJECT_EXT)) here.push(name);
+    if (h.kind === "file" && EXTS.some((x) => name.toLowerCase().endsWith(x))) here.push(name);
     else if (h.kind === "directory" && !name.startsWith(".") && !SKIP_DIRS.has(name.toLowerCase())) subs.push([name, h]);
   }
   for (const f of here.sort()) out.push({ dir, file: f, path: path ? path + "/" + dir.name : dir.name });
@@ -182,7 +185,8 @@ export class ProjectStore {
     if (raw.pdf) {
       n.readOnly = ["a PDF"];
       n.text = md.serialize([this.titleLine(n), { kind: null, mark: null, runs: [] },
-        { kind: null, mark: null, runs: [{ t: "A PDF: " + String(raw.pdf).split(/[\\/]/).pop() + ". Open it in Ross Writer.", f: new Set() }]}]);
+        { kind: null, mark: null, runs: [{ t: /^([a-z]:[\\/]|[\\/])/i.test(raw.pdf) ? `A PDF kept outside the project, on the laptop (${raw.pdf}): open it there, or add it again here (Notes ▸ Add a PDF…).`
+          : "A PDF: " + String(raw.pdf).split(/[\\/]/).pop() + ".", f: new Set() }]}]);
       return n.text;
     }
     let file = null, missing = null;
@@ -513,6 +517,39 @@ export class ProjectStore {
 
   async hasWordCopy() { return false; }
   async writeWordCopy() { throw new Error("Word copies are for notes in RossNotes"); }
+
+  // RossDraft 1.4: a PDF entry's file (research), kept in the project as Ross Writer keeps it
+  // ("Attachments/<title>/<name>.pdf"); one kept elsewhere on the laptop can't be reached from here
+  async pdfFile(n) {
+    const rel = n.raw && n.raw.pdf;
+    if (!rel || /^([a-z]:[\\/]|[\\/])/i.test(rel)) return null;
+    const parts = String(rel).split(/[\\/]+/).filter(Boolean);
+    try {
+      let d = this.handle;
+      for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+      return await (await d.getFileHandle(parts[parts.length - 1])).getFile();
+    } catch (e) { return null; }
+  }
+
+  // Notes ▸ Add a PDF…: a PDF entry (left out of Compile), its file copied into the project, as Ross Writer
+  async addPdf(parent, index, title, file) {
+    const t = nowIso();
+    const safe = rwSafeName(title) || "PDF";
+    const att = await (await this.handle.getDirectoryHandle("Attachments", { create: true })).getDirectoryHandle(safe, { create: true });
+    let name = file.name.replace(/[\\/:*?"<>|]+/g, " ").trim() || safe + ".pdf", k = 2;
+    const stem = name.replace(/\.pdf$/i, "");
+    for (;;) { try { await att.getFileHandle(name); name = `${stem} (${k++}).pdf`; } catch (e) { break; } }
+    await writeFile(att, name, file);
+    const rel = `Attachments/${safe}/${name}`;
+    const raw = { id: newId(), title, flag: "", include: false, expanded: true, file: null, pdf: rel, attachments: [rel], created: t, modified: t };
+    const n = new PNote(parent, raw);
+    const list = this.rawList(parent);
+    if (index == null || index >= parent.children.length) { parent.children.push(n); list.push(raw); }
+    else { const before = parent.children[index]; parent.children.splice(index, 0, n); list.splice(list.indexOf(before.raw), 0, raw); }
+    await this.saveProject();
+    await this.load(n);
+    return n;
+  }
 
   // several entries read at once (exports, word counts)
   async readAll(notes) {
