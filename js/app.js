@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.5";
-import * as ed from "./editor.js?v=1.9.5";
-import { Store, PICTURES } from "./store.js?v=1.9.5";
-import * as spell from "./spell.js?v=1.9.5";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.5";
+import * as md from "./md.js?v=1.9.6";
+import * as ed from "./editor.js?v=1.9.6";
+import { Store, PICTURES } from "./store.js?v=1.9.6";
+import * as spell from "./spell.js?v=1.9.6";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.6";
 
-export const VERSION = "1.9.5";
+export const VERSION = "1.9.6";
 export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -526,15 +526,20 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    pane.joined = notes;
-    pane.note = notes[0];
-    S.settings[pane.k ? "open2" : "open"] = notes[0].key();
+    // 1.9.6: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // each half scrolls by itself, and what's saved from one shows in the other
+    const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
+    for (const q of panes) {
+      q.joined = notes;
+      q.note = notes[0];
+      S.settings[q.k ? "open2" : "open"] = notes[0].key();
+      showJoined(q);
+      q.scroller.scrollTop = 0;
+    }
     saveSettings();
-    showJoined(pane);
     markCurrent();
     updateHead();
     updateCount();
-    pane.scroller.scrollTop = 0;
   });
   const ro = notes.filter((n) => n.readOnly);
   toast(`${notes.length} notes as one page: each part is saved into its own note.` +
@@ -3094,7 +3099,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.5")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.6")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3240,7 +3245,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.5");
+  const NB = await import("./notebooks.js?v=1.9.6");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3312,7 +3317,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.5");
+  const NB = await import("./notebooks.js?v=1.9.6");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3527,7 +3532,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.5"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.6"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3863,7 +3868,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.5");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.6");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
