@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.4";
-import * as ed from "./editor.js?v=1.9.4";
-import { Store, PICTURES } from "./store.js?v=1.9.4";
-import * as spell from "./spell.js?v=1.9.4";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.4";
+import * as md from "./md.js?v=1.9.5";
+import * as ed from "./editor.js?v=1.9.5";
+import { Store, PICTURES } from "./store.js?v=1.9.5";
+import * as spell from "./spell.js?v=1.9.5";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.5";
 
-export const VERSION = "1.9.4";
+export const VERSION = "1.9.5";
 export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -481,8 +481,15 @@ function inListOrder(keys) {
 }
 async function selectClick(note, e) {
   const k = note.key();
+  if (!S.sel.size && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+    // 1.9.5: the first Shift-click starts the run where you click (Shift held, the next ones extend it)
+    S.sel.add(k);
+    S.selAnchor = k;
+    for (const r of $("tree").querySelectorAll(".row")) r.classList.toggle("sel", S.sel.has(r.dataset.key));
+    return openNote(note);
+  }
   if (!S.sel.size) {
-    // starting from what's open: the note, or the notes already joined
+    // Ctrl-click: starting from what's open: the note, or the notes already joined
     if (A.joined) for (const n of A.joined) S.sel.add(n.key());
     else if (A.note) S.sel.add(A.note.key());
     S.selAnchor = A.note ? A.note.key() : k;
@@ -500,7 +507,19 @@ async function selectClick(note, e) {
   for (const r of $("tree").querySelectorAll(".row")) r.classList.toggle("sel", S.sel.has(r.dataset.key));
   const notes = inListOrder(S.sel);
   if (notes.length >= 2) return openJoined(notes);
-  if (notes.length === 1) { clearSel(); return openNote(notes[0]); }
+  if (notes.length === 1) { if (!e.shiftKey) clearSel(); return openNote(notes[0]); }
+}
+
+// Ctrl+Shift+A: everything showing in the list as one page (not what's inside closed branches)
+function selectAllShown() {
+  const keys = [...$("tree").querySelectorAll(".row")].map((r) => r.dataset.key);
+  if (!keys.length) return;
+  S.sel = new Set(keys);
+  S.selAnchor = keys[0];
+  for (const r of $("tree").querySelectorAll(".row")) r.classList.add("sel");
+  const notes = keys.map((k) => S.store.find(k)).filter(Boolean);
+  if (notes.length >= 2) return openJoined(notes);
+  if (notes.length === 1) return openNote(notes[0]);
 }
 
 async function openJoined(notes, pane = A) {
@@ -2350,6 +2369,7 @@ document.addEventListener("keydown", (e) => {
   if (c && e.altKey && !e.shiftKey && (k === "m" || k === "M" || e.code === "KeyM")) fn = addComment;
   else if (c && !e.altKey && !e.shiftKey && (e.code === "KeyK" || k === "k" || k === "K")) fn = commandPalette;
   else if (c && e.shiftKey && !e.altKey && k === "Enter") fn = toggleFocus;
+  else if (c && e.shiftKey && !e.altKey && (e.code === "KeyA" || k === "a" || k === "A")) fn = selectAllShown;
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyL" || k === "l" || k === "L")) fn = toggleClassic;
   else if (c && e.altKey && !e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) fn = () => sideWidth(e.code === "BracketRight" ? 30 : -30);
   else if (c && e.shiftKey && (k === "H" || k === "h")) fn = COMMANDS.highlight;
@@ -2774,6 +2794,7 @@ function menuItems(name) {
       { label: "Clear Formatting", fn: COMMANDS.clear, keys: "Ctrl+Space" },
     ];
     case "notes": return [
+      { label: "Select Everything in the List (as one page)", fn: selectAllShown, keys: "Ctrl+Shift+A" },
       { label: "New Note", fn: () => newNote(false), keys: "Ctrl+Alt+N" },
       { label: "Count Words (with the notes under it)…", fn: countBranch, off: !n },
       { label: "New Note Under This One", fn: () => newNote(true), off: !n },
@@ -2794,6 +2815,13 @@ function menuItems(name) {
       "-",
       { label: "Show the Note List", on: $("app").classList.contains("app-narrow") ? !!S.sideOpenNarrow : s.list,
         fn: toggleList, keys: "Ctrl+Alt+J" },
+      { label: "Note List Width", sub: [
+        { label: "Narrower", fn: () => sideWidth(-30), keys: "Ctrl+Alt+[" },
+        { label: "Wider", fn: () => sideWidth(30), keys: "Ctrl+Alt+]" },
+        "-",
+        { label: "Usual Width", on: !s.side || s.side === 260, fn: () => sideWidth(0), keys: "double-click the divider" },
+        { label: "Extra Wide", on: s.side >= 440, fn: () => sideWidth("extra") },
+      ] },
       { label: "Page View", on: !!s.pageView, fn: togglePageView, keys: "Ctrl+Shift+L" },
       { label: "Focus (the paragraph you're in)", on: !!s.focus, fn: toggleFocus, keys: "Ctrl+Shift+Enter" },
       { label: "Split", sub: [
@@ -2957,7 +2985,7 @@ function showKeys() {
     "Check spelling on or off: F7",
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
     "Find a note or a command: Ctrl+K    Focus: Ctrl+Shift+Enter    Align: Ctrl+L / E / R / J    Classic look: Ctrl+Alt+L",
-    "Several notes as one page: Ctrl-click them in the list, or a long press with a finger (Shift-click for a run of them); a plain click: one note again",
+    "Several notes as one page: Ctrl-click them in the list, or a long press with a finger; Shift-click the first and Shift-click the last for a run; everything showing in the list: Ctrl+Shift+A; a plain click: one note again",
     "Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    Headings: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D",
     "Split view: Ctrl+\\ or F6 (top and bottom: Ctrl+Shift+\\)    Switch pane: Shift+F6",
     "Pop-up note (reminders, things to do): Ctrl+Alt+I",
@@ -3002,7 +3030,10 @@ $("search").addEventListener("input", (e) => { S.searching = e.target.value; ren
 // the divider: the list wider or narrower (Ctrl+Alt+[ / ]; a double-click: as it was at first)
 function sideWidth(step) {
   if (!S.settings.list) { S.settings.list = true; }
-  S.settings.side = step === 0 ? 260 : Math.max(160, Math.min(window.innerWidth - 300, $("side").offsetWidth + step));
+  const most = window.innerWidth - 300;
+  S.settings.side = step === 0 ? 260 :
+    step === "extra" ? Math.max(160, Math.min(most, Math.max(440, Math.round(window.innerWidth * 0.4)))) :   // 1.9.5
+    Math.max(160, Math.min(most, $("side").offsetWidth + step));
   saveSettings();
   applyLook();
   toast("The list: " + S.settings.side + " wide", 900);
@@ -3063,7 +3094,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.4")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.5")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3209,7 +3240,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.4");
+  const NB = await import("./notebooks.js?v=1.9.5");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3281,7 +3312,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.4");
+  const NB = await import("./notebooks.js?v=1.9.5");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3496,7 +3527,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.4"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.5"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3832,7 +3863,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.4");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.5");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -5043,7 +5074,7 @@ function toggleClassic() {
 }
 
 // for the tests
-window.RN = { openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
