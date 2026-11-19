@@ -1,14 +1,14 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.17";
-import * as ed from "./editor.js?v=1.9.17";
-import { Store, PICTURES } from "./store.js?v=1.9.17";
-import * as spell from "./spell.js?v=1.9.17";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.17";
+import * as md from "./md.js?v=1.9.18";
+import * as ed from "./editor.js?v=1.9.18";
+import { Store, PICTURES } from "./store.js?v=1.9.18";
+import * as spell from "./spell.js?v=1.9.18";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.18";
 
 if (ED.project) alsoScrivener();
-export const VERSION = "1.9.17";
-import { ED } from "./edition.js?v=1.9.17";
+export const VERSION = "1.9.18";
+import { ED } from "./edition.js?v=1.9.18";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -65,11 +65,18 @@ function loadSettings() {
     open: "", open2: "", expanded: [], split: "", ratio: 0.5, active: 0,
     // 1.9.0 (from 1.6.8): the new look
     toolbar: false, measure: "medium", font: "literata", focus: false, wordList: true, goal: 0, day: null, colours: {},
-    classic: false };
+    classic: false, ui: 100, ink: "normal" };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(ED.key) || "{}")); } catch (e) { return d; }
 }
 function saveSettings() { try { localStorage.setItem(ED.key, JSON.stringify(S.settings)); } catch (e) { /* private */ } }
 
+// 1.9.18: what's drawn at the interface size is zoomed, so a pop-up's place is given in its own (zoomed) pixels
+const UI_SIZES = [["Small", 90], ["Normal", 100], ["Large", 115], ["Larger", 130], ["Largest", 150]];
+const INKS = [["Normal", "normal"], ["Darker", "dark"], ["Darkest", "darkest"]];
+function uiz() { const v = +((S && S.settings && S.settings.ui) || 100); return Math.min(2, Math.max(0.8, v / 100)) || 1; }
+function putAt(el, left, top) { const z = uiz(); el.style.left = left / z + "px"; el.style.top = top / z + "px"; }
+function setUiSize(v) { S.settings.ui = v; saveSettings(); applyLook(); toast("Interface size " + v + "%", 1200); }
+function setInk(v) { S.settings.ink = v; saveSettings(); applyLook(); }
 const MEASURES = { narrow: 32, medium: 38, wide: 46, full: 38 };
 function applyLook() {
   const s = S.settings;
@@ -77,6 +84,10 @@ function applyLook() {
   document.body.classList.toggle("dark", !!s.dark);
   $("app").classList.toggle("dark", !!s.dark);
   document.documentElement.style.setProperty("--size", s.size + "px");
+  // 1.9.18: the interface size (menus, bars, the list, dialogs; the page keeps its own text size), and darker text
+  document.documentElement.style.setProperty("--uiz", String(uiz()));
+  document.body.classList.toggle("ink-dark", s.ink === "dark" || s.ink === "darkest");
+  document.body.classList.toggle("ink-darkest", s.ink === "darkest");
   document.documentElement.style.setProperty("--lh", String(1.25 * s.spacing / 100));
   document.documentElement.style.setProperty("--gap", s.paraGap ? "10px" : "0px");
   document.documentElement.style.setProperty("--side", s.side + "px");
@@ -195,7 +206,7 @@ function idb() {
 // folder back out of IndexedDB (a folder you chose on the tablet is kept in IndexedDB as always)
 const KV_TEST = /[?&]test=opfs/.test(location.search) ? new Map() : null;
 
-// ------------------------------------------------------------------ 1.9.17: the device check's log
+// ------------------------------------------------------------------ 1.9.18: the device check's log
 // What happened when you opened something, kept on the tablet (the last 120 steps), so a tablet that won't open
 // folders or files (Honor's MagicOS) shows where it fails: Help ▸ Device Check….
 const DIAG_KEY = ED.key + "-diag";
@@ -217,7 +228,7 @@ for (const name of ["showDirectoryPicker", "showOpenFilePicker", "showSaveFilePi
     try {
       const got = await orig.call(window, opts);
       diag(name + " gave", Array.isArray(got) ? got.map((h) => h.kind + " " + h.name).join(", ") : got.kind + " " + got.name);
-      // 1.9.17: a folder came back: Chrome asked to keep what the app remembers (the folders), so the picker
+      // 1.9.18: a folder came back: Chrome asked to keep what the app remembers (the folders), so the picker
       // is seldom needed again
       if (!keepAsked && navigator.storage && navigator.storage.persist) {
         keepAsked = true;
@@ -378,7 +389,7 @@ async function start() {
 function showStart(kind, handle, was = null) {
   diag("start screen", kind + (was ? ", carry on: " + was.where : "") + (handle ? ", notes: " + handle.name : ""));
   $("start").hidden = false;
-  // RossDraft 1.0, and Ross Note V9 1.9.17: the raised start screen (paper; midnight in dark mode), compact
+  // RossDraft 1.0, and Ross Note V9 1.9.18: the raised start screen (paper; midnight in dark mode), compact
   // buttons that sink when tapped.
   if (!$("start").classList.contains("raised")) {
     $("start").classList.add("raised");
@@ -441,7 +452,7 @@ function showStart(kind, handle, was = null) {
   ver.textContent = "Version " + SHOWN;
   note.appendChild(document.createElement("br"));
   note.appendChild(ver);
-  // 1.9.17: a way to the device check from here (a tablet that won't open folders never gets past this screen)
+  // 1.9.18: a way to the device check from here (a tablet that won't open folders never gets past this screen)
   const dc = document.createElement("button");
   dc.type = "button";
   dc.className = "devlink";
@@ -676,7 +687,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.17")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.18")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -809,12 +820,12 @@ async function compileBook(kind, chosen, o) {
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.17");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.18");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.17");
+    const R = await import("./rtf.js?v=1.9.18");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1303,7 +1314,7 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    // 1.9.17: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // 1.9.18: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
     // each half scrolls by itself, and what's saved from one shows in the other
     const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
     for (const q of panes) {
@@ -1499,7 +1510,7 @@ function pickEnd() {
   try { localStorage.removeItem(PICK_KEY); } catch (e) { /* none */ }
   setTimeout(() => { S.picking = false; }, 1500);
 }
-// 1.9.17: the picker came back with nothing. Cancelled, or (on Honor's MagicOS, now and then) empty even after
+// 1.9.18: the picker came back with nothing. Cancelled, or (on Honor's MagicOS, now and then) empty even after
 // Allow: what to do, and Try Again from a fresh tap (Android opens a picker only from one)
 async function pickedNothing(what, retry) {
   const q = document.createElement("div");
@@ -1620,7 +1631,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.17");
+    const SV = await import("./scriv.js?v=1.9.18");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1750,7 +1761,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.17");
+    const EP = await import("./epub.js?v=1.9.18");
     return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
@@ -2423,7 +2434,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.17"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.18"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2447,7 +2458,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.17");
+  const X = await import("./export.js?v=1.9.18");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2475,7 +2486,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.17");
+  const X = await import("./export.js?v=1.9.18");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -2624,10 +2635,9 @@ function showSpellBar(range) {
   btn("Add to Dictionary", "act", () => { spell.addOwn(word); saveDictionary(); spellSoon(0); toast(`“${word}” is in your dictionary.`); });
   btn("Ignore", "act", () => { spell.ignore(word); spellSoon(0); });
   bar.hidden = false;
-  const r = range.getBoundingClientRect();
-  const top = r.bottom + 8 + bar.offsetHeight > window.innerHeight ? r.top - bar.offsetHeight - 8 : r.bottom + 8;
-  bar.style.top = Math.max(8, top) + "px";
-  bar.style.left = Math.max(8, Math.min(r.left, window.innerWidth - bar.offsetWidth - 8)) + "px";
+  const r = range.getBoundingClientRect(), z = uiz();
+  const top = r.bottom + 8 + bar.offsetHeight * z > window.innerHeight ? r.top - bar.offsetHeight * z - 8 : r.bottom + 8;
+  putAt(bar, Math.max(8, Math.min(r.left, window.innerWidth - bar.offsetWidth * z - 8)), Math.max(8, top));
   S.spellBarFor = range;
 }
 
@@ -3130,7 +3140,7 @@ const COMMANDS = {
   left: () => setAlign(null), center: () => setAlign("center"), right: () => setAlign("right"), justify: () => setAlign("justify"),
 };
 
-// ------------------------------------------------------------------ 1.9.17: Fonts (Ctrl+D)
+// ------------------------------------------------------------------ 1.9.18: Fonts (Ctrl+D)
 // The writing page's typeface and size (the page's look: the files keep their own; a note's Markdown has no fonts).
 // All are bundled (SIL Open Font License), so the page looks the same on the tablet and the laptop, offline too.
 const SERIF = '"Liberation Serif", "Noto Serif", serif';
@@ -3146,7 +3156,7 @@ const PAGE_FONTS = [
 
 async function fontsDialog() {
   const s = S.settings;
-  const was = { font: s.font, size: s.size };
+  const was = { font: s.font, size: s.size, ink: s.ink, ui: s.ui };
   const box = document.createElement("div");
   box.className = "fonts";
   const sample = "The night came down on St David’s.";
@@ -3155,14 +3165,19 @@ async function fontsDialog() {
     `<span class="fname">${label} <small>${what}</small></span><span class="fsample" style='font-family: ${stack}'>${sample}</span></label>`).join("")}</div>` +
     `<div class="fonts-size">Size <button type="button" class="fminus" aria-label="Smaller">A−</button>` +
     `<b class="fsize">${s.size}</b><button type="button" class="fplus" aria-label="Larger">A+</button>` +
-    `<button type="button" class="freset">Usual (18)</button></div>`;
+    `<button type="button" class="freset">Usual (18)</button></div>` +
+    `<div class="fonts-size fonts-ink">Darkness ${INKS.map(([l, v]) => `<button type="button" data-ink="${v}"${(s.ink || "normal") === v ? ' class="on"' : ""}>${l}</button>`).join("")}</div>` +
+    `<div class="fonts-size fonts-ui">Interface <select class="fui">${UI_SIZES.map(([l, v]) => `<option value="${v}"${(s.ui || 100) === v ? " selected" : ""}>${l} (${v}%)</option>`).join("")}</select></div>`;
   const show = () => { box.querySelector(".fsize").textContent = s.size; applyLook(); };
   box.addEventListener("change", (e) => { if (e.target.name === "pagefont") { s.font = e.target.value; show(); } });
   box.querySelector(".fminus").onclick = () => { s.size = Math.max(11, s.size - 1); show(); };
   box.querySelector(".fplus").onclick = () => { s.size = Math.min(40, s.size + 1); show(); };
   box.querySelector(".freset").onclick = () => { s.size = 18; show(); };
+  for (const b of box.querySelectorAll("[data-ink]")) b.onclick = () => {
+    s.ink = b.dataset.ink; for (const o of box.querySelectorAll("[data-ink]")) o.classList.toggle("on", o === b); show(); };
+  box.querySelector(".fui").onchange = (e) => { s.ui = +e.target.value; show(); };
   const v = await ask("Fonts", box, [["OK", "ok", true]]);
-  if (v !== "ok") { s.font = was.font; s.size = was.size; }
+  if (v !== "ok") Object.assign(s, was);
   saveSettings();
   applyLook();
 }
@@ -3609,11 +3624,10 @@ function showChip(el, buttons) {
   }
   chip.hidden = false;
   const r = el.getBoundingClientRect();
-  const w = chip.offsetWidth, h = chip.offsetHeight;
+  const w = chip.offsetWidth * uiz(), h = chip.offsetHeight * uiz();
   let top = r.bottom + 6;
   if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-  chip.style.top = top + "px";
-  chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+  putAt(chip, Math.max(8, Math.min(window.innerWidth - w - 8, r.left)), top);
 }
 function hideChip() { $("chip").hidden = true; for (const i of document.querySelectorAll(".page img.sel")) i.classList.remove("sel"); }
 
@@ -3690,9 +3704,10 @@ function showMenu(anchor, items) {
   hideSubmenu();
   fillMenu(m, items, false);
   m.hidden = false;
-  const r = anchor.getBoundingClientRect();
-  m.style.top = Math.max(8, Math.min(r.bottom + 2, window.innerHeight - m.offsetHeight - 8)) + "px";
-  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
+  const r = anchor.getBoundingClientRect(), z = uiz();
+  putAt(m, 0, 0);          // measured where there's room for all of it
+  putAt(m, Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth * z - 8)),
+    Math.max(8, Math.min(r.bottom + 2, window.innerHeight - m.offsetHeight * z - 8)));
 }
 function showSubmenu(btn, items) {
   const sm = $("submenu");
@@ -3700,11 +3715,12 @@ function showSubmenu(btn, items) {
   btn.classList.add("open");
   fillMenu(sm, typeof items === "function" ? items() : items, true);
   sm.hidden = false;
-  const r = btn.getBoundingClientRect(), mr = $("menu").getBoundingClientRect();
+  const r = btn.getBoundingClientRect(), mr = $("menu").getBoundingClientRect(), z = uiz();
+  putAt(sm, 0, 0);
+  const sw = sm.offsetWidth * z, sh = sm.offsetHeight * z;
   let left = mr.right - 4;
-  if (left + sm.offsetWidth > window.innerWidth - 8) left = Math.max(8, mr.left - sm.offsetWidth + 4);   // no room: on the left
-  sm.style.left = left + "px";
-  sm.style.top = Math.max(8, Math.min(r.top - 4, window.innerHeight - sm.offsetHeight - 8)) + "px";
+  if (left + sw > window.innerWidth - 8) left = Math.max(8, mr.left - sw + 4);   // no room: on the left
+  putAt(sm, left, Math.max(8, Math.min(r.top - 4, window.innerHeight - sh - 8)));
 }
 function hideSubmenu() {
   const sm = $("submenu");
@@ -3879,11 +3895,14 @@ function menuItems(name) {
         { label: "One Note Only", on: !s.split, fn: () => setSplit("") },
       ] },
       "-",
-      { label: "Text Size", sub: [
+      { label: "Text Size and Darkness", sub: [
         { label: "Larger Text", fn: COMMANDS.bigger, keys: "Ctrl+= or Ctrl+Shift+>" },
         { label: "Smaller Text", fn: COMMANDS.smaller, keys: "Ctrl+− or Ctrl+Shift+<" },
         { label: "Normal Size", fn: () => setSize(0), keys: "Ctrl+0" },
+        "-",
+        ...INKS.map(([l, v]) => ({ label: l === "Normal" ? "Normal Darkness" : l + " Text", on: (s.ink || "normal") === v, fn: () => setInk(v) })),
       ] },
+      { label: "Interface Size", sub: UI_SIZES.map(([l, v]) => ({ label: `${l} (${v}%)`, on: (s.ui || 100) === v, fn: () => setUiSize(v) })) },
       { label: "Line Spacing", sub: [
         ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: spacing(v), keys: { 100: "Alt+1", 150: "Alt+3", 200: "Alt+2" }[v] })),
         "-",
@@ -4215,7 +4234,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.17")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.18")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4363,7 +4382,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.17");
+  const NB = await import("./notebooks.js?v=1.9.18");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4435,7 +4454,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.17");
+  const NB = await import("./notebooks.js?v=1.9.18");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4639,7 +4658,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.17");
+  const SV = await import("./scriv.js?v=1.9.18");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -4676,7 +4695,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.17");
+  const SV = await import("./scriv.js?v=1.9.18");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -4715,7 +4734,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.17"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.18"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5007,7 +5026,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.17");
+  const R = await import("./rtf.js?v=1.9.18");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5099,7 +5118,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.17");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.18");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6238,13 +6257,12 @@ function placeFmtbar() {
   const r = sel.getRangeAt(0).getBoundingClientRect();
   if (!r.width && !r.height) { FMB.hidden = true; return; }
   FMB.hidden = false;
-  const w = FMB.offsetWidth, h = FMB.offsetHeight;
+  const w = FMB.offsetWidth * uiz(), h = FMB.offsetHeight * uiz();
   const topLimit = $("topbar").getBoundingClientRect().bottom + 4;
   let top = r.top - h - 8;
   if (top < topLimit) top = r.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
-  FMB.style.top = top + "px";
-  FMB.style.left = left + "px";
+  putAt(FMB, left, top);
 }
 function fmtbarSoon() { if (!fbDue) { fbDue = true; requestAnimationFrame(placeFmtbar); } }
 document.addEventListener("selectionchange", () => { fmtbarSoon(); markHere(); });

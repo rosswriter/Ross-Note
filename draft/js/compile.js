@@ -11,7 +11,7 @@
 // epubBlob(lines, meta, pictureBytes) -> an EPUB 3 (with an EPUB 2 table of contents), as Ross Writer's epubout.
 // printHtml(lines, layout, meta) -> the book as HTML for the print view (and "Save as PDF").
 
-import { zip, NOTE_RE } from "./wordio.js?v=1.9.17";
+import { zip, NOTE_RE } from "./wordio.js?v=1.9.18";
 
 // RossDraft 1.2: the notes of several scenes in one book: each scene's marks given new ids, in order (footnotes
 // 1, 2, 3…; endnotes 1, 2, 3…), so they never clash. parts: [{ lines, notes (Map "f17" -> words) }]
