@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.3";
-import * as ed from "./editor.js?v=1.9.3";
-import { Store, PICTURES } from "./store.js?v=1.9.3";
-import * as spell from "./spell.js?v=1.9.3";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.3";
+import * as md from "./md.js?v=1.9.4";
+import * as ed from "./editor.js?v=1.9.4";
+import { Store, PICTURES } from "./store.js?v=1.9.4";
+import * as spell from "./spell.js?v=1.9.4";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.4";
 
-export const VERSION = "1.9.3";
+export const VERSION = "1.9.4";
 export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -1097,7 +1097,26 @@ function renderTree() {
       saveSettings();
       renderTree();
     };
+    // 1.9.4: a long press with a finger is a Ctrl-click (several notes as one page, by touch)
+    row.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch") return;
+      const x0 = e.clientX, y0 = e.clientY;
+      clearTimeout(row._lpTimer);
+      const stop = () => { clearTimeout(row._lpTimer); row.removeEventListener("pointermove", move); row.removeEventListener("pointerup", stop); row.removeEventListener("pointercancel", stop); };
+      const move = (m) => { if (Math.abs(m.clientX - x0) > 10 || Math.abs(m.clientY - y0) > 10) stop(); };
+      row.addEventListener("pointermove", move);
+      row.addEventListener("pointerup", stop);
+      row.addEventListener("pointercancel", stop);
+      row._lpTimer = setTimeout(() => {
+        stop();
+        row._lp = true;
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) { /* none */ } }
+        selectClick(note, { ctrlKey: true, metaKey: false, shiftKey: false });
+      }, 500);
+    });
+    row.addEventListener("contextmenu", (e) => { if (row._lp || e.pointerType === "touch") e.preventDefault(); });
     row.onclick = (e) => {
+      if (row._lp) { row._lp = false; e.preventDefault(); return; }         // the tap that ended a long press
       if (e.ctrlKey || e.metaKey || e.shiftKey) { e.preventDefault(); return selectClick(note, e); }   // 1.9.3: several as one page
       clearSel();
       openNote(note);
@@ -2589,8 +2608,7 @@ document.addEventListener("selectionchange", () => {
 
 // ------------------------------------------------------------------ the menus (as on the laptop)
 let openMenu = null;
-function showMenu(anchor, items) {
-  const m = $("menu");
+function fillMenu(m, items, sub) {
   m.textContent = "";
   for (const it of items) {
     if (it === "-") { m.appendChild(document.createElement("hr")); continue; }
@@ -2600,24 +2618,58 @@ function showMenu(anchor, items) {
     tick.className = "tick";
     tick.textContent = it.on ? "✓" : "";
     b.append(tick, document.createTextNode(it.label));
-    if (it.keys) { const k = document.createElement("span"); k.className = "keys"; k.textContent = it.keys; b.appendChild(k); }
+    if (it.keys || it.sub) { const k = document.createElement("span"); k.className = "keys"; k.textContent = it.sub ? "▸" : it.keys; b.appendChild(k); }
     if (it.off) b.disabled = true;
     b.addEventListener("mousedown", (e) => e.preventDefault());       // the caret stays in the note
-    b.onclick = () => { hideMenu(); it.fn(); };
+    if (it.sub) {
+      // 1.9.4: a submenu, opened by pointing at it, a click or a tap, or → on the keyboard
+      b.classList.add("has-sub");
+      const open = () => showSubmenu(b, it.sub);
+      b.addEventListener("mouseenter", open);
+      b.onclick = open;
+      b.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { e.preventDefault(); open(); const f = $("submenu").querySelector("button:not(:disabled)"); if (f) f.focus(); } });
+    } else {
+      if (!sub) b.addEventListener("mouseenter", hideSubmenu);
+      if (sub) b.addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") { e.preventDefault(); const o = $("menu").querySelector("button.has-sub.open"); hideSubmenu(); if (o) o.focus(); } });
+      b.onclick = () => { hideMenu(); it.fn(); };
+    }
     m.appendChild(b);
   }
+}
+function showMenu(anchor, items) {
+  const m = $("menu");
+  hideSubmenu();
+  fillMenu(m, items, false);
   m.hidden = false;
   const r = anchor.getBoundingClientRect();
   m.style.top = Math.max(8, Math.min(r.bottom + 2, window.innerHeight - m.offsetHeight - 8)) + "px";
   m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
 }
+function showSubmenu(btn, items) {
+  const sm = $("submenu");
+  for (const o of $("menu").querySelectorAll("button.has-sub.open")) o.classList.remove("open");
+  btn.classList.add("open");
+  fillMenu(sm, typeof items === "function" ? items() : items, true);
+  sm.hidden = false;
+  const r = btn.getBoundingClientRect(), mr = $("menu").getBoundingClientRect();
+  let left = mr.right - 4;
+  if (left + sm.offsetWidth > window.innerWidth - 8) left = Math.max(8, mr.left - sm.offsetWidth + 4);   // no room: on the left
+  sm.style.left = left + "px";
+  sm.style.top = Math.max(8, Math.min(r.top - 4, window.innerHeight - sm.offsetHeight - 8)) + "px";
+}
+function hideSubmenu() {
+  const sm = $("submenu");
+  if (sm) sm.hidden = true;
+  for (const o of document.querySelectorAll("#menu button.has-sub.open")) o.classList.remove("open");
+}
 function hideMenu() {
+  hideSubmenu();
   $("menu").hidden = true;
   openMenu = null;
   for (const b of document.querySelectorAll("#menubar button")) b.classList.remove("open");
 }
 document.addEventListener("pointerdown", (e) => {
-  if (!$("menu").hidden && !$("menu").contains(e.target) && !$("menubar").contains(e.target)) hideMenu();
+  if (!$("menu").hidden && !$("menu").contains(e.target) && !$("submenu").contains(e.target) && !$("menubar").contains(e.target)) hideMenu();
   if (!$("chip").hidden && !$("chip").contains(e.target) && !(e.target.closest && e.target.closest("img.pic"))) hideChip();
 });
 
@@ -2661,7 +2713,6 @@ function menuItems(name) {
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
       "-",
       { label: S.store && S.store.isProject ? "Read the Project Again" : "Read the Folder Again", fn: () => refresh(true) },
-      { label: "Choose Another Folder…", fn: async () => { await flushSave(); chooseFolder(); }, off: !!(S.store && (S.store.isDoc || S.store.isProject)) },
       "-",
       { label: "Delete Note…", fn: deleteNote, off: !n },
     ];
@@ -2737,50 +2788,60 @@ function menuItems(name) {
       { label: "Notebook Colour…", fn: chooseColour, off: !n },
     ];
     case "view": return [
+      // 1.9.4: shorter, the settings in submenus
       { label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Alt+O" },
       { label: "Recent…", fn: showRecent, keys: "Ctrl+Shift+O" },
-      { label: "Page View", on: !!s.pageView, fn: togglePageView, keys: "Ctrl+Shift+L" },
-      { label: "Focus (the paragraph you're in)", on: !!s.focus, fn: toggleFocus, keys: "Ctrl+Shift+Enter" },
-      { label: "Toolbar", on: !!s.toolbar || !!s.classic, off: !!s.classic, fn: () => { s.toolbar = !s.toolbar; saveSettings(); applyLook(); } },
-      { label: "Classic Look", on: !!s.classic, fn: toggleClassic, keys: "Ctrl+Alt+L" },
-      { label: "Word Counts in the List", on: !!s.wordList, fn: () => { s.wordList = !s.wordList; saveSettings(); applyLook(); renderTree(); } },
-      { label: "Daily Word Target…", fn: setGoal },
-      "-",
-      "Line length",
-      ...[["Narrow", "narrow"], ["Medium", "medium"], ["Wide", "wide"], ["The Full Width", "full"]].map(([l, v]) =>
-        ({ label: l, on: (s.measure || "medium") === v, fn: () => { s.measure = v; saveSettings(); applyLook(); } })),
-      "Typeface of the notes",
-      { label: "Literata", on: s.font !== "classic", fn: () => { s.font = "literata"; saveSettings(); applyLook(); } },
-      { label: "Cambria (as Ross Writer)", on: s.font === "classic", fn: () => { s.font = "classic"; saveSettings(); applyLook(); } },
-      { label: "Pop-up Note", on: !PN.el.hidden, fn: togglePop, keys: "Ctrl+Alt+I" },
-      { label: "Check Spelling", on: spellMode() === "ross", fn: toggleSpelling, keys: "F7" },
-      { label: "Show Comments", on: !!s.showComments, fn: toggleComments, off: !(A.note && A.note.comments && A.note.comments.length) },
-      { label: "Comments Text Larger", fn: () => commentSize(1), keys: "Ctrl+Alt+=" },
-      { label: "Comments Text Smaller", fn: () => commentSize(-1), keys: "Ctrl+Alt+−" },
-      { label: "Comments Text Normal Size", fn: () => commentSize(0), keys: "Ctrl+Alt+0" },
-      "-",
-      { label: "Split Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
-      { label: "Split Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
-      { label: "One Note Only", on: !s.split, fn: () => setSplit("") },
       "-",
       { label: "Show the Note List", on: $("app").classList.contains("app-narrow") ? !!S.sideOpenNarrow : s.list,
         fn: toggleList, keys: "Ctrl+Alt+J" },
+      { label: "Page View", on: !!s.pageView, fn: togglePageView, keys: "Ctrl+Shift+L" },
+      { label: "Focus (the paragraph you're in)", on: !!s.focus, fn: toggleFocus, keys: "Ctrl+Shift+Enter" },
+      { label: "Split", sub: [
+        { label: "Side by Side", on: s.split === "h", fn: COMMANDS.splith, keys: "Ctrl+\\" },
+        { label: "Top and Bottom", on: s.split === "v", fn: COMMANDS.splitv, keys: "Ctrl+Shift+\\" },
+        { label: "One Note Only", on: !s.split, fn: () => setSplit("") },
+      ] },
       "-",
-      { label: "Larger Text", fn: COMMANDS.bigger, keys: "Ctrl+= or Ctrl+Shift+>" },
-      { label: "Smaller Text", fn: COMMANDS.smaller, keys: "Ctrl+− or Ctrl+Shift+<" },
-      { label: "Normal Size", fn: () => setSize(0), keys: "Ctrl+0" },
-      "-",
-      "Line spacing (all notes)",
-      ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: spacing(v), keys: { 100: "Alt+1", 150: "Alt+3", 200: "Alt+2" }[v] })),
-      { label: "Space Between Paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
+      { label: "Text Size", sub: [
+        { label: "Larger Text", fn: COMMANDS.bigger, keys: "Ctrl+= or Ctrl+Shift+>" },
+        { label: "Smaller Text", fn: COMMANDS.smaller, keys: "Ctrl+− or Ctrl+Shift+<" },
+        { label: "Normal Size", fn: () => setSize(0), keys: "Ctrl+0" },
+      ] },
+      { label: "Line Spacing", sub: [
+        ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: spacing(v), keys: { 100: "Alt+1", 150: "Alt+3", 200: "Alt+2" }[v] })),
+        "-",
+        { label: "Space Between Paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
+      ] },
+      { label: "Line Length", sub: [["Narrow", "narrow"], ["Medium", "medium"], ["Wide", "wide"], ["The Full Width", "full"]].map(([l, v]) =>
+        ({ label: l, on: (s.measure || "medium") === v, fn: () => { s.measure = v; saveSettings(); applyLook(); } })) },
+      { label: "Typeface", sub: [
+        { label: "Literata", on: s.font !== "classic", fn: () => { s.font = "literata"; saveSettings(); applyLook(); } },
+        { label: "Cambria (as Ross Writer)", on: s.font === "classic", fn: () => { s.font = "classic"; saveSettings(); applyLook(); } },
+      ] },
       "-",
       { label: "Dark Mode", on: s.dark, fn: COMMANDS.dark, keys: "Ctrl+Shift+D" },
+      { label: "Look", sub: [
+        { label: "Classic Look", on: !!s.classic, fn: toggleClassic, keys: "Ctrl+Alt+L" },
+        { label: "Toolbar", on: !!s.toolbar || !!s.classic, off: !!s.classic, fn: () => { s.toolbar = !s.toolbar; saveSettings(); applyLook(); } },
+        { label: "Word Counts in the List", on: !!s.wordList, fn: () => { s.wordList = !s.wordList; saveSettings(); applyLook(); renderTree(); } },
+      ] },
+      { label: "Spelling", sub: [
+        { label: "Check Spelling (British English)", on: spellMode() === "ross", fn: () => { s.spell = "ross"; saveSettings(); applySpellMode(); }, keys: "F7" },
+        { label: "Use the Tablet's Own Spell Checker", on: spellMode() === "device", fn: () => { s.spell = "device"; saveSettings(); applySpellMode(); } },
+        { label: "No Spelling Check", on: spellMode() === "off", fn: () => { s.spell = "off"; saveSettings(); applySpellMode(); } },
+        "-",
+        { label: "Your Dictionary…", fn: showDictionary, off: spellMode() !== "ross" || !spell.ready() },
+      ] },
+      { label: "Comments", sub: [
+        { label: "Show Comments", on: !!s.showComments, fn: toggleComments, off: !(A.note && A.note.comments && A.note.comments.length) },
+        "-",
+        { label: "Comments Text Larger", fn: () => commentSize(1), keys: "Ctrl+Alt+=" },
+        { label: "Comments Text Smaller", fn: () => commentSize(-1), keys: "Ctrl+Alt+−" },
+        { label: "Comments Text Normal Size", fn: () => commentSize(0), keys: "Ctrl+Alt+0" },
+      ] },
       "-",
-      "Spelling",
-      { label: "Check Spelling (British English)", on: spellMode() === "ross", fn: () => { s.spell = "ross"; saveSettings(); applySpellMode(); } },
-      { label: "Use the Tablet's Own Spell Checker", on: spellMode() === "device", fn: () => { s.spell = "device"; saveSettings(); applySpellMode(); } },
-      { label: "No Spelling Check", on: spellMode() === "off", fn: () => { s.spell = "off"; saveSettings(); applySpellMode(); } },
-      { label: "Your Dictionary…", fn: showDictionary, off: spellMode() !== "ross" || !spell.ready() },
+      { label: "Pop-up Note", on: !PN.el.hidden, fn: togglePop, keys: "Ctrl+Alt+I" },
+      { label: "Daily Word Target…", fn: setGoal },
     ];
     case "help": return [
       { label: "Keyboard Shortcuts", fn: showKeys, keys: "F1" },
@@ -2896,7 +2957,7 @@ function showKeys() {
     "Check spelling on or off: F7",
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
     "Find a note or a command: Ctrl+K    Focus: Ctrl+Shift+Enter    Align: Ctrl+L / E / R / J    Classic look: Ctrl+Alt+L",
-    "Several notes as one page: Ctrl-click them in the list (Shift-click for a run of them); a plain click: one note again",
+    "Several notes as one page: Ctrl-click them in the list, or a long press with a finger (Shift-click for a run of them); a plain click: one note again",
     "Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    Headings: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D",
     "Split view: Ctrl+\\ or F6 (top and bottom: Ctrl+Shift+\\)    Switch pane: Shift+F6",
     "Pop-up note (reminders, things to do): Ctrl+Alt+I",
@@ -3002,7 +3063,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.3")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.4")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3148,7 +3209,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.3");
+  const NB = await import("./notebooks.js?v=1.9.4");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3220,7 +3281,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.3");
+  const NB = await import("./notebooks.js?v=1.9.4");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3435,7 +3496,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.3"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.4"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3771,7 +3832,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.3");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.4");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -4797,7 +4858,11 @@ function commandPalette() {
   const cmds = [];
   for (const m of MENUS_HERE) {
     let section = "";
+    const flat = [];
     for (const it of menuItems(m)) {
+      if (it && typeof it === "object" && Array.isArray(it.sub)) { flat.push(it.label); for (const x of it.sub) flat.push(x); flat.push("-"); } else flat.push(it);
+    }
+    for (const it of flat) {
       if (it === "-") { section = ""; continue; }
       if (typeof it === "string") { section = it; continue; }
       if (it.off || /Find or Do Anything/.test(it.label)) continue;

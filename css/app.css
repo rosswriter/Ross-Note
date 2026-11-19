@@ -535,3 +535,23 @@ body:not(.classic).dark #panes.split .pane.active .head, .dark body:not(.classic
 .row.sel { background: color-mix(in srgb, var(--rowsel, #3d6fb8) 22%, transparent); }
 body:not(.classic) .row.sel { background: #2F3A4C; color: #FFFFFF; }
 body:not(.classic) .row.sel.cur { background: var(--side-sel); }
+
+
+/* 1.9.4: submenus (View ▸ Text Size ▸ …), drawn as the menu is */
+#submenu .keys { margin-left: auto; padding-left: 24px; color: var(--ui-muted); font-size: 13px; white-space: nowrap; }
+#submenu button:disabled { opacity: .45; cursor: default; }
+#submenu { position: fixed; z-index: 30; min-width: 250px; max-height: 80vh; overflow: auto; padding: 4px; border-radius: 8px;
+  background: var(--ui); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.3); }
+#submenu button { display: flex; width: 100%; gap: 8px; align-items: center; min-height: 38px; padding: 4px 12px;
+  border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+#submenu button:hover { background: var(--ui2); }
+#submenu .tick { width: 1.2em; flex: none; }
+#submenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+#submenu .lab { padding: 6px 12px 2px; font-size: 12px; color: var(--ui-muted); }
+#submenu { background: var(--bar); border-color: var(--line); border-radius: 10px; }
+#submenu { z-index: 31; }
+#menu button.has-sub .keys, #submenu button.has-sub .keys { padding-left: 16px; }
+#menu button.has-sub.open { background: var(--ui2); }
+
+/* 1.9.4: a long press in the list selects (no text selection or callout there) */
+#tree .row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
