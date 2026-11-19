@@ -1,12 +1,12 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.2";
-import * as ed from "./editor.js?v=1.9.2";
-import { Store, PICTURES } from "./store.js?v=1.9.2";
-import * as spell from "./spell.js?v=1.9.2";
-import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.2";
+import * as md from "./md.js?v=1.9.3";
+import * as ed from "./editor.js?v=1.9.3";
+import { Store, PICTURES } from "./store.js?v=1.9.3";
+import * as spell from "./spell.js?v=1.9.3";
+import { ProjectStore, DocxStore, MdFileStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.3";
 
-export const VERSION = "1.9.2";
+export const VERSION = "1.9.3";
 export const EDITION = "V9";   // (named V7-full until 1.9.2; its settings and storage keep the v7full names)
 const SAVE_AFTER_MS = 700;
 const LONG_SIDE = 2000;
@@ -465,6 +465,170 @@ async function openRoot(handle, quiet) {
   if (!quiet) setTimeout(lostPick, 400);
 }
 
+// ------------------------------------------------------------------ 1.9.3: several notes as one page
+// As in Ross Writer and the laptop's Ross Note: Ctrl-click notes in the list (or Shift-click for a run of them)
+// and they show as one continuous page, in the list's order, a dashed line where one ends and the next begins.
+// Everything is edited there and each part is saved back into its own note. A plain click: one note again.
+S.sel = new Set();
+S.selAnchor = null;
+function clearSel() {
+  if (!S.sel.size) return;
+  S.sel.clear();
+  for (const r of $("tree").querySelectorAll(".row.sel")) r.classList.remove("sel");
+}
+function inListOrder(keys) {
+  return S.store.all().filter((n) => keys.has(n.key()));
+}
+async function selectClick(note, e) {
+  const k = note.key();
+  if (!S.sel.size) {
+    // starting from what's open: the note, or the notes already joined
+    if (A.joined) for (const n of A.joined) S.sel.add(n.key());
+    else if (A.note) S.sel.add(A.note.key());
+    S.selAnchor = A.note ? A.note.key() : k;
+  }
+  if (e.shiftKey) {
+    const rows = [...$("tree").querySelectorAll(".row")].map((r) => r.dataset.key);
+    let a = rows.indexOf(S.selAnchor), b = rows.indexOf(k);
+    if (a < 0) a = b;
+    if (!(e.ctrlKey || e.metaKey)) S.sel.clear();
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) S.sel.add(rows[i]);
+  } else {
+    if (S.sel.has(k)) S.sel.delete(k); else S.sel.add(k);
+    S.selAnchor = k;
+  }
+  for (const r of $("tree").querySelectorAll(".row")) r.classList.toggle("sel", S.sel.has(r.dataset.key));
+  const notes = inListOrder(S.sel);
+  if (notes.length >= 2) return openJoined(notes);
+  if (notes.length === 1) { clearSel(); return openNote(notes[0]); }
+}
+
+async function openJoined(notes, pane = A) {
+  await busy(`Opening ${notes.length} notes as one page…`, async () => {
+    await flushSave();
+    await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
+    pane.joined = notes;
+    pane.note = notes[0];
+    S.settings[pane.k ? "open2" : "open"] = notes[0].key();
+    saveSettings();
+    showJoined(pane);
+    markCurrent();
+    updateHead();
+    updateCount();
+    pane.scroller.scrollTop = 0;
+  });
+  const ro = notes.filter((n) => n.readOnly);
+  toast(`${notes.length} notes as one page: each part is saved into its own note.` +
+    (ro.length ? ` (Read-only, as ${ro.map((n) => "“" + n.title() + "”").join(", ")} ${ro.length === 1 ? "has" : "have"} comments, footnotes or the like.)` : ""), 4000);
+}
+
+function showJoined(pane) {
+  const page = pane.page;
+  page.textContent = "";
+  pane.joined.forEach((n, i) => {
+    if (i) {
+      const d = document.createElement("div");
+      d.className = "jdiv";
+      d.contentEditable = "false";
+      d.dataset.part = String(i);
+      d.title = "“" + n.title() + "” begins";
+      page.appendChild(d);
+    }
+    const lines = md.parse(n.text || "");
+    const dir = n.folderParts();
+    for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, dir);
+    const tmp = document.createElement("div");
+    ed.renderLines(tmp, lines);
+    while (tmp.firstChild) page.appendChild(tmp.firstChild);
+  });
+  ed.relayout(page);
+  const ro = pane.joined.some((n) => n.readOnly);
+  page.contentEditable = ro ? "false" : "true";
+  pane.el.classList.toggle("readonly", ro);
+  pane.el.classList.add("joined");
+  loadPictures(page);
+  page.dataset.loaded = "1";
+  spellSoon(0);
+}
+
+// the parts of a joined page: the lines of each note, in order
+function joinedPieces(page) {
+  const parts = [[]];
+  for (const c of page.children) {
+    if (c.classList.contains("jdiv")) parts.push([]);
+    else if (c.classList.contains("ln")) parts[parts.length - 1].push(c);
+  }
+  return parts;
+}
+
+async function saveJoined(pane) {
+  pane.dirty = false;
+  const parts = joinedPieces(pane.page);
+  if (parts.length !== pane.joined.length) {
+    // a note's start was lost: nothing saved over the notes; the page shown again as they are
+    toast("Where one note ends and the next begins got lost, so that change wasn't saved. The notes are shown again as they were.", 7000);
+    showJoined(pane);
+    return;
+  }
+  for (let i = 0; i < parts.length; i++) {
+    const note = pane.joined[i];
+    if (note.readOnly) continue;
+    const lines = parts[i].map(ed.readLine);
+    const text = md.serialize(lines, { dir: note.folderParts() });
+    if (text !== note.text) {
+      const now = await S.store.peek(note);
+      if (now && now.modified !== note.modified && now.text !== note.text && now.text !== text) {
+        await S.store.keepConflict(note, now.text);
+        toast(`“${note.title()}” had also changed on another device; that version is kept in ` +
+          (S.store.isProject ? "the project's Trash folder." : "the .trash folder."));
+      }
+      await S.store.write(note, text);
+      for (const q of P) if (q !== pane && !q.dirty && (q.note === note || (q.joined && q.joined.includes(note)))) refill(q);
+    }
+    const title = md.titleOfLines(lines) || "Untitled";
+    if (md.safeName(title) !== note.name) {
+      const old = note.key();
+      if (await S.store.rename(note, title)) {
+        rekey(old, note.key());
+        if (S.sel.has(old)) { S.sel.delete(old); S.sel.add(note.key()); }
+        for (const q of P) if (q.note === note) S.settings[q.k ? "open2" : "open"] = note.key();
+        saveSettings();
+        renderTree();
+      }
+    }
+  }
+}
+
+// a note's start can't be typed or deleted away: Backspace at the start of a part, Delete at the end of the one
+// before, and anything typed over a selection that runs across a part's start are stopped
+function guardJoined(e, p) {
+  if (!p.joined) return;
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  const across = [...p.page.querySelectorAll(".jdiv")].some((d) => r.intersectsNode(d));
+  const lineOfNode = (n) => { while (n && n.parentNode !== p.page) n = n.parentNode; return n; };
+  let stop = false;
+  if (!r.collapsed) stop = across && e.inputType !== "formatBold" && !String(e.inputType).startsWith("format");
+  else if (e.inputType === "deleteContentBackward" || e.inputType === "deleteWordBackward") {
+    const ln = lineOfNode(r.startContainer);
+    if (ln && ln.previousElementSibling && ln.previousElementSibling.classList.contains("jdiv")) {
+      const c = ed.caret(p.page);
+      stop = c && c.a && c.a.pos === 0;
+    }
+  } else if (e.inputType === "deleteContentForward" || e.inputType === "deleteWordForward") {
+    const ln = lineOfNode(r.startContainer);
+    if (ln && ln.nextElementSibling && ln.nextElementSibling.classList.contains("jdiv")) {
+      const c = ed.caret(p.page);
+      stop = c && c.a && c.a.pos >= ed.lineText(ln).length;
+    }
+  }
+  if (stop) {
+    e.preventDefault();
+    toast("That's where one note ends and the next begins: each note keeps its own start. (A plain click in the list: one note again.)", 4000);
+  }
+}
+
 // ------------------------------------------------------------------ 1.9.2: steady as a word processor
 // Where you are (each pane's note, its scroll and caret) is kept whenever Ross Note is put aside, closed or
 // reloaded, and put back when it starts again. A reload by accident is hard to do: F5 and Ctrl+Shift+R do nothing
@@ -885,7 +1049,7 @@ function renderTree() {
   const exp = new Set(S.settings.expanded);
   const add = (note, depth) => {
     const row = document.createElement("div");
-    row.className = "row" + (S.note && note.key() === S.note.key() ? " cur" : "");
+    row.className = "row" + (S.note && note.key() === S.note.key() ? " cur" : "") + (S.sel.has(note.key()) ? " sel" : "");
     row.style.paddingLeft = (depth * 18) + "px";
     row.dataset.key = note.key();
     row.setAttribute("role", "treeitem");
@@ -933,7 +1097,13 @@ function renderTree() {
       saveSettings();
       renderTree();
     };
-    row.onclick = () => { openNote(note); if ($("app").classList.contains("app-narrow")) { S.sideOpenNarrow = false; layout(); } };
+    row.onclick = (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) { e.preventDefault(); return selectClick(note, e); }   // 1.9.3: several as one page
+      clearSel();
+      openNote(note);
+      if ($("app").classList.contains("app-narrow")) { S.sideOpenNarrow = false; layout(); }
+    };
+    row.addEventListener("mousedown", (e) => { if (e.shiftKey) e.preventDefault(); });     // no text selected in the list
     tree.appendChild(row);
     if (!q && note.children.length && exp.has(note.key())) for (const c of note.children) add(c, depth + 1);
   };
@@ -1300,6 +1470,7 @@ async function openNote(note, pane = A) {
       try { await S.store.read(note); } catch (e) { /* gone: show what we had */ }
     });
     pane.note = note;
+    if (pane.joined) { pane.joined = null; pane.el.classList.remove("joined"); }
     S.settings[pane.k ? "open2" : "open"] = note.key();
     rememberRecent(note);
     const opened = expandTo(note);
@@ -1598,6 +1769,7 @@ async function saveNow(pane) {
 }
 async function saveNowIn(pane) {
   if (!pane.dirty || !pane.note) return;
+  if (pane.joined) return saveJoined(pane);
   if (pane.note.readOnly) { pane.dirty = false; return; }
   pane.dirty = false;
   const note = pane.note;
@@ -1631,6 +1803,13 @@ async function saveNowIn(pane) {
 
 // a pane shows its note again, keeping its place (and the caret, if it's there)
 function refill(q) {
+  if (q.joined) {
+    const top = q.scroller.scrollTop, had = document.activeElement === q.page, c = had ? ed.caret(q.page) : null;
+    showJoined(q);
+    q.scroller.scrollTop = top;
+    if (had) ed.setCaret(q.page, c);
+    return;
+  }
   const top = q.scroller.scrollTop;
   const had = document.activeElement === q.page;
   const c = had ? ed.caret(q.page) : null;
@@ -1946,6 +2125,7 @@ let savedCaret = null;
 function rememberCaret() { savedCaret = { pane: A, c: ed.caret(page) }; }
 
 onPages("beforeinput", (e) => {
+  if (A.joined) { guardJoined(e, A); if (e.defaultPrevented) return; }
   if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
     e.preventDefault();
     enter();
@@ -2716,6 +2896,7 @@ function showKeys() {
     "Check spelling on or off: F7",
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
     "Find a note or a command: Ctrl+K    Focus: Ctrl+Shift+Enter    Align: Ctrl+L / E / R / J    Classic look: Ctrl+Alt+L",
+    "Several notes as one page: Ctrl-click them in the list (Shift-click for a run of them); a plain click: one note again",
     "Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    Headings: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D",
     "Split view: Ctrl+\\ or F6 (top and bottom: Ctrl+Shift+\\)    Switch pane: Shift+F6",
     "Pop-up note (reminders, things to do): Ctrl+Alt+I",
@@ -2821,7 +3002,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.2")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.3")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -2967,7 +3148,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.2");
+  const NB = await import("./notebooks.js?v=1.9.3");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3039,7 +3220,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.2");
+  const NB = await import("./notebooks.js?v=1.9.3");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3254,7 +3435,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.2"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.3"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -3590,7 +3771,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.2");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.3");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -4797,7 +4978,7 @@ function toggleClassic() {
 }
 
 // for the tests
-window.RN = { chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

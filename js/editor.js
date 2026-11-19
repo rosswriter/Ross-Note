@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.2";
+import * as md from "./md.js?v=1.9.3";
 
 const HL = "#ffd54f";
 
@@ -132,6 +132,8 @@ export function tidy(page) {
   let changed = false;
   let pending = null;
   for (const n of [...page.childNodes]) {
+    // 1.9.3: where one note ends and the next begins, on a page of several notes
+    if (n.nodeType === 1 && n.classList.contains("jdiv")) { pending = null; continue; }
     if (n.nodeType === 1 && n.classList.contains("ln") && n.tagName === "DIV") {
       pending = null;
       // a line inside a line (pasting, or the browser's own Enter)
@@ -294,9 +296,10 @@ export function selectedLines(page) {
 // ------------------------------------------------------------------ list numbers, depths, the title
 export function relayout(page) {
   const lines = [...page.children];
-  const st = new md.ListState();
+  let st = new md.ListState();
   let titled = false;
   for (const div of lines) {
+    if (div.classList.contains("jdiv")) { st = new md.ListState(); titled = false; continue; }   // the next note
     const ln = { kind: div.dataset.kind || null, mark: div.dataset.mark || null,
       raw: div.dataset.raw != null ? div.dataset.raw : null, code: !!div.dataset.code };
     const { depth, number } = st.step(ln);

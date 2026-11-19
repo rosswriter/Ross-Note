@@ -529,3 +529,9 @@ body:not(.classic).dark #panes.split .pane.active .head, .dark body:not(.classic
 /* 1.9.2: the start screen's buttons, one width */
 #start-buttons { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 #start-buttons .big { width: min(300px, 86vw); margin: 0; }
+
+/* 1.9.3: several notes as one page: a dashed line where one note ends and the next begins; selected rows */
+.page .jdiv { height: 0; margin: 26px 0 22px; border-top: 1.5px dashed var(--dim, #a39d88); user-select: none; pointer-events: none; }
+.row.sel { background: color-mix(in srgb, var(--rowsel, #3d6fb8) 22%, transparent); }
+body:not(.classic) .row.sel { background: #2F3A4C; color: #FFFFFF; }
+body:not(.classic) .row.sel.cur { background: var(--side-sel); }
