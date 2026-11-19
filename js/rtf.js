@@ -345,7 +345,9 @@ function pngSize(b) {
   return null;
 }
 
-// opts: { look (readRtf's, or none for the standard one), paras (readRtf's, for untouched paragraphs' own
+// opts: { look (readRtf's, or none for the standard one), indent (twips: body paragraphs' first line, not
+//   noIndent ones), justify, header (text before the page number, top right), footer ("page", centred),
+//   titlePage (nothing at the top or foot of page 1), headingsPlain (the manuscript look), paras (readRtf's, for untouched paragraphs' own
 //   spacing), pictureBytes: async img -> Uint8Array | null, title }
 export async function writeRtf(lines, opts = {}) {
   const look = Object.assign({ font: "Times New Roman", fs: 24, fi: 0, sb: 0, sa: 0, sl: 276, slmult: 1,
@@ -360,6 +362,12 @@ export async function writeRtf(lines, opts = {}) {
   out.push(sheet + "}\n");
   if (opts.title) out.push(`{\\info{\\title ${esc(opts.title)}}}\n`);
   out.push(`\\paperw${look.paperw}\\paperh${look.paperh}\\margl${look.margl}\\margr${look.margr}\\margt${look.margt}\\margb${look.margb}\\viewkind4\n`);
+  if (lines.some((ln) => (ln.runs || []).some((r) => /\uE000e/.test(r.t || "")))) out.push("\\aenddoc\\aftnnrlc\n");   // endnotes: at the end, i, ii, iii
+  if (opts.titlePage && (opts.header != null || opts.footer)) out.push("\\titlepg\n");
+  if (opts.header != null) out.push(`{\\header\\pard\\plain\\qr\\f0\\fs${look.fs} ${esc(opts.header)}\\chpgn\\par}\n`);
+  if (opts.footer) out.push(`{\\footer\\pard\\plain\\qc\\f0\\fs${Math.max(16, look.fs - 4)} \\chpgn\\par}\n`);
+  if (opts.titlePage && opts.header != null) out.push("{\\headerf\\pard\\plain\\par}\n");
+  if (opts.titlePage && opts.footer) out.push("{\\footerf\\pard\\plain\\par}\n");
   const textW = Math.max(2000, look.paperw - look.margl - look.margr);
   // untouched paragraphs keep their own spacing: matched in order by their words
   const paras = opts.paras || [];
@@ -374,9 +382,25 @@ export async function writeRtf(lines, opts = {}) {
     const heading = kind && kind[0] === "h";
     const list = kind === "ul" || kind === "ol";
     if (!list) { counters.length = 0; }
+    if (ln.table) {
+      const n = Math.max(1, ...ln.table.map((r) => r.length));
+      const cw = Math.floor(textW / n);
+      let t = "";
+      for (const r of ln.table) {
+        t += "\\trowd\\trgaph108\\trleft0";
+        for (let k = 1; k <= n; k++) t += `\\clbrdrt\\brdrs\\brdrw10\\clbrdrl\\brdrs\\brdrw10\\clbrdrb\\brdrs\\brdrw10\\clbrdrr\\brdrs\\brdrw10\\cellx${cw * k}`;
+        t += "\n\\pard\\plain\\intbl\\ql\\f0\\fs" + look.fs + " " + Array.from({ length: n }, (_, k) => esc(r[k] || "") + "\\cell ").join("") + "\\row\n";
+      }
+      out.push(t + "\\pard\n");
+      continue;
+    }
     if (ln.pageBreak) out.push("\\page\n");
     let p = "\\pard\\plain";
-    if (heading) p += `\\s${kind[1]}\\sb${kind[1] < 3 ? 240 : 160}\\sa80\\keepn\\outlinelevel${+kind[1] - 1}`;
+    if (heading && opts.headingsPlain) p += `\\s${kind[1]}\\keepn\\outlinelevel${+kind[1] - 1}${kind === "h1" ? "\\sb2880\\sa480" : "\\sb240\\sa240"}`;
+    else if (heading) p += `\\s${kind[1]}\\sb${kind[1] < 3 ? 240 : 160}\\sa80\\keepn\\outlinelevel${+kind[1] - 1}`;
+    if (ln.titlePage === "title") p += "\\sb4320\\sa240";
+    else if (ln.titlePage) p += ln.titlePage === "words" ? "\\sb480" : "\\sb120";
+    else if (ln.sceneBreak && !opts.headingsPlain) p += "\\sb240\\sa240";
     const sp = own || (!heading && !list ? lastBody : null) || look;
     if (!heading) {
       if (sp.sb) p += `\\sb${sp.sb}`;
@@ -384,7 +408,9 @@ export async function writeRtf(lines, opts = {}) {
     }
     if (ln.gapBefore && !heading) p += "\\sb240";
     if (sp.sl) p += `\\sl${sp.sl}\\slmult${sp.slmult ? 1 : 0}`;
-    if (ln.align === "center") p += "\\qc"; else if (ln.align === "right") p += "\\qr"; else if (ln.align === "justify") p += "\\qj";
+    const bodyLine = !kind && !ln.code && !ln.sceneBreak && !ln.titlePage;
+    const al = ln.align || ((kind === "h1" || kind === "h2") && opts.headingsPlain ? "center" : null) || (opts.justify && bodyLine ? "justify" : null);
+    if (al === "center") p += "\\qc"; else if (al === "right") p += "\\qr"; else if (al === "justify") p += "\\qj";
     let lead = "";
     if (list) {
       const d = Math.max(1, ln.depth || 1);
@@ -394,13 +420,16 @@ export async function writeRtf(lines, opts = {}) {
       if (kind === "ul") lead = "{\\pntext\\f1\\'b7\\tab}{\\*\\pn\\pnlvlblt\\pnf1\\pnindent360{\\pntxtb\\'b7}}";
       else lead = `{\\pntext\\f0 ${counters[d - 1]}.\\tab}{\\*\\pn\\pnlvlbody\\pndec\\pnstart1\\pnindent360{\\pntxta.}}`;
     } else if (kind === "quote") p += "\\li567\\ri284";
-    else if (!heading) {
+    else if (!heading && opts.indent != null && bodyLine) {
+      if (opts.indent && !ln.noIndent && !ln.align) p += `\\fi${opts.indent}`;
+    } else if (!heading) {
       const fi = own ? own.fi : (lastBody ? lastBody.fi : look.fi);
       if (fi) p += `\\fi${fi}`;
       if (own && own.li) p += `\\li${own.li}`;
       if (own && own.ri) p += `\\ri${own.ri}`;
     }
-    p += heading ? `\\b\\f0\\fs${HEAD_PT[kind[1]] * 2} ` : ln.code ? "\\f2\\fs20 " : `\\f0\\fs${look.fs} `;
+    p += heading && opts.headingsPlain ? `\\f0\\fs${look.fs} ` : heading ? `\\b\\f0\\fs${HEAD_PT[kind[1]] * 2} ` : ln.code ? "\\f2\\fs20 " :
+      ln.titlePage === "title" ? `\\f0\\fs${opts.headingsPlain ? 28 : 48} ` : `\\f0\\fs${look.fs} `;
     let body = "";
     for (const r of ln.runs || []) {
       if (r.img) {
@@ -416,6 +445,18 @@ export async function writeRtf(lines, opts = {}) {
         continue;
       }
       if (!r.t) continue;
+      if (r.t.includes("\uE000")) {
+        // RossDraft 1.2: a note's mark: RTF's own footnote (an endnote: \ftnalt), its words with it
+        for (const piece of r.t.split(/(\uE000[fe]-?\d+\uE001)/)) {
+          if (!piece) continue;
+          const m = /^\uE000([fe])(-?\d+)\uE001$/.exec(piece);
+          if (!m) { body += esc(piece); continue; }
+          const words = (opts.notes && opts.notes.get(m[1] + m[2])) || "";
+          body += `{\\super\\chftn}{\\footnote${m[1] === "e" ? "\\ftnalt" : ""}\\pard\\plain\\f0\\fs${Math.max(16, look.fs - 4)} {\\super\\chftn} ` +
+            words.split("\n").map(esc).join("\\par ") + "\\par}";
+        }
+        continue;
+      }
       let fmt = "";
       if (r.f && r.f.has("b")) fmt += "\\b";
       if (r.f && r.f.has("i")) fmt += "\\i";

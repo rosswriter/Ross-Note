@@ -1,13 +1,13 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.9";
-import * as ed from "./editor.js?v=1.9.9";
-import { Store, PICTURES } from "./store.js?v=1.9.9";
-import * as spell from "./spell.js?v=1.9.9";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.9";
+import * as md from "./md.js?v=1.9.12";
+import * as ed from "./editor.js?v=1.9.12";
+import { Store, PICTURES } from "./store.js?v=1.9.12";
+import * as spell from "./spell.js?v=1.9.12";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS } from "./project.js?v=1.9.12";
 
-export const VERSION = "1.9.9";
-import { ED } from "./edition.js?v=1.9.9";
+export const VERSION = "1.9.12";
+import { ED } from "./edition.js?v=1.9.12";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -82,6 +82,7 @@ function applyLook() {
   document.documentElement.style.setProperty("--measure", (MEASURES[s.measure] || MEASURES.medium) + "em");
   document.body.classList.toggle("fullwidth", s.measure === "full");
   document.body.classList.toggle("classicfont", s.font === "classic");
+  document.documentElement.style.setProperty("--pagefont", (PAGE_FONTS.find((f) => f[0] === s.font) || PAGE_FONTS[0])[2]);
   document.body.classList.toggle("focus", !!s.focus);
   document.body.classList.toggle("nowordlist", !s.wordList);
   document.body.classList.toggle("classic", !!s.classic);
@@ -304,7 +305,20 @@ async function start() {
       return showStart("again", handle, { where, h, f });
     }
   }
-  if (ED.project && where !== "notes") return showStart(handle ? "again" : "first", handle && handle.kind === "directory" ? handle : null);
+  if (ED.project) {
+    // RossDraft 1.0.3: always the start screen (projects first), with "Carry on where I was" when there's a last place
+    const dirH = handle && handle.kind === "directory" ? handle : null;
+    let was = null;
+    if (where === "notes" && dirH) was = { where: "notes", h: dirH };
+    else if (where === "project" || where === "doc") {
+      try {
+        const h = await kvGet(where === "doc" ? "docFile" : "project");
+        const f = where === "doc" ? true : await kvGet("projectFile");
+        if (h && f) was = { where, h, f };
+      } catch (e) { was = null; }
+    }
+    return showStart(dirH ? "again" : "first", dirH, was);
+  }
   if (handle && handle.kind === "directory") {
     const mode = handle.queryPermission ? await handle.queryPermission({ mode: "readwrite" }) : "granted";
     if (mode === "granted") return openRoot(handle);
@@ -318,15 +332,17 @@ async function start() {
 // lets a web app into a folder or a file only from a tap.
 function showStart(kind, handle, was = null) {
   $("start").hidden = false;
-  // RossDraft 1.0: the raised start screen (paper; midnight in dark mode), and buttons that sink when tapped.
-  if (ED.project && !$("start").classList.contains("raised")) {
+  // RossDraft 1.0, and Ross Note V9 1.9.12: the raised start screen (paper; midnight in dark mode), compact
+  // buttons that sink when tapped.
+  if (!$("start").classList.contains("raised")) {
     $("start").classList.add("raised");
     const up = () => $("start").querySelectorAll(".down").forEach(x => x.classList.remove("down"));
     $("start").addEventListener("pointerdown", e => { const b = e.target.closest("#start-buttons button"); if (b) b.classList.add("down"); });
     ["pointerup", "pointercancel"].forEach(t => window.addEventListener(t, up));
     $("start").addEventListener("pointerout", e => { const b = e.target.closest && e.target.closest(".down"); if (b && !b.contains(e.relatedTarget)) b.classList.remove("down"); });
   }
-  $("start").querySelector("h1").textContent = ED.name + " (" + SHOWN + ")";
+  $("start").querySelector("h1").textContent = ED.name;
+  $("start").querySelector("h1").title = "Version " + SHOWN;
   const msg = $("start-msg"), btns = $("start-buttons"), note = $("start-note");
   btns.textContent = "";
   const button = (text, main, fn) => {
@@ -351,7 +367,7 @@ function showStart(kind, handle, was = null) {
   if (was && was.h) {
     const name = was.where === "doc" ? (S.settings.lastDoc || {}).name || was.h.name :
       was.where === "project" ? (S.settings.lastProject || {}).name || was.h.name : was.h.name;
-    msg.textContent = `You were working in “${name}”.`;
+    msg.textContent = `Last: “${name}”${was.where === "project" ? " (a project)" : was.where === "doc" ? "" : " (your notes)"}.`;
     button("Carry on where I was", true, async () => {
       if (!await into(was.h)) return;
       if (was.where === "doc") openDocFile(was.h);
@@ -360,23 +376,25 @@ function showStart(kind, handle, was = null) {
     });
   } else if (ED.project) {
     // RossDraft: projects first
-    msg.textContent = "Open a Ross Writer project: the folder holding your projects, or one project's own folder.";
+    msg.textContent = "Open a Ross Writer project, a document, or your notes.";
     button("Open a Ross Writer Project…", true, chooseProject);
   } else if (kind === "first") {
-    msg.textContent = "Choose your RossNotes folder: the one your sync app (Drivesync) keeps in step with your laptop.";
+    msg.textContent = "Choose your RossNotes folder: the one your sync app keeps in step with the laptop.";
     button("Choose the RossNotes folder…", true, chooseFolder);
   }
   if (handle && !(was && was.where === "notes")) button(`Open my notes (“${handle.name}”)`, false, async () => { if (await into(handle)) openRoot(handle); });
-  else if (handle) button("Open my notes", false, async () => { if (await into(handle)) openRoot(handle); });
+  else if (handle && !was) button("Open my notes", false, async () => { if (await into(handle)) openRoot(handle); });
   else if (ED.project) button("Choose the RossNotes folder…", false, chooseFolder);
   if (!(ED.project && !was)) button("Open a Ross Writer Project…", false, chooseProject);
   if (window.showOpenFilePicker || window.showDirectoryPicker) button(OPEN_DOC, false, chooseWordDoc);
   if (kind !== "first") button("Choose another folder…", false, chooseAnotherFolder);
-  note.textContent = ED.project && !was ? "RossDraft edits Ross Writer projects in place: the chapters and scenes, their " +
-    "synopses and notes, status and targets, as Ross Writer on the laptop sees them." : kind === "first" ?
-    "Ross Note reads and saves the notes in that folder, as the laptop does: one Markdown file for each note." :
-    "Your work was saved as you typed. Android asks once each time Ross Note starts afresh; " +
-    "one tap and you're back at the same place in the same note.";
+  note.textContent = ED.project && !was ? "Edited in place, as Ross Writer on the laptop sees them." : kind === "first" ?
+    "One Markdown file for each note, as on the laptop." : "Everything was saved as you typed.";
+  const ver = document.createElement("span");
+  ver.className = "ver";
+  ver.textContent = "Version " + SHOWN;
+  note.appendChild(document.createElement("br"));
+  note.appendChild(ver);
 }
 
 // ------------------------------------------------------------------ 1.9.2: more than one set of notes
@@ -597,6 +615,232 @@ function renderDraftHead() {
   h.append(top, bar, line, today);
 }
 
+// ------------------------------------------------------------------ RossDraft 1.1: Compile (Ctrl+Alt+E)
+// The ticked entries as one book (compile.js, as Ross Writer's Compile): Word, RTF, PDF or print, e-book.
+// Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
+// the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
+let CM = null;
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.12")); }
+function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
+const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
+  inter: "Inter", courier: "Courier Prime" };
+
+async function compileDialog() {
+  if (!draftOn()) { toast("Compile is for a Ross Writer project: open one first."); return; }
+  const C = await compileModule();
+  await flushSave();
+  const d = S.store.data;
+  const o = Object.assign({}, C.DEFAULT_COMPILE, d.compile || {});
+  if (!o.author) o.author = S.settings.commentAuthor || "";
+  const nodes = S.store.all().filter((n) => !n.raw.pdf);
+  const box = document.createElement("div");
+  box.className = "compile";
+  const row = (n) => `<label class="cmp-row" style="padding-left:${6 + 18 * n.ancestors().length}px"><input type="checkbox" data-k="${escapeHtml(n.key())}"` +
+    `${n.raw.include !== false ? " checked" : ""}> ${escapeHtml(n.title())}</label>`;
+  const breaks = ["* * *", "#", "~", "* * * *"];
+  box.innerHTML = `<div class="cmp-what"><div class="cmp-head">What goes in <span class="cmp-n"></span>
+      <button type="button" data-all="1">All</button><button type="button" data-all="0">None</button>
+      <button type="button" data-all="inc">As ticked in the list</button></div>
+    <div class="cmp-list">${nodes.map(row).join("")}</div></div>
+    <div class="cmp-opts">
+    <label><input type="checkbox" class="o-head"${o.headings ? " checked" : ""}> Titles of chapters and scenes as headings</label>
+    <label><input type="checkbox" class="o-page"${o.chapter_page ? " checked" : ""}> Each top-level chapter starts on a new page</label>
+    <label class="o-sb">Between scenes without titles <input class="o-break" list="cmp-breaks" value="${escapeHtml(o.scene_break || "")}" placeholder="(nothing)">
+      <datalist id="cmp-breaks">${breaks.map((b) => `<option value="${escapeHtml(b)}">`).join("")}</datalist></label>
+    <label><input type="checkbox" class="o-com"${o.comments ? " checked" : ""}> Keep the comments (Word)</label>
+    <div class="cmp-lay">${Object.entries(C.LAYOUTS).map(([k, v]) => `<label><input type="radio" name="cmp-layout" value="${k}"${o.layout === k ? " checked" : ""}>` +
+      ` <b>${v.label}</b> <small>${escapeHtml(v.what)}</small></label>`).join("")}</div>
+    <label><input type="checkbox" class="o-tp"${o.title_page ? " checked" : ""}> A title page, with the title, <span class="o-wc"></span> and your name:</label>
+    <label class="o-au">Your name <input class="o-author" value="${escapeHtml(o.author)}" placeholder="as on the cover"></label>
+    </div>
+    <p class="muted">Saved in the project's folder as “${escapeHtml(projectTitle())} (compiled)”. The settings are the project's: Ross Writer on the laptop uses them too.</p>`;
+  const ticks = () => [...box.querySelectorAll(".cmp-list input")];
+  const count = () => {
+    const on = ticks().filter((x) => x.checked);
+    const words = on.reduce((t, x) => { const n = S.store.find(x.dataset.k); return t + (n ? wordsOfNote(n) : 0); }, 0);
+    box.querySelector(".cmp-n").textContent = `· ${on.length} of ${ticks().length}, ${words.toLocaleString("en")} words`;
+    box.querySelector(".o-wc").textContent = aboutWords(words);
+  };
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-all]");
+    if (!b) return;
+    for (const x of ticks()) x.checked = b.dataset.all === "inc" ? (S.store.find(x.dataset.k) || { raw: {} }).raw.include !== false : b.dataset.all === "1";
+    count();
+  });
+  box.addEventListener("change", count);
+  count();
+  const v = await ask("Compile", box, [["Word…", "docx", true], ["RTF…", "rtf"], ["PDF or Print…", "print"], ["E-book…", "epub"]]);
+  if (!v) return;
+  const opts = {
+    headings: box.querySelector(".o-head").checked, chapter_page: box.querySelector(".o-page").checked,
+    scene_break: box.querySelector(".o-break").value.trim(), comments: box.querySelector(".o-com").checked,
+    layout: (box.querySelector('input[name="cmp-layout"]:checked') || { value: "own" }).value,
+    title_page: box.querySelector(".o-tp").checked, author: box.querySelector(".o-author").value.trim(),
+  };
+  d.compile = Object.assign({}, d.compile || {}, opts);
+  saveProjectSoon();
+  const chosen = ticks().filter((x) => x.checked).map((x) => S.store.find(x.dataset.k)).filter(Boolean);
+  if (!chosen.length) { dialog("Compile", "Nothing is ticked."); return; }
+  return compileBook(v, chosen, d.compile);
+}
+
+function aboutWords(n) {
+  const r = n >= 10000 ? Math.round(n / 1000) * 1000 : n >= 1000 ? Math.round(n / 100) * 100 : n;
+  return `about ${r.toLocaleString("en")} words`;
+}
+
+// the book's lines from the chosen entries (in the list's order)
+async function compileLines(chosen, o) {
+  const C = await compileModule();
+  const W = await wordModule();
+  const order = new Map(S.store.all().map((n, i) => [n, i]));
+  const nodes = chosen.slice().sort((a, b) => order.get(a) - order.get(b));
+  const missing = [];
+  const entries = [];
+  let words = 0;
+  for (const n of nodes) {
+    if (n.raw.pdf) continue;
+    const text = await queue(() => S.store.read(n));
+    if (n.readOnly && n.readOnly.some((w) => /not on this device|couldn't read/.test(w))) { missing.push(n.title()); continue; }
+    const nl = md.parse(text).slice(1);
+    entries.push({ title: n.title(), depth: n.ancestors().length, hasChildren: n.children.length > 0, lines: W.fromNoteLines(nl),
+      comments: n.comments || [], notes: n.fnotes || null });
+    words += wordsOfNote(n);
+  }
+  const title = projectTitle();
+  // the scenes' footnotes and endnotes, numbered through the book
+  const rn = C.renumberNotes(entries);
+  rn.lines.forEach((l, i) => { entries[i].lines = l; });
+  const lines = C.markIndents(C.bookLines(entries, Object.assign({}, o, { title, words: aboutWords(words) })));
+  return { lines, entries, missing, title, words, notes: rn.notes };
+}
+
+async function compileBook(kind, chosen, o) {
+  const C = await compileModule();
+  const got = await busy("Gathering the book…", () => compileLines(chosen, o), { after: 0 });
+  if (got.missing.length) {
+    dialog("Compile", `These entries' Word files aren't on this device yet (your sync app may still be copying them), ` +
+      `so the book would be missing them:\n\n${got.missing.map((t) => "• " + t).join("\n")}\n\nTry again once they're here, or untick them.`);
+    return null;
+  }
+  const { lines, title, entries, notes } = got;
+  const bytes = (img) => S.store.pictureBytes(img);
+  const surname = (o.author || "").trim().split(/\s+/).pop() || "";
+  const shortTitle = title.toUpperCase().slice(0, 40);
+  const pageFont = WORD_FONT[S.settings.font] || "Literata";
+  if (kind === "print") return compilePrint(lines, o, title, surname, shortTitle, notes);
+  let blob, ext;
+  if (kind === "docx") {
+    const W = await wordModule();
+    ext = "docx";
+    blob = await busy("Making the Word document…", async () => {
+      if (o.layout === "manuscript") {
+        return W.writeDocx(lines, bytes, title, "Times New Roman", { notes, size: 24, line: 480, indent: 720, margins: 1440,
+          header: surname ? `${surname} / ${shortTitle} / ` : `${shortTitle} / `, titlePage: !!o.title_page, headingsPlain: true });
+      }
+      if (o.layout === "reading") {
+        return W.writeDocx(lines, bytes, title, pageFont, { notes, size: 23, line: 312, indent: 340, justify: true, footer: "page",
+          titlePage: !!o.title_page });
+      }
+      // the project's own look: its first entry's Word file's styles and page (as Ross Writer's Compile)
+      let tpl = null;
+      for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
+      if (!tpl) tpl = await S.store.findTemplate();
+      if (tpl && tpl.files) {
+        const { patchDocx } = await import("./wordpatch.js?v=1.8.3");
+        return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
+      }
+      return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
+    }, { after: 0 });
+    if (o.comments && entries.some((e) => e.comments.length)) {
+      const { exportComments } = await import("./wordpatch.js?v=1.9.12");
+      blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
+        entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
+    }
+  } else if (kind === "rtf") {
+    const R = await import("./rtf.js?v=1.9.12");
+    ext = "rtf";
+    const out = await busy("Making the RTF document…", () => {
+      if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
+        look: { font: "Times New Roman", fs: 24, sl: 480, slmult: 1, margl: 1440, margr: 1440, margt: 1440, margb: 1440 },
+        header: surname ? `${surname} / ${shortTitle} / ` : `${shortTitle} / `, titlePage: !!o.title_page });
+      if (o.layout === "reading") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 340, justify: true, footer: "page",
+        look: { font: pageFont, fs: 23, sl: 312, slmult: 1 }, titlePage: !!o.title_page });
+      return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 0, footer: "page", titlePage: !!o.title_page,
+        look: { font: "Cambria", fs: 24, sl: 276, slmult: 1 } });
+    }, { after: 0 });
+    blob = new Blob([out], { type: "application/rtf" });
+  } else if (kind === "epub") {
+    ext = "epub";
+    const d = S.store.data;
+    if (!d.compile.epub_id) { d.compile.epub_id = "urn:uuid:" + (crypto.randomUUID ? crypto.randomUUID() : Date.now()); saveProjectSoon(); }
+    blob = await busy("Making the e-book…", () => C.epubBlob(lines, { notes, title, author: o.author, title_page: true,
+      identifier: d.compile.epub_id }, bytes), { after: 0 });
+  }
+  const name = md.safeName(title) + " (compiled)." + ext;
+  try {
+    await queue(async () => {
+      const h = await S.store.handle.getFileHandle(name, { create: true });
+      const w = await h.createWritable();
+      await w.write(blob);
+      await w.close();
+    });
+  } catch (e) {
+    // not into the folder (no permission to write there): saved wherever you choose instead
+    const saved = await saveFile(blob, name, { docx: "Word document", rtf: "Rich Text Format (RTF)", epub: "E-book (EPUB)" }[ext], "." + ext, blob.type);
+    if (saved) toast("Saved " + saved);
+    return saved;
+  }
+  const file = new File([blob], name, { type: blob.type });
+  const p = document.createElement("div");
+  p.textContent = `“${name}” is in the project's folder (${got.entries.length} entr${got.entries.length === 1 ? "y" : "ies"}, ${got.words.toLocaleString("en")} words).`;
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+  const v = await ask("Compiled", p, canShare ? [["Share…", "share"], ["OK", "ok", true]] : [["OK", "ok", true]]);
+  if (v === "share") { try { await navigator.share({ files: [file], title }); } catch (e) { /* not shared */ } }
+  return name;
+}
+
+// PDF or print: the book laid out in the print view, the browser's print (and its "Save as PDF")
+async function compilePrint(lines, o, title, surname, shortTitle, notes = null) {
+  const C = await compileModule();
+  const urls = new Map();
+  for (const ln of lines) for (const r of ln.runs || []) {
+    if (!r.img || urls.has(r.img)) continue;
+    try {
+      const b = await S.store.pictureBytes(r.img);
+      if (b) urls.set(r.img, URL.createObjectURL(new Blob([b])));
+    } catch (e) { /* left out */ }
+  }
+  const font = (PAGE_FONTS.find((f) => f[0] === S.settings.font) || PAGE_FONTS[0])[2];
+  const { html, css } = C.printHtml(lines, o.layout, { notes, header: surname ? `${surname} / ${shortTitle}` : shortTitle, font,
+    titlePage: !!o.title_page, pictureUrl: (img) => urls.get(img) });
+  const doc = $("printdoc");
+  doc.innerHTML = html;
+  doc.classList.add("book");
+  const st = document.createElement("style");
+  st.id = "book-css";
+  st.textContent = "@media print {" + css.replace(/@page[^{]*\{[^{}]*(\{[^{}]*\}[^{}]*)*\}/g, "") + "}\n" +
+    (css.match(/@page[^{]*\{[^{}]*(\{[^{}]*\}[^{}]*)*\}/g) || []).join("\n");
+  document.head.appendChild(st);
+  await Promise.all([...doc.querySelectorAll("img")].map((i) => (i.decode ? i.decode().catch(() => {}) : null)));
+  try { await document.fonts.ready; } catch (e) { /* as they are */ }
+  document.body.classList.add("print-joined");
+  const old = document.title;
+  document.title = title;
+  const after = () => {
+    document.body.classList.remove("print-joined");
+    document.title = old;
+    doc.textContent = "";
+    doc.classList.remove("book");
+    st.remove();
+    for (const u of urls.values()) URL.revokeObjectURL(u);
+    window.removeEventListener("afterprint", after);
+  };
+  window.addEventListener("afterprint", after);
+  if (!window.RN_NOPRINT) window.print();
+  return title;
+}
+
 // -- Targets and Status… (as Ross Writer's dialog)
 async function targetsDialog() {
   if (!draftOn()) return;
@@ -659,6 +903,8 @@ function escapeHtml(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&am
 
 // -- the side panel's Synopsis and Notes tab (beside Comments), for the entry the caret is in
 function inspectorOn(p) { return draftOn() && !!p.note && !p.el.hidden; }
+// RossDraft 1.2: the Footnotes tab, for a scene (or a Word document) of the page, not a page of several
+function fnOn(p) { return ED.project && !!p.note && !!p.note.fnotes && !p.joined && !p.el.hidden; }
 function inspectedNote(p) {
   if (!p.joined) return p.note;
   // on a page of several: the part the caret is in
@@ -742,11 +988,14 @@ function panelTabs(p, cs) {
     b.className = "ptab" + ((S.settings.ptab || "notes") === v ? " on" : "");
     b.textContent = label;
     b.addEventListener("mousedown", (e) => e.preventDefault());
-    b.onclick = () => { S.settings.ptab = v; saveSettings(); shownComments.delete(p.cpanel); shownInspector.delete(p.cpanel); renderComments(); };
+    b.onclick = () => { S.settings.ptab = v; saveSettings(); shownComments.delete(p.cpanel); shownInspector.delete(p.cpanel); shownFootnotes.delete(p.cpanel); renderComments(); };
     top.appendChild(b);
   };
-  tab("Synopsis & Notes", "notes");
-  tab(cs.length ? `Comments · ${cs.length}` : "Comments", "comments");
+  // (three tabs: shorter names, so they fit side by side)
+  const three = inspectorOn(p) && fnOn(p);
+  if (inspectorOn(p)) tab(three ? "Synopsis" : "Synopsis & Notes", "notes");
+  tab(cs.length ? `Comments${three ? " " : " · "}${cs.length}` : "Comments", "comments");
+  if (fnOn(p)) { const nf = p.page.querySelectorAll("sup.fnref").length; tab(nf ? `Footnotes${three ? " " : " · "}${nf}` : "Footnotes", "footnotes"); }
   const x = document.createElement("button");
   x.type = "button";
   x.className = "pclose";
@@ -756,6 +1005,133 @@ function panelTabs(p, cs) {
   top.appendChild(x);
   return top;
 }
+// -- the Footnotes tab (as Ross Writer's Notes tab): each note in the order of the page, its number, its words
+// to edit; Footnote and Endnote put a new one at the caret (Ctrl+Alt+F, Ctrl+Alt+D, as Ross Writer)
+const shownFootnotes = new WeakMap();
+function renderFootnotes(p, tabs) {
+  const marks = [...p.page.querySelectorAll("sup.fnref")];
+  const labels = ed.numberNotes(p.page);
+  const key = marks.map((m) => m.dataset.k).join(",");
+  if (shownFootnotes.get(p.cpanel) === key && p.cpanel.querySelector(".fnl")) return;
+  shownFootnotes.set(p.cpanel, key);
+  shownComments.delete(p.cpanel);
+  shownInspector.delete(p.cpanel);
+  p.cpanel.textContent = "";
+  p.cpanel.appendChild(tabs);
+  const w = document.createElement("div");
+  w.className = "fnl";
+  const row = document.createElement("div");
+  row.className = "fn-add";
+  const ro = !!p.note.readOnly;
+  for (const [label, kind, keys] of [["Footnote", "footnote", "Ctrl+Alt+F"], ["Endnote", "endnote", "Ctrl+Alt+D"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "+ " + label;
+    b.title = `A new ${kind} at the caret (${keys})`;
+    b.disabled = ro;
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.onclick = () => insertNote(kind, p);
+    row.appendChild(b);
+  }
+  w.appendChild(row);
+  if (!marks.length) {
+    const e = document.createElement("p");
+    e.className = "fn-empty";
+    e.textContent = ro ? "No notes." : "No notes yet. Put the caret where the note's number should go, then + Footnote or + Endnote.";
+    w.appendChild(e);
+  }
+  for (const m of marks) {
+    const k = m.dataset.k;
+    const it = document.createElement("div");
+    it.className = "fn-item";
+    it.dataset.k = k;
+    const head = document.createElement("div");
+    head.className = "fn-head";
+    const lab = document.createElement("b");
+    lab.textContent = (k[0] === "e" ? "Endnote " : "Footnote ") + (labels.get(k) || "");
+    const go = document.createElement("button");
+    go.type = "button";
+    go.textContent = "Show";
+    go.title = "Its place in the text";
+    go.onclick = () => { m.scrollIntoView({ block: "center" }); m.classList.add("flash"); setTimeout(() => m.classList.remove("flash"), 1200); };
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Delete";
+    del.disabled = ro;
+    del.onclick = () => { m.remove(); changed(p); shownFootnotes.delete(p.cpanel); renderComments(); toast("Note deleted (Ctrl+Z on the page brings back its number; its words are kept until you leave the scene)."); };
+    head.append(lab, go, del);
+    const ta = document.createElement("textarea");
+    ta.rows = 3;
+    ta.value = p.note.fnotes.get(k) || "";
+    ta.readOnly = ro;
+    ta.spellcheck = true;
+    ta.placeholder = "The note's words";
+    ta.addEventListener("input", () => {
+      p.note.fnotes.set(k, ta.value);
+      p.note.fnDirty = true;
+      m.title = ta.value;
+      changed(p);
+    });
+    it.append(head, ta);
+    w.appendChild(it);
+    m.title = p.note.fnotes.get(k) || "";
+  }
+  p.cpanel.appendChild(w);
+}
+const fnTimers = new WeakMap();
+function fnotesSoon(p) {
+  clearTimeout(fnTimers.get(p));
+  fnTimers.set(p, setTimeout(() => { if (S.settings.ptab === "footnotes" || !(p.note.comments || []).length) renderComments(); }, 400));
+}
+
+// a new footnote or endnote at the caret: its mark in the text, its words in the Footnotes tab
+function insertNote(kind, pane = A) {
+  const p = pane;
+  if (!ED.project || !p.note || !p.note.fnotes) { toast("Footnotes are for a Ross Writer project's scenes, or a Word document."); return; }
+  if (p.joined) { toast("Open the scene by itself to add a note."); return; }
+  if (p.note.readOnly) { toast("This scene is read-only here."); return; }
+  const sel = window.getSelection();
+  let r = sel.rangeCount ? sel.getRangeAt(0) : null;
+  if (!r || !p.page.contains(r.endContainer)) { toast("Put the caret in the text where the note's number should go."); return; }
+  const k = kind === "endnote" ? "e" : "f";
+  const ids = [...p.note.fnotes.keys()].filter((x) => x[0] === k).map((x) => +x.slice(1) || 0);
+  for (const m of p.page.querySelectorAll("sup.fnref")) if (m.dataset.k[0] === k) ids.push(+m.dataset.k.slice(1) || 0);
+  const id = Math.max(0, ...ids) + 1;
+  const token = "\uE000" + k + id + "\uE001";
+  r = r.cloneRange();
+  r.collapse(false);
+  const sup = ed.noteElement(token);
+  r.insertNode(sup);
+  const after = document.createRange();
+  after.setStartAfter(sup);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  p.note.fnotes.set(k + id, "");
+  p.note.fnDirty = true;
+  changed(p);
+  S.settings.showComments = true;
+  S.settings.ptab = "footnotes";
+  saveSettings();
+  shownFootnotes.delete(p.cpanel);
+  renderComments();
+  const ta = p.cpanel.querySelector(`.fn-item[data-k="${k + id}"] textarea`);
+  if (ta) ta.focus();
+}
+// a note's number tapped: its words in the Footnotes tab
+document.addEventListener("click", (e) => {
+  const m = e.target.closest && e.target.closest("sup.fnref");
+  if (!m || !ED.project) return;
+  const p = P.find((q) => q.page.contains(m));
+  if (!p || !fnOn(p)) return;
+  S.settings.showComments = true;
+  S.settings.ptab = "footnotes";
+  saveSettings();
+  renderComments();
+  const ta = p.cpanel.querySelector(`.fn-item[data-k="${m.dataset.k}"] textarea`);
+  if (ta) { ta.focus(); ta.scrollIntoView({ block: "nearest" }); }
+});
+
 function showInspector() {
   S.settings.showComments = true;
   S.settings.ptab = "notes";
@@ -871,7 +1247,7 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    // 1.9.9: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // 1.9.12: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
     // each half scrolls by itself, and what's saved from one shows in the other
     const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
     for (const q of panes) {
@@ -1614,18 +1990,21 @@ function renderComments() {
     p.hcomments.classList.toggle("on", !!S.settings.showComments);
     p.hcomments.title = S.settings.showComments ? "Hide the comments" : "Show the comments";
     const insp = inspectorOn(p);
-    const show = !!S.settings.showComments && (cs.length > 0 || insp) && !p.el.hidden;
+    const fn = fnOn(p);
+    const show = !!S.settings.showComments && (cs.length > 0 || insp || fn) && !p.el.hidden;
     p.cpanel.hidden = !show;
     p.el.classList.toggle("cbelow", p.el.clientWidth < 760);
     if (!show) continue;
     // RossDraft: the panel's two tabs, Synopsis & Notes, and Comments
+    if (fn && S.settings.ptab === "footnotes") { renderFootnotes(p, panelTabs(p, cs)); continue; }
     if (insp && ((S.settings.ptab || "notes") === "notes" || !cs.length)) { renderInspector(p, panelTabs(p, cs)); continue; }
-    const key = JSON.stringify(cs) + (insp ? "|tabs" : "");
+    if (fn && !cs.length) { renderFootnotes(p, panelTabs(p, cs)); continue; }
+    const key = JSON.stringify(cs) + (insp || fn ? "|tabs" : "");
     if (shownComments.get(p.cpanel) === key) continue;
     shownComments.set(p.cpanel, key);
     shownInspector.delete(p.cpanel);
     p.cpanel.textContent = "";
-    if (insp) { p.cpanel.appendChild(panelTabs(p, cs)); }
+    if (insp || fn) { p.cpanel.appendChild(panelTabs(p, cs)); }
     const top = document.createElement("div");
     top.className = "ctop";
     top.textContent = insp ? "" : "Comments";
@@ -1831,7 +2210,7 @@ const WORD_RE = /[\p{L}\p{N}]+(?:['\u2019-][\p{L}\p{N}]+)*/gu;
 function wordsIn(text) { return (text.match(WORD_RE) || []).length; }
 
 function pageWords(pg) {
-  return [...pg.children].map((d) => ed.lineText(d)).join("\n").split(md.OBJ).join("").split("\u200b").join("");
+  return [...pg.children].map((d) => ed.lineText(d)).join("\n").split(md.OBJ).join("").split("\u200b").join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
 }
 
 let wordsTimer = 0;
@@ -2141,6 +2520,7 @@ function sizePicture(img) {
 function changed(pane = A) {
   if (!pane.note || pane.note.readOnly) return;
   pane.dirty = true;
+  if (pane.note.fnotes && !pane.joined) { ed.numberNotes(pane.page); fnotesSoon(pane); }
   clearTimeout(pane.timer);
   pane.timer = setTimeout(() => queue(() => saveNow(pane)), SAVE_AFTER_MS);
   showSaved();
@@ -2194,7 +2574,7 @@ async function saveNowIn(pane) {
   const note = pane.note;
   const lines = ed.readLines(pane.page);
   const text = md.serialize(lines, { dir: note.folderParts() });
-  if (text !== note.text) {
+  if (text !== note.text || note.fnDirty) {
     const now = await S.store.peek(note);
     if (now && now.modified !== note.modified && now.text !== note.text && now.text !== text) {
       // changed on the laptop too since we read it: theirs is kept, not lost
@@ -2530,6 +2910,43 @@ const COMMANDS = {
   left: () => setAlign(null), center: () => setAlign("center"), right: () => setAlign("right"), justify: () => setAlign("justify"),
 };
 
+// ------------------------------------------------------------------ 1.9.12: Fonts (Ctrl+D)
+// The writing page's typeface and size (the page's look: the files keep their own; a note's Markdown has no fonts).
+// All are bundled (SIL Open Font License), so the page looks the same on the tablet and the laptop, offline too.
+const SERIF = '"Liberation Serif", "Noto Serif", serif';
+const PAGE_FONTS = [
+  ["literata", "Literata", `Literata, Cambria, Caladea, ${SERIF}`, "made for reading on screens"],
+  ["classic", "Cambria (as Ross Writer)", `Cambria, Caladea, ${SERIF}`, "the laptop's look (Caladea here: the same widths)"],
+  ["garamond", "EB Garamond", `"EB Garamond", Garamond, ${SERIF}`, "a classic book face"],
+  ["lora", "Lora", `Lora, ${SERIF}`, "warm, for long reading"],
+  ["sourceserif", "Source Serif", `"Source Serif 4", "Source Serif Pro", ${SERIF}`, "clear and even"],
+  ["inter", "Inter", 'Inter, "Helvetica Neue", Arial, sans-serif', "a clean sans-serif"],
+  ["courier", "Courier Prime", '"Courier Prime", "Courier New", monospace', "typewriter: a manuscript's look"],
+];
+
+async function fontsDialog() {
+  const s = S.settings;
+  const was = { font: s.font, size: s.size };
+  const box = document.createElement("div");
+  box.className = "fonts";
+  const sample = "The night came down on St David’s.";
+  box.innerHTML = `<div class="fonts-list">${PAGE_FONTS.map(([id, label, stack, what]) =>
+    `<label class="fontrow"><input type="radio" name="pagefont" value="${id}"${(s.font || "literata") === id ? " checked" : ""}>` +
+    `<span class="fname">${label} <small>${what}</small></span><span class="fsample" style='font-family: ${stack}'>${sample}</span></label>`).join("")}</div>` +
+    `<div class="fonts-size">Size <button type="button" class="fminus" aria-label="Smaller">A−</button>` +
+    `<b class="fsize">${s.size}</b><button type="button" class="fplus" aria-label="Larger">A+</button>` +
+    `<button type="button" class="freset">Usual (18)</button></div>`;
+  const show = () => { box.querySelector(".fsize").textContent = s.size; applyLook(); };
+  box.addEventListener("change", (e) => { if (e.target.name === "pagefont") { s.font = e.target.value; show(); } });
+  box.querySelector(".fminus").onclick = () => { s.size = Math.max(11, s.size - 1); show(); };
+  box.querySelector(".fplus").onclick = () => { s.size = Math.min(40, s.size + 1); show(); };
+  box.querySelector(".freset").onclick = () => { s.size = 18; show(); };
+  const v = await ask("Fonts", box, [["OK", "ok", true]]);
+  if (v !== "ok") { s.font = was.font; s.size = was.size; }
+  saveSettings();
+  applyLook();
+}
+
 function setSize(step) {
   S.settings.size = step === 0 ? 18 : Math.max(11, Math.min(40, S.settings.size + step));
   saveSettings();
@@ -2759,6 +3176,7 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.shiftKey && !e.altKey && k === "Enter") fn = toggleFocus;
   else if (c && e.shiftKey && !e.altKey && (e.code === "KeyA" || k === "a" || k === "A")) fn = selectAllShown;
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyY" || k === "y" || k === "Y") && draftOn()) fn = showInspector;
+  else if (c && e.altKey && !e.shiftKey && (e.code === "KeyE" || k === "e" || k === "E") && draftOn()) fn = compileDialog;
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyL" || k === "l" || k === "L")) fn = toggleClassic;
   else if (c && e.altKey && !e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) fn = () => sideWidth(e.code === "BracketRight" ? 30 : -30);
   else if (c && e.shiftKey && (k === "H" || k === "h")) fn = COMMANDS.highlight;
@@ -2767,11 +3185,13 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.shiftKey && (k === "*" || e.code === "Digit8")) fn = COMMANDS.ul;
   else if (c && e.shiftKey && (k === "&" || e.code === "Digit7")) fn = COMMANDS.ol;
   else if (c && e.shiftKey && (k === "D" || k === "d")) fn = COMMANDS.dark;
+  else if (c && !e.shiftKey && !e.altKey && (k === "d" || k === "D" || e.code === "KeyD")) fn = fontsDialog;
   else if (c && e.shiftKey && !e.altKey && (k === "L" || k === "l")) fn = togglePageView;
   else if (c && e.altKey && !e.shiftKey && (k === "j" || k === "J" || e.code === "KeyJ")) fn = toggleList;
   else if (c && e.altKey && !e.shiftKey && (k === "i" || k === "I" || e.code === "KeyI")) fn = togglePop;
   else if (c && e.altKey && !e.shiftKey && (k === "o" || k === "O" || e.code === "KeyO")) fn = showHeadings;
-  else if (c && e.altKey && !e.shiftKey && (k === "f" || k === "F" || e.code === "KeyF")) fn = focusSearch;
+  else if (c && e.altKey && !e.shiftKey && (k === "f" || k === "F" || e.code === "KeyF")) fn = fnOn(A) ? () => insertNote("footnote") : focusSearch;
+  else if (c && e.altKey && !e.shiftKey && (k === "d" || k === "D" || e.code === "KeyD") && fnOn(A)) fn = () => insertNote("endnote");
   else if (c && e.altKey && e.shiftKey && (k === "v" || k === "V" || e.code === "KeyV")) fn = () => pasteFromClipboard(true);
   else if (c && e.altKey && !e.shiftKey && (k === "=" || k === "+" || e.code === "Equal")) fn = () => commentSize(1);
   else if (c && e.altKey && !e.shiftKey && (k === "-" || e.code === "Minus")) fn = () => commentSize(-1);
@@ -3110,6 +3530,7 @@ function menuItems(name) {
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
       ...(ED.project ? [{ label: "Save As RTF…", fn: () => exportNotes("rtf"), off: !n }] : []),
+      ...(draftOn() ? [{ label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" }] : []),
       ...(S.store && S.store.isRtf && S.store.keptWhere === "RossDraft" ? [{ label: "Save the Original RTF…", fn: () => saveOriginalRtf() }] : []),
       "-",
       { label: "Email or Share This Note…", fn: () => shareNote(), off: !n },
@@ -3155,6 +3576,10 @@ function menuItems(name) {
       { label: "Picture…", fn: COMMANDS.picture },
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
+      ...(ED.project ? [
+        { label: "Footnote", fn: () => insertNote("footnote"), keys: "Ctrl+Alt+F", off: !fnOn(A) || !!A.note.readOnly },
+        { label: "Endnote", fn: () => insertNote("endnote"), keys: "Ctrl+Alt+D", off: !fnOn(A) || !!A.note.readOnly },
+      ] : []),
       { label: "Your Name for Comments…", fn: () => askAuthor(true) },
       { label: "Keep Photos at Full Size", on: s.keepFull, fn: () => {
         s.keepFull = !s.keepFull; saveSettings();
@@ -3162,6 +3587,8 @@ function menuItems(name) {
       } },
     ];
     case "format": return [
+      { label: "Fonts…", fn: fontsDialog, keys: "Ctrl+D" },
+      "-",
       { label: "Bold", fn: COMMANDS.bold, keys: "Ctrl+B" },
       { label: "Italic", fn: COMMANDS.italic, keys: "Ctrl+I" },
       { label: "Underline", fn: COMMANDS.underline, keys: "Ctrl+U" },
@@ -3204,6 +3631,7 @@ function menuItems(name) {
         { label: "Status", off: !n, sub: DRAFT_STATUSES.map(([k, l]) => ({ label: l, on: !!n && statusOf(n) === k, fn: () => setStatus(S.sel.size > 1 ? inListOrder(S.sel) : [n], k) })) },
         { label: "Include in Compile", on: !!n && n.raw.include !== false, fn: () => toggleInclude(n), off: !n },
         { label: "Targets and Status…", fn: targetsDialog },
+        { label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" },
       ] : []),
     ];
     case "view": return [
@@ -3241,8 +3669,9 @@ function menuItems(name) {
       { label: "Line Length", sub: [["Narrow", "narrow"], ["Medium", "medium"], ["Wide", "wide"], ["The Full Width", "full"]].map(([l, v]) =>
         ({ label: l, on: (s.measure || "medium") === v, fn: () => { s.measure = v; saveSettings(); applyLook(); } })) },
       { label: "Typeface", sub: [
-        { label: "Literata", on: s.font !== "classic", fn: () => { s.font = "literata"; saveSettings(); applyLook(); } },
-        { label: "Cambria (as Ross Writer)", on: s.font === "classic", fn: () => { s.font = "classic"; saveSettings(); applyLook(); } },
+        ...PAGE_FONTS.map(([id, label]) => ({ label, on: (s.font || "literata") === id, fn: () => { s.font = id; saveSettings(); applyLook(); } })),
+        "-",
+        { label: "Fonts…", fn: fontsDialog, keys: "Ctrl+D" },
       ] },
       "-",
       { label: "Dark Mode", on: s.dark, fn: COMMANDS.dark, keys: "Ctrl+Shift+D" },
@@ -3492,7 +3921,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.9")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.12")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -3638,7 +4067,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.9");
+  const NB = await import("./notebooks.js?v=1.9.12");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -3710,7 +4139,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.9");
+  const NB = await import("./notebooks.js?v=1.9.12");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -3925,7 +4354,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.9"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.12"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -4181,48 +4610,51 @@ async function saveFile(blob, name, desc, ext, mime) {
   return name;
 }
 
-async function wordBlob(notes, pages, name, parts = null) {
-  parts = parts || await joinedParts(notes, []);
+// the parts' lines (with their footnotes and endnotes, numbered through: RossDraft 1.2), for Word and RTF
+async function exportLines(notes, pages, parts) {
   const W = await wordModule();
-  const lines = [];
-  parts.forEach(([, text], k) => {
+  const per = parts.map(([, text]) => {
     const nl = md.parse(text);
     for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
     const part = W.fromNoteLines(nl);
     while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
-    if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
+    return part;
+  });
+  const C = await compileModule();
+  const rn = C.renumberNotes(per.map((l, k) => ({ lines: l, notes: notes[k] && notes[k].fnotes })));
+  const lines = [];
+  rn.lines.forEach((part, k) => {
+    if (k && part.length) part[0] = Object.assign({}, part[0], { [pages ? "pageBreak" : "gapBefore"]: true });
     lines.push(...part);
   });
+  return { lines, notes: rn.notes };
+}
+
+async function wordBlob(notes, pages, name, parts = null) {
+  parts = parts || await joinedParts(notes, []);
+  const W = await wordModule();
+  const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
       try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
     }
   };
-  return W.writeDocx(lines, bytes, name);
+  return W.writeDocx(lines, bytes, name, "Cambria", { notes: fnotes });
 }
 
 // RossDraft 1.0.2: File ▸ Save As RTF…: the chosen notes as one RTF document (rtf.js), for any word processor,
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const W = await wordModule();
-  const R = await import("./rtf.js?v=1.9.9");
-  const lines = [];
-  parts.forEach(([, text], k) => {
-    const nl = md.parse(text);
-    for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
-    const part = W.fromNoteLines(nl);
-    while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
-    if (k && part.length) part[0][pages ? "pageBreak" : "gapBefore"] = true;
-    lines.push(...part);
-  });
+  const R = await import("./rtf.js?v=1.9.12");
+  const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
       try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
     }
   };
   const own = S.store && S.store.isRtf ? { look: S.store.look, paras: S.store.paras } : {};
-  const out = await R.writeRtf(lines, { ...own, pictureBytes: bytes, title: name });
+  const out = await R.writeRtf(lines, { ...own, notes: fnotes, pictureBytes: bytes, title: name });
   return new Blob([out], { type: "application/rtf" });
 }
 
@@ -4306,7 +4738,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.9");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.12");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -4742,7 +5174,7 @@ function wordsOfNote(n) {
   const t = n.text || "";
   const had = wcCache.get(n);
   if (had && had[0] === t) return had[1];
-  const plain = md.parse(t).map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n").split(md.OBJ).join("");
+  const plain = md.parse(t).map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n").split(md.OBJ).join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
   const w = wordsIn(plain);
   wcCache.set(n, [t, w]);
   return w;
@@ -5518,6 +5950,6 @@ function toggleClassic() {
 
 // for the tests
 window.RN = { draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
-  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
+  commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

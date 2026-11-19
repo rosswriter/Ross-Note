@@ -15,7 +15,7 @@
 import * as md from "./md.js?v=1.8.3";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.9";
+import * as rtf from "./rtf.js?v=1.9.12";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -213,6 +213,7 @@ export class ProjectStore {
       n.text = known.shown != null && known.shownTitle === n.title() ? known.shown : this.withTitle(n, known);
       n.readOnly = known.readOnly;
       n.comments = known.comments || [];
+      if (!n.fnDirty) n.fnotes = new Map(known.notes || []);
       n.modified = file.lastModified;
       return n.text;
     }
@@ -231,6 +232,8 @@ export class ProjectStore {
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;
     n.comments = sc.comments || [];
+    n.fnotes = new Map(sc.notes || []);     // RossDraft 1.2: the scene's footnotes and endnotes, "f17" -> words
+    n.fnDirty = false;
     n.modified = file.lastModified;
     n.text = this.withTitle(n, sc);
     if (!sc.readOnly && sc.files) this.template = sc;
@@ -264,7 +267,8 @@ export class ProjectStore {
     const sigs = back.length === kept.length ? back.map(sigOf).concat(got.lines.slice(kept.length).map(sigOf)) : null;
     let comments = [];
     try { comments = await readComments(got.files); } catch (e) { comments = []; }
-    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments };
+    return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments,
+      notes: got.notes || new Map() };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are
@@ -337,12 +341,13 @@ export class ProjectStore {
     for (let k = 0; sc && k < sc.trailing; k++) wl.push({ kind: null, depth: 1, code: false, runs: [] });
     const bytes = (img) => this.pictureBytes(img);
     let blob;
-    if (sc && sc.files) blob = await patchDocx(sc.files, sc.lines, sc.sigs, wl, bytes);
+    const notes = n.fnotes || new Map();
+    if (sc && sc.files) blob = await patchDocx(sc.files, sc.lines, sc.sigs, wl, bytes, notes);
     else {
       const tpl = await this.findTemplate();
       // a new scene: made from another of the project's (its look); none to follow, a plain one
-      blob = tpl ? await patchDocx(tpl.files, tpl.lines, tpl.sigs, wl, bytes)
-        : await wordio.writeDocx(wl, bytes, raw.title || "", "Cambria");
+      blob = tpl ? await patchDocx(tpl.files, tpl.lines, tpl.sigs, wl, bytes, notes, true)
+        : await wordio.writeDocx(wl, bytes, raw.title || "", "Cambria", { notes });
     }
     if (!raw.file) raw.file = SCENES + "/" + raw.id + ".docx";
     const [d, name] = await this.sceneFile(raw, true);
@@ -350,6 +355,7 @@ export class ProjectStore {
     raw.modified = nowIso();
     await this.saveProject();
     // read back what's there now: the next save is made against it
+    n.fnDirty = false;
     await this.load(n, true);
     n.text = text;
     const now = this.scenes.get(raw.id);
