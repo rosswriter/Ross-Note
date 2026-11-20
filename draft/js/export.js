@@ -8,7 +8,7 @@
 //                labels; PDF entries as PDF documents in Research.
 // The project itself is never changed. Everything goes in a new folder named after it ("… (2)" if taken).
 
-import * as md from "./md.js?v=1.9.20";
+import * as md from "./md.js?v=1.9.21";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { NOTE_RE } from "./wordio.js?v=1.8.3";
 
@@ -196,7 +196,7 @@ function notesFor(n, wl) {
 }
 
 export async function exportScrivener(store, where, progress = () => {}) {
-  const SV = await import("./scriv.js?v=1.9.20");
+  const SV = await import("./scriv.js?v=1.9.21");
   const [sdir, xname] = await SV.makeScrivener(where, store.label);
   const sc = new SV.ScrivStore(sdir, xname);
   sc.noBackup = true;

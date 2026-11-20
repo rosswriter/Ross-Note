@@ -15,7 +15,7 @@
 import * as md from "./md.js?v=1.8.3";
 import * as wordio from "./wordio.js?v=1.8.3";
 import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.20";
+import * as rtf from "./rtf.js?v=1.9.21";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";

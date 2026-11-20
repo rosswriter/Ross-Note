@@ -10,10 +10,10 @@
 // inline notes, comments or footnotes, tables or pictures are read-only (as in Ross Writer), research files too.
 // RossDraft's own settings for it (targets, status, Compile) are kept in Settings/rossdraft.json.
 
-import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.20";
-import * as md from "./md.js?v=1.9.20";
+import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.21";
+import * as md from "./md.js?v=1.9.21";
 import * as wordio from "./wordio.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.20";
+import * as rtf from "./rtf.js?v=1.9.21";
 
 const SPECIAL = new Set(["DraftFolder", "ResearchFolder", "TrashFolder"]);
 const UNSAFE = ["Scrv_annot", "Scrv_fn", "scrivcmt://", "\\chatn"];

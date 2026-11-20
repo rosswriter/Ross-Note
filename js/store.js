@@ -6,7 +6,7 @@
 //   Word Copies/          a Word document kept for a note, as the tree (not a note)
 //   .order                the order of the notes in a folder (JSON list of names)
 //   .trash/<time>/        deleted notes
-import { safeName, titleOf } from "./md.js?v=1.9.20";
+import { safeName, titleOf } from "./md.js?v=1.9.21";
 
 export const EXT = ".md";
 export const ORDER = ".order";
