@@ -634,7 +634,7 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
   box-shadow: inset 0 2px 4px rgba(0,0,0,.4), 0 1px 0 #0a1320, 0 2px 4px rgba(0,0,0,.5); }
 .dark #start.raised #start-trail { color: #cfd9e6; border-color: rgba(255,255,255,.15); }
 
-/* 1.9.19: the fonts the page can use (bundled; SIL Open Font License) */
+/* 1.9.20: the fonts the page can use (bundled; SIL Open Font License) */
 @font-face { font-family: "Inter"; src: url("../fonts/inter-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: "Inter"; src: url("../fonts/inter-latin-700-italic.woff2") format("woff2"); font-weight: 700; font-style: italic; font-display: swap; }
 @font-face { font-family: "EB Garamond"; src: url("../fonts/eb-garamond-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
@@ -668,7 +668,7 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 #dialog .fonts-size .fsize { min-width: 28px; text-align: center; font-size: 16px; }
 #dialog .fonts-size .freset { margin-left: 8px; padding: 0 10px; }
 
-/* 1.9.19: the start screen, compact and uncluttered (both editions) */
+/* 1.9.20: the start screen, compact and uncluttered (both editions) */
 #start.raised .card { max-width: 400px; }
 #start.raised img { width: 60px; height: 60px; }
 #start.raised h1 { font-size: 25px; margin: 10px 0 4px; }
@@ -727,13 +727,13 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 .pdfview .pdfpage { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); flex: none; }
 .pdfview .pdfpage canvas { display: block; }
 
-/* 1.9.19: Help ▸ Device Check */
+/* 1.9.20: Help ▸ Device Check */
 #dialog .devcheck { white-space: normal; }
 #dialog .devcheck pre { white-space: pre-wrap; word-break: break-word; font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace;
   max-height: 46vh; overflow: auto; background: var(--ui2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; }
 #start .devlink { margin-top: 8px; background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 12px; color: inherit; opacity: .7; text-decoration: underline; cursor: pointer; }
 
-/* 1.9.19: the interface size. The bars, the list, the menus and the dialogs are drawn larger or smaller; the page
+/* 1.9.20: the interface size. The bars, the list, the menus and the dialogs are drawn larger or smaller; the page
    keeps its own text size. (Viewport heights inside a zoomed box are zoomed too, so they're divided back.) */
 :root { --uiz: 1; }
 #topbar, #toolbar, #findbar, #side-top, #tree, #count, #status, .pane .head, .ptabs, #dialog .box, #menu, #submenu,
@@ -746,8 +746,25 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 #dialog .fonts-ui select { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--ui2); color: inherit; font: inherit; padding: 0 8px; }
 #dialog .fonts-ink, #dialog .fonts-ui { margin-top: 10px; flex-wrap: wrap; }
 
-/* 1.9.19: darker text on the page: Darker is black ink (white in dark mode); Darkest also thickens the letters */
+/* 1.9.20: darker text on the page: Darker is black ink (white in dark mode); Darkest also thickens the letters */
 body.ink-dark .page { --ink: #000; --quote: #2A261F; }
 body.ink-dark.dark .page { --ink: #FFFFFF; --quote: #E2DCD0; }
 body.ink-darkest .page { -webkit-text-stroke: 0.35px currentColor; }
 @media print { body.ink-darkest .page { -webkit-text-stroke: 0; } }
+
+/* 1.9.20: pop-up drafts */
+#popnote .pbtn { border: 1px solid rgba(0,0,0,.18); background: rgba(255,255,255,.45); color: inherit; font: inherit; font-size: 12px;
+  border-radius: 6px; padding: 2px 8px; margin-left: 4px; cursor: pointer; }
+#popnote .pbtn:hover { background: rgba(255,255,255,.8); }
+#popnote .phead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#popnote .plist { flex: 1; overflow: auto; padding: 4px 0; }
+#popnote .plist[hidden], #popnote textarea[hidden] { display: none; }
+#popnote .pitem { display: flex; width: 100%; gap: 8px; align-items: baseline; border: 0; background: none; color: inherit;
+  font: inherit; text-align: left; padding: 6px 12px; cursor: pointer; }
+#popnote .pitem span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#popnote .pitem small { opacity: .65; white-space: nowrap; }
+#popnote .pitem:hover, #popnote .pitem.cur { background: rgba(0,0,0,.07); }
+#popnote .pempty { padding: 12px; opacity: .7; }
+.dark #popnote .pbtn { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
+.dark #popnote .pitem:hover, .dark #popnote .pitem.cur { background: rgba(255,255,255,.08); }
+

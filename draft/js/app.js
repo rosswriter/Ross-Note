@@ -1,14 +1,14 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.19";
-import * as ed from "./editor.js?v=1.9.19";
-import { Store, PICTURES } from "./store.js?v=1.9.19";
-import * as spell from "./spell.js?v=1.9.19";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.19";
+import * as md from "./md.js?v=1.9.20";
+import * as ed from "./editor.js?v=1.9.20";
+import { Store, PICTURES } from "./store.js?v=1.9.20";
+import * as spell from "./spell.js?v=1.9.20";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.20";
 
 if (ED.project) alsoScrivener();
-export const VERSION = "1.9.19";
-import { ED } from "./edition.js?v=1.9.19";
+export const VERSION = "1.9.20";
+import { ED } from "./edition.js?v=1.9.20";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -70,7 +70,7 @@ function loadSettings() {
 }
 function saveSettings() { try { localStorage.setItem(ED.key, JSON.stringify(S.settings)); } catch (e) { /* private */ } }
 
-// 1.9.19: what's drawn at the interface size is zoomed, so a pop-up's place is given in its own (zoomed) pixels
+// 1.9.20: what's drawn at the interface size is zoomed, so a pop-up's place is given in its own (zoomed) pixels
 const UI_SIZES = [["Small", 90], ["Normal", 100], ["Large", 115], ["Larger", 130], ["Largest", 150]];
 const INKS = [["Normal", "normal"], ["Darker", "dark"], ["Darkest", "darkest"]];
 function uiz() { const v = +((S && S.settings && S.settings.ui) || 100); return Math.min(2, Math.max(0.8, v / 100)) || 1; }
@@ -84,7 +84,7 @@ function applyLook() {
   document.body.classList.toggle("dark", !!s.dark);
   $("app").classList.toggle("dark", !!s.dark);
   document.documentElement.style.setProperty("--size", s.size + "px");
-  // 1.9.19: the interface size (menus, bars, the list, dialogs; the page keeps its own text size), and darker text
+  // 1.9.20: the interface size (menus, bars, the list, dialogs; the page keeps its own text size), and darker text
   document.documentElement.style.setProperty("--uiz", String(uiz()));
   document.body.classList.toggle("ink-dark", s.ink === "dark" || s.ink === "darkest");
   document.body.classList.toggle("ink-darkest", s.ink === "darkest");
@@ -206,7 +206,7 @@ function idb() {
 // folder back out of IndexedDB (a folder you chose on the tablet is kept in IndexedDB as always)
 const KV_TEST = /[?&]test=opfs/.test(location.search) ? new Map() : null;
 
-// ------------------------------------------------------------------ 1.9.19: the device check's log
+// ------------------------------------------------------------------ 1.9.20: the device check's log
 // What happened when you opened something, kept on the tablet (the last 120 steps), so a tablet that won't open
 // folders or files (Honor's MagicOS) shows where it fails: Help ▸ Device Check….
 const DIAG_KEY = ED.key + "-diag";
@@ -228,7 +228,7 @@ for (const name of ["showDirectoryPicker", "showOpenFilePicker", "showSaveFilePi
     try {
       const got = await orig.call(window, opts);
       diag(name + " gave", Array.isArray(got) ? got.map((h) => h.kind + " " + h.name).join(", ") : got.kind + " " + got.name);
-      // 1.9.19: a folder came back: Chrome asked to keep what the app remembers (the folders), so the picker
+      // 1.9.20: a folder came back: Chrome asked to keep what the app remembers (the folders), so the picker
       // is seldom needed again
       if (!keepAsked && navigator.storage && navigator.storage.persist) {
         keepAsked = true;
@@ -389,7 +389,7 @@ async function start() {
 function showStart(kind, handle, was = null) {
   diag("start screen", kind + (was ? ", carry on: " + was.where : "") + (handle ? ", notes: " + handle.name : ""));
   $("start").hidden = false;
-  // RossDraft 1.0, and Ross Note V9 1.9.19: the raised start screen (paper; midnight in dark mode), compact
+  // RossDraft 1.0, and Ross Note V9 1.9.20: the raised start screen (paper; midnight in dark mode), compact
   // buttons that sink when tapped.
   if (!$("start").classList.contains("raised")) {
     $("start").classList.add("raised");
@@ -452,7 +452,7 @@ function showStart(kind, handle, was = null) {
   ver.textContent = "Version " + SHOWN;
   note.appendChild(document.createElement("br"));
   note.appendChild(ver);
-  // 1.9.19: a way to the device check from here (a tablet that won't open folders never gets past this screen)
+  // 1.9.20: a way to the device check from here (a tablet that won't open folders never gets past this screen)
   const dc = document.createElement("button");
   dc.type = "button";
   dc.className = "devlink";
@@ -687,7 +687,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.19")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.20")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -820,12 +820,12 @@ async function compileBook(kind, chosen, o) {
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.19");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.20");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.19");
+    const R = await import("./rtf.js?v=1.9.20");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1270,7 +1270,7 @@ function inListOrder(keys) {
 async function selectClick(note, e) {
   const k = note.key();
   if (!S.sel.size && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-    // 1.9.19 (as Ross Writer): the run goes from the note you're on to the one Shift-clicked: click node 1, Shift-click
+    // 1.9.20 (as Ross Writer): the run goes from the note you're on to the one Shift-clicked: click node 1, Shift-click
     // node 7, and 1 to 7 are selected. Nothing open, or the open note not showing in the list: it starts at the click.
     const shown = [...$("tree").querySelectorAll(".row")].map((r) => r.dataset.key);
     const here = A.note && shown.includes(A.note.key()) ? A.note.key() : k;
@@ -1319,7 +1319,7 @@ async function openJoined(notes, pane = A) {
   await busy(`Opening ${notes.length} notes as one page…`, async () => {
     await flushSave();
     await queue(async () => { for (const n of notes) { try { await S.store.read(n); } catch (e) { /* as we had it */ } } });
-    // 1.9.19: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
+    // 1.9.20: split, the joined page goes into both halves (as Ross Writer's split shows one document twice);
     // each half scrolls by itself, and what's saved from one shows in the other
     const panes = S.settings.split ? P.filter((q) => !q.el.hidden) : [pane];
     for (const q of panes) {
@@ -1515,7 +1515,7 @@ function pickEnd() {
   try { localStorage.removeItem(PICK_KEY); } catch (e) { /* none */ }
   setTimeout(() => { S.picking = false; }, 1500);
 }
-// 1.9.19: the picker came back with nothing. Cancelled, or (on Honor's MagicOS, now and then) empty even after
+// 1.9.20: the picker came back with nothing. Cancelled, or (on Honor's MagicOS, now and then) empty even after
 // Allow: what to do, and Try Again from a fresh tap (Android opens a picker only from one)
 async function pickedNothing(what, retry) {
   const q = document.createElement("div");
@@ -1636,7 +1636,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.19");
+    const SV = await import("./scriv.js?v=1.9.20");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1766,7 +1766,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.19");
+    const EP = await import("./epub.js?v=1.9.20");
     return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
@@ -2439,7 +2439,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.19"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.20"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2463,7 +2463,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.19");
+  const X = await import("./export.js?v=1.9.20");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2491,7 +2491,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.19");
+  const X = await import("./export.js?v=1.9.20");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -2867,7 +2867,6 @@ async function refresh(force = false) {
 }
 
 async function refreshNow() {
-  if (!PN.el.hidden && document.activeElement !== PN.ta) popLoad();
   if (spellMode() === "ross" && spell.ready()) readDictionary();
   await flushSave();
   await queue(async () => {
@@ -3145,7 +3144,7 @@ const COMMANDS = {
   left: () => setAlign(null), center: () => setAlign("center"), right: () => setAlign("right"), justify: () => setAlign("justify"),
 };
 
-// ------------------------------------------------------------------ 1.9.19: Fonts (Ctrl+D)
+// ------------------------------------------------------------------ 1.9.20: Fonts (Ctrl+D)
 // The writing page's typeface and size (the page's look: the files keep their own; a note's Markdown has no fonts).
 // All are bundled (SIL Open Font License), so the page looks the same on the tablet and the laptop, offline too.
 const SERIF = '"Liberation Serif", "Noto Serif", serif';
@@ -3942,7 +3941,7 @@ function menuItems(name) {
         { label: "Comments Text Normal Size", fn: () => commentSize(0), keys: "Ctrl+Alt+0" },
       ] },
       "-",
-      { label: "Pop-up Note", on: !PN.el.hidden, fn: togglePop, keys: "Ctrl+Alt+I" },
+      { label: "Pop-up Draft", on: !PN.el.hidden, fn: togglePop, keys: "Ctrl+Alt+I" },
       { label: "Daily Word Target…", fn: setGoal },
     ];
     case "help": return [
@@ -4239,7 +4238,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.19")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.20")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4387,7 +4386,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.19");
+  const NB = await import("./notebooks.js?v=1.9.20");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4459,7 +4458,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.19");
+  const NB = await import("./notebooks.js?v=1.9.20");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4663,7 +4662,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.19");
+  const SV = await import("./scriv.js?v=1.9.20");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -4700,7 +4699,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.19");
+  const SV = await import("./scriv.js?v=1.9.20");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -4739,7 +4738,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.19"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.20"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5031,7 +5030,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.19");
+  const R = await import("./rtf.js?v=1.9.20");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5123,7 +5122,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.19");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.20");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6030,42 +6029,152 @@ $("find-all").onclick = () => (scopeAll() ? replaceEverywhere() : replaceAll());
 // ------------------------------------------------------------------ the pop-up note (Ctrl+Alt+I)
 // A small notepad over whatever you're doing, for reminders and things to do. Plain words, kept as the note
 // "Reminders" at the top of your RossNotes folder, so the laptop has it too.
-const PN = { el: $("popnote"), ta: $("popnote").querySelector("textarea"), timer: 0, note: null, home: null };
-function popHome() { return S.notes || (S.store && !S.store.isProject ? S.store : null); }
+// 1.9.20: pop-up drafts (Jacob: scenes that come to mind, drafted quickly). Each opening is a fresh draft, kept
+// as a note in the folder "Reminders" in the working folder: the notes folder (a Reminders branch in the list), or
+// the Ross Writer project's folder when one is open (as Ross Writer and the laptop's Ross Note keep them). The
+// folder is made if it isn't there. A blank draft isn't kept. Drafts lists the earlier ones (newest first);
+// Insert puts the draft at the cursor in the page.
+const PN = { el: $("popnote"), ta: $("popnote").querySelector("textarea"), list: $("popnote").querySelector(".plist"),
+  timer: 0, cur: null, R: null, range: null };
 
-async function popLoad() {
-  const home = popHome();
-  PN.home = home;
-  PN.note = home ? home.find("Reminders") : null;
-  let body = "";
-  if (PN.note) {
-    try { await home.read(PN.note); } catch (e) { /* as we had it */ }
-    const lines = md.parse(PN.note.text || "").map(plainLine);
-    lines.shift();
-    while (lines.length && !lines[0].trim()) lines.shift();
-    body = lines.join("\n");
+async function popPlace() {
+  const st = S.store;
+  if (st && st.isProject && !st.isDoc && !st.isScriv && !st.isEpub && st.handle && /\.rwproj$/i.test(st.fileName || "")) {
+    if (!PN.R || PN.R.project !== st) {
+      const d = await st.handle.getDirectoryHandle("Reminders", { create: true });
+      const store = new Store(d);
+      await store.scan();
+      PN.R = { store, parent: store.root, project: st, where: "the project’s folder" };
+    }
+    return PN.R;
   }
-  if (document.activeElement !== PN.ta) PN.ta.value = body;
+  const home = S.notes || (st && !st.isProject ? st : null);
+  if (!home) return null;
+  let parent = home.find("Reminders");
+  if (!parent) {
+    parent = await home.addNote(home.root, home.root.children.length, "Reminders", "Reminders\n");
+    await home.writeOrder(home.root);
+    if (S.store === home) renderTree();
+  }
+  PN.R = { store: home, parent, project: null, where: "your notes" };
+  return PN.R;
+}
+
+function popLines() {
+  return PN.ta.value.split("\n").map((t) => ({ kind: null, mark: null, runs: t ? [{ t, f: new Set() }] : [] }));
+}
+function popTitle() {
+  const first = (PN.ta.value.split("\n")[0] || "").trim().slice(0, 80);
+  return first;
+}
+function draftStamp() {
+  const d = new Date(), z = (n) => String(n).padStart(2, "0");
+  return `Draft ${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}.${z(d.getMinutes())}`;
 }
 
 async function popSave() {
   clearTimeout(PN.timer);
-  const home = PN.home || popHome();
-  if (!home) { toast("Open your notes once first: the pop-up note is kept in the RossNotes folder."); return; }
-  const lines = [{ kind: null, mark: null, runs: [{ t: "Reminders", f: new Set() }] }, { kind: null, mark: null, runs: [] },
-    ...PN.ta.value.split("\n").map((t) => ({ kind: null, mark: null, runs: t ? [{ t, f: new Set() }] : [] }))];
-  const text = md.serialize(lines, { dir: [] });
+  const text = PN.ta.value;
+  if (!PN.cur && !text.trim()) return;
+  const R = PN.R || await popPlace();
+  if (!R) { toast("Open your notes (or a Ross Writer project) first: drafts are kept in its Reminders folder."); return; }
+  const body = md.serialize(popLines(), { dir: [] });
   await queue(async () => {
-    let n = home.find("Reminders");
-    if (!n) {
-      n = await home.addNote(home.root, home.root.children.length, "Reminders", text);
-      await home.writeOrder(home.root);
-      if (S.store === home) renderTree();
-    } else if (n.text !== text) await home.write(n, text);
-    PN.note = n;
-    for (const p of P) if (p.note === n && !p.dirty) refill(p);
+    const st = R.store;
+    // the notes were read again (coming back to the app): the same notes, found afresh
+    if (!R.parent.isRoot()) R.parent = st.find(R.parent.key()) || R.parent;
+    if (PN.cur) PN.cur = st.find(PN.cur.key()) || PN.cur;
+    if (!PN.cur) {
+      PN.cur = await st.addNote(R.parent, 0, popTitle() || draftStamp(), body);
+      await st.writeOrder(R.parent);
+    } else {
+      if (PN.cur.text !== body) await st.write(PN.cur, body);
+      const t = popTitle();
+      if (t && t !== PN.cur.name && md.safeName && md.safeName(t) !== PN.cur.name) await st.rename(PN.cur, t);
+    }
+    if (st === S.store) renderTree();
+    for (const p of P) if (p.note === PN.cur && !p.dirty) refill(p);
   });
+  popCount();
 }
+
+function popCount() {
+  const b = PN.el.querySelector(".pdrafts");
+  const n = PN.R ? PN.R.parent.children.length : 0;
+  b.textContent = "Drafts" + (n ? ` (${n})` : "") + (PN.list.hidden ? " ▾" : " ▴");
+}
+
+async function popNew() {
+  if (PN.cur || PN.ta.value.trim()) await popSave();
+  PN.cur = null;
+  PN.ta.value = "";
+  popListShow(false);
+  PN.ta.focus();
+}
+
+async function popOpenDraft(n) {
+  await popSave();
+  try { await PN.R.store.read(n); } catch (e) { /* as we had it */ }
+  PN.cur = n;
+  PN.ta.value = md.parse(n.text || "").map(plainLine).join("\n").replace(/\n+$/, "");
+  popListShow(false);
+  PN.ta.focus();
+}
+
+async function popListShow(on) {
+  PN.list.hidden = !on;
+  PN.ta.hidden = on;
+  if (on) {
+    await popSave();
+    const R = await popPlace();
+    PN.list.textContent = "";
+    const drafts = R ? [...R.parent.children] : [];
+    for (const n of drafts) { if (!n.modified) { try { await R.store.read(n); } catch (e) { /* skip */ } } }
+    drafts.sort((a, b) => (b.modified || 0) - (a.modified || 0));
+    if (!drafts.length) {
+      const e = document.createElement("div");
+      e.className = "pempty";
+      e.textContent = "No drafts yet. Type in the pop-up and it’s kept in Reminders.";
+      PN.list.appendChild(e);
+    }
+    for (const n of drafts) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pitem" + (n === PN.cur ? " cur" : "");
+      const when = n.modified ? new Date(n.modified).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+      b.innerHTML = "<span></span><small></small>";
+      b.firstChild.textContent = n.title();
+      b.lastChild.textContent = when;
+      b.onclick = () => popOpenDraft(n);
+      PN.list.appendChild(b);
+    }
+  }
+  popCount();
+}
+
+async function popInsert() {
+  await popSave();
+  const text = PN.ta.value.replace(/\s+$/, "");
+  if (!text) { toast("Nothing in the draft to put in the page."); return; }
+  if (!A || !A.page || readOnlyHere()) return;
+  A.page.focus();
+  const sel = getSelection();
+  if (PN.range && A.page.contains(PN.range.startContainer)) { sel.removeAllRanges(); sel.addRange(PN.range); }
+  // the draft as paragraphs of its own: after a line with words in it, it starts on the next line
+  const lines = md.parse(text);
+  let at = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+  while (at && at.parentNode !== A.page) at = at.parentNode;
+  if (at && ed.lineText(at).split(md.OBJ).join("").trim()) lines.unshift({ kind: null, mark: null, runs: [] });
+  pasteLines(lines, false);
+  afterEdit();
+  toast("The draft is in the page (it’s kept in Reminders too).");
+}
+
+// where the cursor was in the page, for Insert
+document.addEventListener("selectionchange", () => {
+  const sel = getSelection();
+  if (sel.rangeCount && A && A.page && A.page.contains(sel.anchorNode)) PN.range = sel.getRangeAt(0).cloneRange();
+});
 
 function popShow(on) {
   const s = S.settings;
@@ -6079,13 +6188,25 @@ function popShow(on) {
     const x = r.x != null ? r.x : window.innerWidth - 360, y = r.y != null ? r.y : 130;
     PN.el.style.left = Math.max(0, Math.min(x, window.innerWidth - 120)) + "px";
     PN.el.style.top = Math.max(0, Math.min(y, window.innerHeight - 60)) + "px";
-    popLoad().then(() => PN.ta.focus());
+    PN.cur = null;
+    PN.ta.value = "";
+    PN.list.hidden = true;
+    PN.ta.hidden = false;
+    PN.R = null;
+    PN.ta.focus();          // ready to type at once; where it's kept is found meanwhile
+    popPlace().then((R) => {
+      PN.ta.placeholder = R ? `A quick draft… (kept in Reminders, in ${R.where})` : "A quick draft…";
+      popCount();
+    });
   } else popSave();
 }
 function togglePop() { popShow(PN.el.hidden); }
 PN.ta.addEventListener("input", () => { clearTimeout(PN.timer); PN.timer = setTimeout(popSave, 800); });
 PN.el.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); popShow(false); page.focus(); } });
 PN.el.querySelector(".pclose").onclick = () => popShow(false);
+PN.el.querySelector(".pnew").onclick = () => popNew();
+PN.el.querySelector(".pdrafts").onclick = () => popListShow(PN.list.hidden);
+PN.el.querySelector(".pins").onclick = () => popInsert();
 (() => {
   const head = PN.el.querySelector(".phead");
   let drag = null;
@@ -6176,7 +6297,7 @@ function commandPalette() {
     if (!words.every((w) => l.includes(w) || (x.kind === "note" && x.hint.toLowerCase().includes(w)))) return -1;
     const ws = l.split(/[^\p{L}\p{N}]+/u);
     let sc = l.startsWith(q) ? 3 : ws.some((w) => w.startsWith(words[0])) ? 2 : 1;
-    if (ws.includes(words[0])) sc += 0.25;          // 1.9.19: "dark" finds Dark Mode before Darker Text
+    if (ws.includes(words[0])) sc += 0.25;          // 1.9.20: "dark" finds Dark Mode before Darker Text
     if (x.kind === "cmd") sc += 0.5;
     return sc;
   };
@@ -6336,7 +6457,7 @@ function toggleClassic() {
 }
 
 // for the tests
-window.RN = { draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

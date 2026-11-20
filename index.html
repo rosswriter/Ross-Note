@@ -9,11 +9,11 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="css/app.css?v=1.9.19">
-<link rel="modulepreload" href="js/app.js?v=1.9.19">
-<link rel="modulepreload" href="js/md.js?v=1.9.19">
-<link rel="modulepreload" href="js/editor.js?v=1.9.19">
-<link rel="modulepreload" href="js/store.js?v=1.9.19">
+<link rel="stylesheet" href="css/app.css?v=1.9.20">
+<link rel="modulepreload" href="js/app.js?v=1.9.20">
+<link rel="modulepreload" href="js/md.js?v=1.9.20">
+<link rel="modulepreload" href="js/editor.js?v=1.9.20">
+<link rel="modulepreload" href="js/store.js?v=1.9.20">
 <style>
 /* shown before anything else has loaded */
 #busy.boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #FBF8F1; color: #24211C;
@@ -126,8 +126,12 @@
     <div id="wc" title="Words (click for the details)"></div>
   </footer>
   <aside id="results" hidden><div class="rhead"><span class="rtitle"></span><button class="rclose" title="Close">×</button></div><div class="rlist"></div></aside>
-  <div id="popnote" hidden><div class="phead"><span>Note to self</span><button class="pclose" title="Close (Ctrl+Alt+I)">×</button></div>
-    <textarea spellcheck="true" lang="en-GB" placeholder="Reminders, things to do… (kept as the note “Reminders” in RossNotes)"></textarea></div>
+  <div id="popnote" hidden><div class="phead"><span>Quick draft</span>
+    <button type="button" class="pbtn pnew" title="A fresh draft (the one you were writing is kept)">New</button>
+    <button type="button" class="pbtn pdrafts" title="The earlier drafts in Reminders">Drafts ▾</button>
+    <button type="button" class="pbtn pins" title="Put this draft in the page at the cursor">Insert</button>
+    <button class="pclose" title="Close (Ctrl+Alt+I)">×</button></div>
+    <textarea spellcheck="true" lang="en-GB" placeholder="A quick draft…"></textarea><div class="plist" hidden></div></div>
   <div id="chip" hidden></div>
   <div id="fmtbar" role="toolbar" aria-label="Format the selection" hidden>
     <button data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
@@ -157,6 +161,6 @@
 <input id="file-book" type="file" accept=".ncdb,.fnx" hidden>
 <input id="file-docx" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
 <div id="printdoc" class="page"></div>
-<script type="module" src="js/app.js?v=1.9.19"></script>
+<script type="module" src="js/app.js?v=1.9.20"></script>
 </body>
 </html>
