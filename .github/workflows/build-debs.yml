@@ -1,0 +1,55 @@
+# Build ROX-Filer .deb packages for Debian 13 (trixie) on AMD64 and ARM64.
+#
+# Each package is built natively inside a Debian 13 container, so its
+# dependencies match Debian 13 exactly. Run it from the repository's
+# Actions tab ("Build Debian 13 packages" > "Run workflow"), or push a tag
+# such as v2.12.0. The .deb files appear under "Artifacts" on the run's
+# summary page.
+
+name: Build Debian 13 packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: debian:trixie
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config autoconf gettext dpkg-dev file \
+            ca-certificates git \
+            libgtk-3-dev libvte-2.91-dev libxml2-dev libsm-dev libice-dev libx11-dev \
+            shared-mime-info xsltproc docbook-xsl
+
+      - uses: actions/checkout@v4
+
+      - name: Build package
+        run: ./build-deb.sh
+
+      - name: Show package details
+        run: |
+          for f in output/*.deb; do
+            echo "== $f"
+            dpkg-deb --info "$f" | sed -n '/Package:/,/Description:/p'
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rox-filer-debian13-${{ matrix.arch }}
+          path: output/*.deb
+          if-no-files-found: error
