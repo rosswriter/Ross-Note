@@ -11,6 +11,8 @@ name: Build Debian 13 packages
 on:
   workflow_dispatch:
   push:
+    branches:
+      - rox-filer1
     tags:
       - 'v*'
 
