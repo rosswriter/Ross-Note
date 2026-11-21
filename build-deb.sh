@@ -24,9 +24,11 @@ echo "Building $PKG $DEB_VERSION for $ARCH"
 
 # 1. Compile
 cd "$APP/src"
-if [ ! -x configure ] || [ configure.in -nt configure ]; then
-	autoconf
-fi
+# Make configure afresh and newer than configure.in: after unzipping, copying or
+# a git checkout the files' dates are in no particular order, and the Makefile's
+# rule to remake configure would otherwise run again and again for ever.
+autoconf --force
+touch configure
 rm -rf "$APP/build"
 mkdir -p "$APP/build"
 cd "$APP/build"
