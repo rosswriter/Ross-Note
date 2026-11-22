@@ -768,3 +768,8 @@ body.ink-darkest .page { -webkit-text-stroke: 0.35px currentColor; }
 .dark #popnote .pbtn { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
 .dark #popnote .pitem:hover, .dark #popnote .pitem.cur { background: rgba(255,255,255,.08); }
 
+
+/* 1.9.22: the red text cursor (View › Text Size and Darkness › Red Text Cursor): the page, the pop-up, every box */
+body.caret-red .page, body.caret-red textarea, body.caret-red input, body.caret-red [contenteditable] { caret-color: #e0102a !important; }
+.dark body.caret-red .page, body.dark.caret-red .page, body.dark.caret-red textarea, body.dark.caret-red input,
+body.dark.caret-red [contenteditable] { caret-color: #ff5a6a !important; }
