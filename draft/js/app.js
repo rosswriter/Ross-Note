@@ -57,6 +57,7 @@ function setActive(p) {
   saveSettings();
   renderTree();
   updateHead();
+  if (ED.project && typeof renderOutline === "function") renderOutline();
 }
 
 // ------------------------------------------------------------------ settings
@@ -126,6 +127,7 @@ function layout() {
     b.classList.toggle("on", split === (b.dataset.cmd === "splith" ? "h" : "v"));
   }
   if (typeof renderComments === "function") renderComments();
+  if (ED.project && typeof renderOutline === "function" && OL.el) sizeOutline();
 }
 
 // Ctrl+\ side by side, Ctrl+Shift+\ top and bottom; the same again goes back to one
@@ -3131,7 +3133,7 @@ const COMMANDS = {
   date: () => insertText(md.longDate()),
   datetime: () => insertText(md.longDate(true)),
   picture: () => { rememberCaret(); $("file-pic").click(); },
-  undo: () => { if (!undoReplaceAll()) { exec("undo"); afterEdit(); } },
+  undo: () => { if (!undoReplaceAll() && !(typeof undoOutline === "function" && undoOutline())) { exec("undo"); afterEdit(); } },
   find: () => openFind(true),
   headings: () => showHeadings(),
   redo: () => { exec("redo"); afterEdit(); },
@@ -3431,7 +3433,7 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.shiftKey && !e.altKey && (k === "L" || k === "l")) fn = togglePageView;
   else if (c && e.altKey && !e.shiftKey && (k === "j" || k === "J" || e.code === "KeyJ")) fn = toggleList;
   else if (c && e.altKey && !e.shiftKey && (k === "i" || k === "I" || e.code === "KeyI")) fn = togglePop;
-  else if (c && e.altKey && !e.shiftKey && (k === "o" || k === "O" || e.code === "KeyO")) fn = showHeadings;
+  else if (c && e.altKey && !e.shiftKey && (k === "o" || k === "O" || e.code === "KeyO")) fn = ED.project ? toggleOutline : showHeadings;
   else if (c && e.altKey && !e.shiftKey && (k === "f" || k === "F" || e.code === "KeyF")) fn = fnOn(A) ? () => insertNote("footnote") : focusSearch;
   else if (c && e.altKey && !e.shiftKey && (k === "d" || k === "D" || e.code === "KeyD") && fnOn(A)) fn = () => insertNote("endnote");
   else if (c && e.altKey && e.shiftKey && (k === "v" || k === "V" || e.code === "KeyV")) fn = () => pasteFromClipboard(true);
@@ -3882,7 +3884,9 @@ function menuItems(name) {
     ];
     case "view": return [
       // 1.9.4: shorter, the settings in submenus
-      { label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Alt+O" },
+      ...(ED.project ? [{ label: "Outline", on: !!s.outline, fn: toggleOutline, keys: "Ctrl+Alt+O" },
+        { label: "Headings in This Note…", fn: showHeadings }]
+        : [{ label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Alt+O" }]),
       { label: "Recent…", fn: showRecent, keys: "Ctrl+Shift+O" },
       "-",
       { label: "Show the Note List", on: $("app").classList.contains("app-narrow") ? !!S.sideOpenNarrow : s.list,
@@ -4138,7 +4142,7 @@ function showKeys() {
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
     "Find a note or a command: Ctrl+K    Focus: Ctrl+Shift+Enter    Align: Ctrl+L / E / R / J    Classic look: Ctrl+Alt+L",
     "Several notes as one page: Ctrl-click them in the list, or a long press with a finger; Shift-click the first and Shift-click the last for a run; everything showing in the list: Ctrl+Shift+A; a plain click: one note again",
-    "Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    Headings: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D",
+    `Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    ${ED.project ? "Outline" : "Headings"}: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D`,
     "Split view: Ctrl+\\ or F6 (top and bottom: Ctrl+Shift+\\)    Switch pane: Shift+F6",
     "Pop-up note (reminders, things to do): Ctrl+Alt+I",
     "Search the note list: Ctrl+Alt+F",
@@ -6465,8 +6469,315 @@ function toggleClassic() {
   toast(S.settings.classic ? "Classic look (Ctrl+Alt+L for the new one)" : "New look (Ctrl+Alt+L for the classic one)");
 }
 
+// ------------------------------------------------------------------ RossDraft 1.6.0: the Outline (as Ross Writer's)
+// The headings of the scene or document in front of you, as a tree, in the side under the list (Ctrl+Alt+O;
+// View ▸ Outline). Click one to go there; it follows the caret; drag one to move its whole section (to before
+// another heading, or after its section); right-click: Move Up, Move Down, Promote, Demote. On a page of several
+// scenes, each scene's headings under its name. Ctrl+Z puts back the last move. RossDraft only (ED.project).
+const OL = { el: null, split: null, list: null, empty: null, rows: [], timer: 0, ftimer: 0, drag: null, undo: null };
+function outlineOn() { return ED.project && !!S.settings.outline; }
+function olText(d) { return ed.lineText(d).split(md.OBJ).join("").trim(); }
+function olLevel(d) { const k = d && d.dataset ? d.dataset.kind || "" : ""; return /^h[1-6]$/.test(k) ? +k[1] : 0; }
+
+function buildOutline() {
+  if (!ED.project || OL.el) return;
+  const split = document.createElement("div");
+  split.id = "olsplit";
+  split.title = "Drag to give the outline more or less room";
+  const box = document.createElement("section");
+  box.id = "outline";
+  box.setAttribute("aria-label", "Outline");
+  const head = document.createElement("div");
+  head.className = "olhead";
+  const t = document.createElement("span");
+  t.textContent = "Outline";
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "olx";
+  x.textContent = "✕";
+  x.title = "Hide the outline (Ctrl+Alt+O)";
+  x.addEventListener("mousedown", (e) => e.preventDefault());
+  x.onclick = toggleOutline;
+  head.append(t, x);
+  const list = document.createElement("div");
+  list.className = "ollist";
+  list.setAttribute("role", "tree");
+  const empty = document.createElement("div");
+  empty.className = "olempty";
+  empty.hidden = true;
+  box.append(head, list, empty);
+  box.hidden = split.hidden = true;
+  $("side").insertBefore(split, $("count"));
+  $("side").insertBefore(box, $("count"));
+  Object.assign(OL, { el: box, split, list, empty });
+  // the divider between the list and the outline
+  split.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    split.setPointerCapture(e.pointerId);
+    split.classList.add("on");
+    const side = $("side").getBoundingClientRect();
+    const move = (ev) => {
+      const h = Math.round(side.bottom - ev.clientY - ($("count").offsetHeight || 0));
+      S.settings.outlineH = Math.max(90, Math.min(side.height - 140, h));
+      box.style.height = S.settings.outlineH + "px";
+    };
+    const up = () => { split.classList.remove("on"); split.removeEventListener("pointermove", move); saveSettings(); };
+    split.addEventListener("pointermove", move);
+    split.addEventListener("pointerup", up, { once: true });
+    split.addEventListener("pointercancel", up, { once: true });
+  });
+  split.addEventListener("dblclick", () => { delete S.settings.outlineH; saveSettings(); sizeOutline(); });
+  // the page changes: the outline follows (a moment after typing stops)
+  const mo = new MutationObserver(() => { if (outlineOn() && !OL.drag) { clearTimeout(OL.timer); OL.timer = setTimeout(renderOutline, 350); } });
+  for (const q of P) mo.observe(q.page, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-kind"] });
+  document.addEventListener("selectionchange", () => { if (outlineOn()) { clearTimeout(OL.ftimer); OL.ftimer = setTimeout(followOutline, 120); } });
+  // Ctrl+Z straight after a move: put it back
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z") && undoOutline()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+  // dropping
+  list.addEventListener("dragover", (e) => {
+    if (!OL.drag) return;
+    const r = e.target.closest(".olrow");
+    for (const x of list.querySelectorAll(".dropbefore,.dropafter")) x.classList.remove("dropbefore", "dropafter");
+    if (!r || r === OL.drag.row) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const b = r.getBoundingClientRect();
+    r.classList.add(r.classList.contains("oltitle") ? "dropafter" : r.classList.contains("olscene") || e.clientY < b.top + b.height / 2 ? "dropbefore" : "dropafter");
+  });
+  list.addEventListener("dragleave", (e) => { if (!list.contains(e.relatedTarget)) for (const x of list.querySelectorAll(".dropbefore,.dropafter")) x.classList.remove("dropbefore", "dropafter"); });
+  list.addEventListener("drop", (e) => {
+    if (!OL.drag) return;
+    e.preventDefault();
+    const r = list.querySelector(".dropbefore,.dropafter");
+    if (!r) return;
+    const after = r.classList.contains("dropafter");
+    r.classList.remove("dropbefore", "dropafter");
+    const src = OL.drag.item, dst = OL.rows[+r.dataset.i];
+    OL.drag = null;
+    outlineMove(src, dst, after);
+  });
+}
+
+function sizeOutline() {
+  if (!OL.el) return;
+  const sideH = $("side").clientHeight || window.innerHeight;
+  const h = S.settings.outlineH || Math.round(sideH * 0.42);
+  OL.el.style.height = Math.max(90, Math.min(Math.max(120, sideH - 140), h)) + "px";
+}
+
+function toggleOutline() {
+  if (!ED.project) return showHeadings();
+  buildOutline();
+  S.settings.outline = !S.settings.outline;
+  if (S.settings.outline && !$("app").classList.contains("app-narrow") && !S.settings.list) S.settings.list = true;
+  if (S.settings.outline && $("app").classList.contains("app-narrow")) S.sideOpenNarrow = true;
+  saveSettings();
+  layout();
+  renderOutline();
+}
+
+// a heading's section: the heading and what follows, up to the next heading as high or higher (or the next scene)
+function olSection(h) {
+  const lvl = olLevel(h);
+  const out = [h];
+  for (let n = h.nextElementSibling; n; n = n.nextElementSibling) {
+    if (n.classList.contains("jdiv")) break;
+    const l = olLevel(n);
+    if (l && l <= lvl) break;
+    out.push(n);
+  }
+  return out;
+}
+
+function renderOutline() {
+  if (!ED.project) return;
+  buildOutline();
+  const on = outlineOn();
+  OL.el.hidden = OL.split.hidden = !on;
+  if (!on) return;
+  sizeOutline();
+  const p = A, pg = p.page;
+  const keep = OL.list.scrollTop;
+  const rows = [];
+  if (p.note && pg.dataset.loaded !== "0") {
+    if (p.joined) rows.push({ scene: p.joined[0], part: 0, el: null });
+    let part = 0;
+    for (const c of pg.children) {
+      if (c.classList.contains("jdiv")) { part++; rows.push({ scene: p.joined && p.joined[part], part, el: c }); continue; }
+      // a scene's first line (its title) is listed too, as Word keeps it as a heading; it stays where it is
+      const title = c.classList.contains("title");
+      if (title && p.joined) continue;                       // (the scene's name above stands for it)
+      const lvl = olLevel(c) || (title ? 1 : 0);
+      if (!lvl) continue;
+      const text = olText(c);
+      if (text) rows.push({ lvl, text, el: c, part, title });
+    }
+  }
+  const hs = rows.filter((r) => r.lvl);
+  const top = Math.min(...hs.map((r) => r.lvl), 9);
+  const ro = pg.contentEditable === "false";
+  OL.rows = rows;
+  OL.list.textContent = "";
+  rows.forEach((r, i) => {
+    const d = document.createElement("div");
+    d.className = "olrow" + (r.scene !== undefined ? " olscene" : " l" + r.lvl + (r.lvl === top ? " top" : ""));
+    d.dataset.i = String(i);
+    d.setAttribute("role", "treeitem");
+    const text = r.scene !== undefined ? (r.scene ? r.scene.title() : "Scene " + (r.part + 1)) : r.text;
+    d.textContent = text;
+    d.title = text;
+    const indent = r.scene !== undefined ? 0 : (r.lvl - top) * 14 + (p.joined ? 12 : 0);
+    d.style.paddingLeft = 10 + indent + "px";
+    if (r.title) d.classList.add("oltitle");
+    if (r.lvl && !ro && !r.title) {
+      d.draggable = true;
+      d.addEventListener("dragstart", (e) => {
+        OL.drag = { item: r, row: d };
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", r.text);
+        d.classList.add("dragging");
+      });
+      d.addEventListener("dragend", () => { d.classList.remove("dragging"); OL.drag = null; });
+    }
+    d.addEventListener("click", () => olGo(r));
+    d.addEventListener("contextmenu", (e) => { e.preventDefault(); if (r.lvl) olMenu(r, d); });
+    r.row = d;
+    OL.list.appendChild(d);
+  });
+  const none = !hs.some((r) => !r.title);
+  OL.empty.hidden = !none;
+  OL.empty.textContent = !p.note ? "Open a scene and its headings are listed here." :
+    "No headings yet.\n\nUse H1, H2 and H3 (Ctrl+1, 2, 3) on chapter and section titles and they will be listed here.\n\n" +
+    "Drag a heading to move its whole section.";
+  OL.list.scrollTop = keep;
+  followOutline();
+}
+
+// the heading the caret is under, marked (and kept in view)
+function followOutline() {
+  if (!outlineOn() || !OL.rows.length) return;
+  const sel = window.getSelection();
+  const pg = A.page;
+  let line = null;
+  if (sel.rangeCount && pg.contains(sel.anchorNode)) {
+    line = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode;
+    while (line && line.parentNode !== pg) line = line.parentNode;
+  }
+  let cur = null;
+  if (line) {
+    for (const r of OL.rows) {
+      if (!r.el || !r.lvl) continue;
+      if (r.el === line || (r.el.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING)) cur = r; else break;
+    }
+  }
+  for (const r of OL.rows) r.row.classList.toggle("cur", r === cur);
+  if (cur) {
+    const lr = OL.list.getBoundingClientRect(), rr = cur.row.getBoundingClientRect();
+    if (rr.top < lr.top || rr.bottom > lr.bottom) OL.list.scrollTop += rr.top - lr.top - lr.height / 3;
+  }
+}
+
+function olGo(r) {
+  const pg = A.page;
+  let el = r.el;
+  if (r.scene !== undefined) el = r.el ? r.el.nextElementSibling : pg.firstElementChild;
+  if (!el || !pg.contains(el)) return;
+  const sc = el.closest(".scroller");
+  if (sc) sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8;
+  pg.focus({ preventScroll: true });
+  ed.placeCaret(...ed.pointAt(el, 0));
+  followOutline();
+}
+
+function olMenu(r, d) {
+  const ro = A.page.contentEditable === "false";
+  if (r.title) return showMenu(d, [{ label: "Go There", fn: () => olGo(r) }]);
+  showMenu(d, [
+    { label: "Go There", fn: () => olGo(r) },
+    "-",
+    { label: "Move Up", fn: () => olStep(r, -1), off: ro },
+    { label: "Move Down", fn: () => olStep(r, 1), off: ro },
+    "-",
+    { label: "Promote (a level higher)", fn: () => olLevelBy(r, -1), off: ro || r.lvl <= 1 },
+    { label: "Demote (a level lower)", fn: () => olLevelBy(r, 1), off: ro || r.lvl >= 6 },
+  ]);
+}
+
+function olBefore(fn, what) {
+  const p = A, pg = p.page;
+  const before = pg.innerHTML;
+  const ok = fn(pg);
+  if (!ok) return false;
+  ed.relayout(pg);
+  changed(p);
+  OL.undo = { page: pg, before, after: pg.innerHTML };
+  renderOutline();
+  if (what) toast(what + " Ctrl+Z puts it back.");
+  return true;
+}
+
+function undoOutline() {
+  const u = OL.undo;
+  if (!u || u.page !== page || page.innerHTML !== u.after) { OL.undo = null; return false; }
+  page.innerHTML = u.before;
+  OL.undo = null;
+  ed.relayout(page);
+  changed();
+  renderOutline();
+  toast("Put back as it was.");
+  return true;
+}
+
+// move src's section to before dst (a heading, or a scene: its start), or after dst's section
+function outlineMove(src, dst, after) {
+  if (!src || !dst || src === dst || !src.el) return false;
+  const nodes = olSection(src.el);
+  let anchor;
+  if (dst.scene !== undefined) {
+    // a scene: at its start, after its title line
+    let first = dst.el ? dst.el.nextElementSibling : A.page.firstElementChild;
+    if (first && first.classList.contains("title")) first = first.nextElementSibling;
+    anchor = first;
+  } else if (dst.title) anchor = dst.el.nextSibling;        // the title line stays first
+  else if (after) { const sec = olSection(dst.el); anchor = sec[sec.length - 1].nextSibling; }
+  else anchor = dst.el;
+  if (nodes.includes(anchor) || (dst.el && nodes.includes(dst.el))) { toast("A heading can't go inside its own section."); return false; }
+  const title = src.text;
+  const ok = olBefore((pg) => {
+    for (const n of nodes) pg.insertBefore(n, anchor || null);
+    return true;
+  }, `Moved “${title.slice(0, 40)}” and its section.`);
+  if (ok) { const r = OL.rows.find((x) => x.el === nodes[0]); if (r) olGo(r); }
+  return ok;
+}
+
+// Move Up / Move Down: past the heading of the same level before (or after) it, under the same heading
+function olStep(r, dir) {
+  const same = OL.rows.filter((x) => x.lvl && x.part === r.part && !x.title);
+  const i = same.indexOf(r);
+  let j = i + dir;
+  while (j >= 0 && j < same.length && same[j].lvl > r.lvl) j += dir;
+  const other = same[j];
+  if (!other || other.lvl < r.lvl) { toast(dir < 0 ? "Already the first under its heading." : "Already the last under its heading."); return false; }
+  return outlineMove(r, other, dir > 0);
+}
+
+// Promote / Demote: the heading and every heading in its section, a level higher or lower
+function olLevelBy(r, by) {
+  const nodes = olSection(r.el).filter((n) => olLevel(n));
+  if (nodes.some((n) => olLevel(n) + by < 1 || olLevel(n) + by > 6)) { toast("It can't go any " + (by < 0 ? "higher." : "lower.")); return false; }
+  return olBefore(() => { for (const n of nodes) n.dataset.kind = "h" + (olLevel(n) + by); return true; },
+    `“${r.text.slice(0, 40)}” ${by < 0 ? "promoted" : "demoted"}${nodes.length > 1 ? ", with the headings under it" : ""}.`);
+}
+if (ED.project) { buildOutline(); if (S.settings.outline) setTimeout(renderOutline, 0); }
+
 // for the tests
-window.RN = { popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

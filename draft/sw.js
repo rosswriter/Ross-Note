@@ -4,7 +4,7 @@
 // kept copy is used straight away, with no wait on the network. (The notes themselves are in your folder.)
 // its own name (not "ross-note-"), so Ross Note 1.6 on the same site never clears it, nor it 1.6's
 const PREFIX = "rossdraft-";
-const CACHE = PREFIX + "1.9.22";
+const CACHE = PREFIX + "1.9.22-d1.6.0";
 const V = "?v=1.9.22";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css" + V,

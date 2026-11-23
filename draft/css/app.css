@@ -773,3 +773,30 @@ body.ink-darkest .page { -webkit-text-stroke: 0.35px currentColor; }
 body.caret-red .page, body.caret-red textarea, body.caret-red input, body.caret-red [contenteditable] { caret-color: #e0102a !important; }
 .dark body.caret-red .page, body.dark.caret-red .page, body.dark.caret-red textarea, body.dark.caret-red input,
 body.dark.caret-red [contenteditable] { caret-color: #ff5a6a !important; }
+
+/* RossDraft 1.6.0: the Outline, in the side under the list (as Ross Writer's) */
+#olsplit { flex: none; height: 7px; cursor: row-resize; background: var(--ui2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); touch-action: none; }
+#olsplit:hover, #olsplit.on { background: var(--line); }
+#outline { flex: none; display: flex; flex-direction: column; min-height: 90px; overflow: hidden; }
+#outline[hidden], #olsplit[hidden] { display: none; }
+#outline .olhead { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 4px 12px;
+  font: 600 11px system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--ui-muted); }
+#outline .olx { border: 0; background: none; color: inherit; font-size: 13px; cursor: pointer; padding: 2px 6px; }
+#outline .ollist { flex: 1; overflow: auto; padding: 0 4px 10px; -webkit-user-select: none; user-select: none; }
+#outline .olrow { padding: 4px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 14px; line-height: 1.35; }
+#outline .olrow.top { font-weight: 650; }
+#outline .olrow:hover { background: var(--ui2); }
+#outline .olrow.cur { background: var(--sel); color: #fff; }
+#outline .olrow.olscene { font-size: 12px; font-style: italic; color: var(--ui-muted); margin-top: 6px; cursor: default; }
+#outline .olrow.olscene:first-child { margin-top: 0; }
+#outline .olrow.dragging { opacity: .45; }
+#outline .olrow.dropbefore { box-shadow: inset 0 2px 0 #6F93BF; }
+#outline .olrow.dropafter { box-shadow: inset 0 -2px 0 #6F93BF; }
+#outline .olempty { padding: 4px 14px 12px; font-size: 13px; color: var(--ui-muted); white-space: pre-line; }
+body:not(.classic) #olsplit { background: var(--side-bg); border-color: var(--side-line); }
+body:not(.classic) #olsplit:hover, body:not(.classic) #olsplit.on { background: var(--side-hover); }
+body:not(.classic) #outline .olhead, body:not(.classic) #outline .olempty, body:not(.classic) #outline .olrow.olscene { color: var(--side-muted); }
+body:not(.classic) #outline .olrow { color: var(--side-ink); }
+body:not(.classic) #outline .olrow:hover { background: var(--side-hover); }
+body:not(.classic) #outline .olrow.cur { background: var(--side-sel); color: #fff; }
