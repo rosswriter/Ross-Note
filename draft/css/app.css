@@ -789,6 +789,11 @@ body.dark.caret-red [contenteditable] { caret-color: #ff5a6a !important; }
 #olsplit:hover, #olsplit.on { background: var(--line); }
 #outline { flex: none; display: flex; flex-direction: column; min-height: 90px; overflow: hidden; }
 #outline[hidden], #olsplit[hidden] { display: none; }
+/* RossDraft 1.7.1: the scene list off: the Outline has the whole panel */
+body.notree #side-top, body.notree #tree, body.notree #olsplit { display: none !important; }
+body.notree #outline { flex: 1 1 auto; height: auto !important; }
+#outline .olhead > span:last-child { display: flex; gap: 2px; }
+#outline .oltree.on { font-weight: 600; }
 #outline .olhead { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 4px 12px;
   font: 600 11px system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--ui-muted); }
 #outline .olx { border: 0; background: none; color: inherit; font-size: 13px; cursor: pointer; padding: 2px 6px; }

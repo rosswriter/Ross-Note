@@ -1,14 +1,14 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.7.0";
-import * as ed from "./editor.js?v=1.9.22-d1.7.0";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.7.0";
-import * as spell from "./spell.js?v=1.9.22-d1.7.0";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.7.0";
+import * as md from "./md.js?v=1.9.22-d1.7.1";
+import * as ed from "./editor.js?v=1.9.22-d1.7.1";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.7.1";
+import * as spell from "./spell.js?v=1.9.22-d1.7.1";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.7.1";
 
 if (ED.project) alsoScrivener();
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.7.0";
+import { ED } from "./edition.js?v=1.9.22-d1.7.1";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -693,7 +693,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.7.0")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.7.1")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -820,18 +820,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.7.0");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.7.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.7.1");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1642,7 +1642,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.7.0");
+    const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1774,7 +1774,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.7.0");
+    const EP = await import("./epub.js?v=1.9.22-d1.7.1");
     return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
@@ -1795,7 +1795,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.7.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.7.1");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1836,7 +1836,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.0");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2644,7 +2644,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.7.0"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.7.1"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2668,7 +2668,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.7.0");
+  const X = await import("./export.js?v=1.9.22-d1.7.1");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2696,7 +2696,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.7.0");
+  const X = await import("./export.js?v=1.9.22-d1.7.1");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3635,6 +3635,7 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.altKey && !e.shiftKey && (k === "j" || k === "J" || e.code === "KeyJ")) fn = toggleList;
   else if (c && e.altKey && !e.shiftKey && (k === "i" || k === "I" || e.code === "KeyI")) fn = togglePop;
   else if (c && e.altKey && !e.shiftKey && (k === "o" || k === "O" || e.code === "KeyO")) fn = ED.project ? toggleOutline : showHeadings;
+  else if (c && e.altKey && !e.shiftKey && ED.project && (k === "b" || k === "B" || e.code === "KeyB")) fn = toggleTree;
   else if (c && e.altKey && !e.shiftKey && (k === "f" || k === "F" || e.code === "KeyF")) fn = fnOn(A) ? () => insertNote("footnote") : focusSearch;
   else if (c && e.altKey && !e.shiftKey && (k === "d" || k === "D" || e.code === "KeyD") && fnOn(A)) fn = () => insertNote("endnote");
   else if (c && e.altKey && e.shiftKey && (k === "v" || k === "V" || e.code === "KeyV")) fn = () => pasteFromClipboard(true);
@@ -4153,6 +4154,7 @@ function menuItemsAll(name) {
     case "view": return [
       // 1.9.4: shorter, the settings in submenus
       ...(ED.project ? [{ label: "Outline", on: !!s.outline, fn: toggleOutline, keys: "Ctrl+Alt+O" },
+        { label: "Show the Scene List", on: !treeHidden(), fn: toggleTree, keys: "Ctrl+Alt+B" },
         { label: "Headings in This Note…", fn: showHeadings }]
         : [{ label: "Headings in This Note…", fn: showHeadings, keys: "Ctrl+Alt+O" }]),
       { label: "Recent…", fn: showRecent, keys: "Ctrl+Shift+O" },
@@ -4420,7 +4422,7 @@ function showKeys() {
     "Text size: Ctrl+= / Ctrl+Shift+>   Ctrl+− / Ctrl+Shift+<   Ctrl+0    Line spacing: Alt+1 single, Alt+3 1.5, Alt+2 double",
     "Find a note or a command: Ctrl+K    Focus: Ctrl+Shift+Enter    Align: Ctrl+L / E / R / J    Classic look: Ctrl+Alt+L",
     "Several notes as one page: Ctrl-click them in the list, or a long press with a finger; Shift-click the first and Shift-click the last for a run; everything showing in the list: Ctrl+Shift+A; a plain click: one note again",
-    `Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    ${ED.project ? "Outline" : "Headings"}: Ctrl+Alt+O    Light / dark: Ctrl+Shift+D`,
+    `Page view: Ctrl+Shift+L    Note list (project panel): Ctrl+Alt+J (narrower / wider: Ctrl+Alt+[ / ])    ${ED.project ? "Outline: Ctrl+Alt+O (the scene list off or on: Ctrl+Alt+B)" : "Headings: Ctrl+Alt+O"}    Light / dark: Ctrl+Shift+D`,
     "Split view: Ctrl+\\ or F6 (top and bottom: Ctrl+Shift+\\)    Switch pane: Shift+F6",
     "Pop-up note (reminders, things to do): Ctrl+Alt+I",
     "Search the note list: Ctrl+Alt+F",
@@ -4529,7 +4531,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.7.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.7.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4677,7 +4679,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.7.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.7.1");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4749,7 +4751,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.7.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.7.1");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4953,7 +4955,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.7.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -4990,7 +4992,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.7.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5029,7 +5031,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.7.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.7.1"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5321,7 +5323,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.7.0");
+  const R = await import("./rtf.js?v=1.9.22-d1.7.1");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5413,7 +5415,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6827,7 +6829,16 @@ function buildOutline() {
   x.title = "Hide the outline (Ctrl+Alt+O)";
   x.addEventListener("mousedown", (e) => e.preventDefault());
   x.onclick = toggleOutline;
-  head.append(t, x);
+  // RossDraft 1.7.1: the scene list above it, hidden or shown (the Outline then has the whole panel)
+  const tb = document.createElement("button");
+  tb.type = "button";
+  tb.className = "olx oltree";
+  tb.addEventListener("mousedown", (e) => e.preventDefault());
+  tb.onclick = toggleTree;
+  const btns = document.createElement("span");
+  btns.append(tb, x);
+  head.append(t, btns);
+  Object.assign(OL, { treeBtn: tb });
   const list = document.createElement("div");
   list.className = "ollist";
   list.setAttribute("role", "tree");
@@ -6899,10 +6910,38 @@ function sizeOutline() {
   OL.el.style.height = Math.max(90, Math.min(Math.max(120, sideH - 140), h)) + "px";
 }
 
+// RossDraft 1.7.1 (Jacob): the scene list on or off (View ▸ Show the Scene List, Ctrl+Alt+B, or the button in the
+// Outline's heading). Off, the Outline fills the panel; turning the list off turns the Outline on (the panel is never
+// empty), and turning the Outline off brings the list back. Kept in the settings.
+function treeHidden() { return ED.project && !!S.settings.treeOff && outlineOn(); }
+function applyTree() {
+  const off = treeHidden();
+  document.body.classList.toggle("notree", off);
+  if (OL.treeBtn) {
+    OL.treeBtn.textContent = off ? "☰ List" : "☰";
+    OL.treeBtn.title = off ? "Show the scene list (Ctrl+Alt+B)" : "Hide the scene list: the Outline fills the panel (Ctrl+Alt+B)";
+    OL.treeBtn.classList.toggle("on", off);
+  }
+}
+function toggleTree() {
+  if (!ED.project) return;
+  buildOutline();
+  const hide = !treeHidden();
+  S.settings.treeOff = hide;
+  if (hide) S.settings.outline = true;
+  if ($("app").classList.contains("app-narrow")) S.sideOpenNarrow = true;
+  else S.settings.list = true;
+  saveSettings();
+  layout();
+  renderOutline();
+  toast(hide ? "Scene list hidden: Ctrl+Alt+B brings it back" : "Scene list shown", 1600);
+}
+
 function toggleOutline() {
   if (!ED.project) return showHeadings();
   buildOutline();
   S.settings.outline = !S.settings.outline;
+  if (!S.settings.outline) S.settings.treeOff = false;
   if (S.settings.outline && !$("app").classList.contains("app-narrow") && !S.settings.list) S.settings.list = true;
   if (S.settings.outline && $("app").classList.contains("app-narrow")) S.sideOpenNarrow = true;
   saveSettings();
@@ -6928,6 +6967,7 @@ function renderOutline() {
   buildOutline();
   const on = outlineOn();
   OL.el.hidden = OL.split.hidden = !on;
+  applyTree();
   if (!on) return;
   sizeOutline();
   const p = A, pg = p.page;
@@ -7202,7 +7242,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -7298,7 +7338,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.7.0"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.7.1"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -7445,7 +7485,7 @@ async function insertBookmark() {
 }
 
 // for the tests
-window.RN = { menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
