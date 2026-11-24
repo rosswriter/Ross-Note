@@ -1,6 +1,6 @@
 // RossDraft 1.0.2: RTF, read and written.
 //
-// readRtf(bytes) -> { lines, blockers, look, paras }
+// readRtf(bytes) -> { lines, blockers, look, paras, comments }
 //   lines:    wordio lines ({ kind, depth, align, runs: [{ t, f: Set of b i u s h, href }], pageBreak }), as
 //             readDocx gives them, so the page shows an RTF document just as it shows a Word one.
 //   blockers: what this file holds that RossDraft can't write back faithfully (tables, pictures, footnotes,
@@ -8,6 +8,9 @@
 //   look:     the document's own font, size, spacing and page (the most common in its body), kept when saving.
 //   paras:    each paragraph's spacing and indents, with a signature of its words, so an untouched paragraph
 //             keeps its own look when the file is written again.
+//   comments: (RossDraft 1.6.0) the document's comments (Word's and LibreOffice's \annotation, on the words between
+//             \atrfstart and \atrfend, or the word before a \chatn): [{ id, author, initials, date, text, words }].
+//             The app opens such a document as Ross Writer does: as a Word copy, comments and all.
 // writeRtf(lines, opts) -> a string of plain ASCII RTF (1.x), readable by Word, LibreOffice, WordPad, TextEdit,
 //   WordPerfect and older word processors: Windows-1252 text as \'hh, anything else as \uN with a "?" fallback,
 //   lists in the old \pn form with their numbers written out, pictures as PNG or JPEG.
@@ -59,6 +62,21 @@ export function readRtf(bytes) {
   const stack = [];
   let runs = [], listText = "", pageNext = false, pendingBytes = [];
   let entry = null;     // the font or style table entry being read
+  // comments (1.6.0): where each one's words start and end, who wrote it, and its words
+  const anStart = new Map(), anEnd = new Map(), anns = [];
+  const who = { author: "", initials: "" };
+  let curAnn = null;
+  const posNow = () => ({ line: lines.length, pos: runs.reduce((a, r) => a + r.t.length, 0) });
+  const CAPS = new Set(["atrfstart", "atrfend", "atnid", "atnauthor", "atnref", "atndate", "atnparent"]);
+  function gotCap(kind, v) {
+    v = v.trim();
+    if (kind === "atrfstart") anStart.set(v, posNow());
+    else if (kind === "atrfend") anEnd.set(v, posNow());
+    else if (kind === "atnid") who.initials = v;
+    else if (kind === "atnauthor") who.author = v;
+    else if (curAnn && kind === "atnref") curAnn.ref = v;
+    else if (curAnn && kind === "atndate") curAnn.date = dttm(v);
+  }
 
   const flushBytes = () => {
     if (!pendingBytes.length) return;
@@ -78,6 +96,8 @@ export function readRtf(bytes) {
     if (st.dest === "fonttbl-entry" || st.dest === "style-entry") { if (entry) entry.name += t; return; }
     if (st.dest === "fldinst") { if (st.field) st.field.inst += t; return; }
     if (st.dest === "listtext") { listText += t; return; }
+    if (st.dest === "cap") { st.cap.buf += t; return; }
+    if (st.dest === "annot") { if (curAnn) curAnn.text += t; return; }
     if (st.dest !== "body") return;
     const c = st.ch;
     const f = new Set();
@@ -123,7 +143,7 @@ export function readRtf(bytes) {
     if (c === "{") {
       flushBytes();
       stack.push(st);
-      st = { ...st, ch: { ...st.ch }, pa: st.pa, grp: "", skip: 0, paOwn: false, starred: false };
+      st = { ...st, ch: { ...st.ch }, pa: st.pa, grp: "", skip: 0, paOwn: false, starred: false, capOwn: false, annOwn: false };
       if (st.dest === "fonttbl-entry" || st.dest === "style-entry") st.dest = "skip";   // a font's \panose and the like
       // paragraph properties are group-scoped too: copied when first changed (see setPa)
       i++;
@@ -141,8 +161,11 @@ export function readRtf(bytes) {
         entry = null;
       }
       const field = st.field, wasField = st.grp === "field";
+      const closing = st;
       st = stack.pop() || st;
       if (wasField && field) st.field = null;
+      if (closing.capOwn) gotCap(closing.cap.kind, closing.cap.buf);
+      if (closing.annOwn && curAnn) { curAnn.text = curAnn.text.replace(/\s+$/, ""); anns.push(curAnn); curAnn = null; }
       i++;
       continue;
     }
@@ -203,7 +226,7 @@ export function readRtf(bytes) {
     if (word === "field") { st.grp = "field"; st.field = { inst: "" }; continue; }
     if (word === "fldinst") { st.dest = "fldinst"; continue; }
     if (word === "fldrslt") {
-      st.dest = st.dest === "skip" ? "skip" : "body";
+      st.dest = st.dest === "skip" ? "skip" : st.dest === "annot" ? "annot" : "body";
       const m = st.field && /HYPERLINK\s+(?:\\l\s+)?"([^"]+)"/i.exec(st.field.inst);
       if (m) st.href = m[1];
       continue;
@@ -220,7 +243,17 @@ export function readRtf(bytes) {
       else if (word === "pnlvlbody" || word === "pndec" || word === "pnlcltr" || word === "pnucltr" || word === "pnlcrm" || word === "pnucrm") setPaUp("ol");
       continue;
     }
-    if (SKIP.has(word) || st.starred && st.dest !== "skip" && !["fldinst", "listtext"].includes(st.dest) && word !== "pn") {
+    // comments (1.6.0): their marks, who wrote them, and their words
+    if (CAPS.has(word) && st.dest !== "skip") { flushBytes(); st.dest = "cap"; st.cap = { kind: word, buf: "" }; st.capOwn = true; continue; }
+    if (word === "annotation" && st.dest !== "skip") {
+      flushBytes();
+      st.dest = "annot";
+      st.annOwn = true;
+      curAnn = { text: "", author: who.author, initials: who.initials, ref: null, date: "", at: posNow() };
+      continue;
+    }
+    if (word === "chatn") continue;
+    if (SKIP.has(word) || st.starred && st.dest !== "skip" && !["fldinst", "listtext", "annot", "cap"].includes(st.dest) && word !== "pn") {
       if (word === "footnote" || word === "annotation") { /* blocker noted above */ }
       st.dest = "skip";
       continue;
@@ -237,7 +270,7 @@ export function readRtf(bytes) {
         st.skip = st.uc;
         break;
       }
-      case "par": if (st.dest === "body") endPara(); break;
+      case "par": if (st.dest === "body") endPara(); else if (st.dest === "annot" && curAnn) curAnn.text += "\n"; break;
       case "cell": case "nestcell": if (st.dest === "body") text("\t"); break;
       case "row": case "nestrow": if (st.dest === "body") endPara(); break;
       case "sect": case "page": pageNext = true; break;
@@ -286,7 +319,39 @@ export function readRtf(bytes) {
     for (const p of body) bump(m, p[key]);
     look[key] = most(m, 0);
   }
-  return { lines, blockers: [...blockers], look, paras };
+  // the comments, each with its words (or, with no words marked, the word before its mark)
+  const textOf = (k) => (lines[k] ? lines[k].runs.map((r) => r.t || "").join("") : "");
+  const comments = anns.map((a, k) => {
+    const s0 = a.ref != null ? anStart.get(a.ref) : null, e0 = a.ref != null ? anEnd.get(a.ref) : null;
+    let words = "";
+    if (s0 && e0) {
+      const parts = [];
+      for (let l = s0.line; l <= e0.line; l++) {
+        const t = textOf(l);
+        parts.push(t.slice(l === s0.line ? s0.pos : 0, l === e0.line ? e0.pos : undefined));
+      }
+      words = parts.join(" ").replace(/\s+/g, " ").trim();
+    }
+    if (!words && a.at) {
+      const m = /([\p{L}\p{N}'’-]+)[^\p{L}\p{N}]*$/u.exec(textOf(a.at.line).slice(0, a.at.pos));
+      words = m ? m[1] : "";
+    }
+    return { id: String(k + 1), author: a.author || "", initials: a.initials || "", date: a.date || "",
+      text: a.text.replace(/^\s+/, ""), words, parent: null, done: false };
+  });
+  if (comments.length) blockers.add("comments");
+  else blockers.delete("comments");
+  return { lines, blockers: [...blockers], look, paras, comments };
+}
+
+// Word's packed date (DTTM: minutes, hours, day, month, year since 1900) as an ISO time; or a plain date as it is
+function dttm(v) {
+  if (!/^-?\d+$/.test(v)) return v || "";
+  let n = parseInt(v, 10) >>> 0;
+  const mi = n & 63, h = (n >> 6) & 31, d = (n >> 11) & 31, mo = (n >> 16) & 15, y = ((n >> 20) & 511) + 1900;
+  if (!d || !mo || mo > 12) return "";
+  const p = (x) => String(x).padStart(2, "0");
+  return `${y}-${p(mo)}-${p(d)}T${p(h)}:${p(mi)}:00Z`;
 }
 
 // ================================================================ writing

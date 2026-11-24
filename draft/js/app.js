@@ -1341,7 +1341,7 @@ async function openJoined(notes, pane = A) {
   });
   const ro = notes.filter((n) => n.readOnly);
   toast(`${notes.length} notes as one page: each part is saved into its own note.` +
-    (ro.length ? ` (Read-only, as ${ro.map((n) => "“" + n.title() + "”").join(", ")} ${ro.length === 1 ? "has" : "have"} comments, footnotes or the like.)` : ""), 4000);
+    (ro.length ? ` (Read-only: ${ro.map((n) => "“" + n.title() + "” has " + n.readOnly.join(", ")).join("; ")}.)` : ""), 4000);
 }
 
 function showJoined(pane) {
@@ -1689,11 +1689,13 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   if (S.settings.split && S.settings.active === 1) setActive(P[1]);
   updateCount();
   restoreSpot();
-  const ro = st.all().filter((x) => x.readOnly && !x.raw.pdf).length;
+  const roNotes = st.all().filter((x) => x.readOnly && !x.raw.pdf);
+  const ro = roNotes.length;
+  const why = [...new Set(roNotes.flatMap((x) => x.readOnly))];
   if (st.isEpub) { toast(`“${st.label}”${st.author ? " by " + st.author : ""}: an e-book, ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}, to read. ` +
     "File ▸ Export Project… makes a project of it to edit.", 7000); return; }
   toast(`${st.label}${st.isScriv ? " (Scrivener)" : ""}: ${st.all().length} entr${st.all().length === 1 ? "y" : "ies"}` +
-    (st.readOnlyAll ? " — read-only" : ro ? ` (${ro} read-only here: ${st.isScriv ? "Scrivener's inline notes, tables, pictures or research files" : "comments, footnotes or the like"})` : ""));
+    (st.readOnlyAll ? " — read-only" : ro ? ` (${ro} read-only here, as ${ro === 1 ? "it has" : "they have"} ${why.slice(0, 4).join(", ")}${why.length > 4 ? "…" : ""}: hover over “read-only” in the list to see which)` : ""), ro ? 6000 : undefined);
 }
 
 // ------------------------------------------------------------------ a Word document by itself
@@ -1782,8 +1784,77 @@ async function openDocFile(fh, ask = false) {
     } catch (e) { ro = true; }
   }
   if (/\.docx$/i.test(fh.name)) await openWordDoc(fh, ro);
-  else if (/\.rtf$/i.test(fh.name)) await openMdFile(fh, ro, "rtf");
+  else if (/\.rtf$/i.test(fh.name)) await openRtfFile(fh, ro);
   else await openMdFile(fh, ro);
+}
+
+// RossDraft 1.6.0: an RTF document with comments opens as Ross Writer opens it: as a Word document. A Word copy
+// ("<name>.docx", beside it when its folder is known) is made with the text and the comments, and that is what's
+// edited, comments and all; the RTF is left as it was. (RTF can't carry comments back faithfully.)
+async function openRtfFile(fh, ro) {
+  let got = null;
+  try {
+    const R = await import("./rtf.js?v=1.9.22");
+    got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
+  } catch (e) { got = null; }
+  if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
+  let dir = docDir;
+  if (!dir || !(await sameEntryIn(dir, fh))) {
+    dir = null;
+    try { const d = await kvGet("docDir"); if (d && d.kind === "directory" && await sameEntryIn(d, fh)) dir = d; } catch (e) { dir = null; }
+  }
+  const base = fh.name.replace(/\.rtf$/i, "");
+  const nc = got.comments.length;
+  const box = document.createElement("div");
+  box.style.whiteSpace = "pre-line";
+  box.textContent = `“${fh.name}” has ${nc} comment${nc === 1 ? "" : "s"}.\n\n` +
+    "RossDraft opens it as Ross Writer does: as a Word document. A Word copy, “" + base + ".docx”, is made " +
+    (dir ? "beside it" : "where you choose") + ", with the text and the comments, and that is what you edit and save " +
+    "(the text, and the comments: reply, edit, resolve, add). The RTF itself is left as it is.";
+  const v = await ask("An RTF Document with Comments", box, [["Make the Word Copy", "word", true], ["Open the RTF Read-Only", "ro"]]);
+  if (v === "ro") return openMdFile(fh, true, "rtf");
+  if (v !== "word") { if (!S.store) start(); return; }
+  let h = null;
+  try { h = await busy("Making the Word copy…", () => rtfToWord(got, base, dir), { after: 0 }); } catch (e) {
+    dialog("An RTF Document with Comments", "Couldn't make the Word copy.\n\n" + ((e && e.message) || e));
+    if (!S.store) start();
+    return;
+  }
+  if (!h) { if (!S.store) start(); return; }
+  S.settings.showComments = true;        // opened for its comments: show them
+  saveSettings();
+  await openWordDoc(h, false);
+  renderComments();
+  toast(`Opened as a Word document: “${h.name}”, with ${nc} comment${nc === 1 ? "" : "s"}. The RTF is as it was.`, 6000);
+}
+
+async function rtfToWord(got, base, dir) {
+  const W = await wordModule();
+  const lines = got.lines.map((ln) => Object.assign({}, ln, { runs: ln.runs.map((r) => Object.assign({}, r, { f: new Set(r.f) })) }));
+  while (lines.length && !lines[lines.length - 1].kind && !lines[lines.length - 1].runs.some((r) => (r.t || "").trim())) lines.pop();
+  let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
+  const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
+  const title = first ? first.runs.map((r) => r.t || "").join("") : "";
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22");
+  blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
+  const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  let h = null;
+  if (dir) {
+    // beside the RTF: "<name>.docx", or "<name> (from RTF).docx" (then numbered) if that's taken
+    const taken = async (nm) => { try { await dir.getFileHandle(nm); return true; } catch (e) { return false; } };
+    let name = base + ".docx";
+    for (let k = 1; await taken(name); k++) name = `${base} (from RTF${k > 1 ? " " + k : ""}).docx`;
+    h = await dir.getFileHandle(name, { create: true });
+  } else if (window.showSaveFilePicker) {
+    try {
+      h = await window.showSaveFilePicker({ suggestedName: base + ".docx", id: "rossdraft-rtfword",
+        types: [{ description: "Word document", accept: { [mime]: [".docx"] } }] });
+    } catch (e) { if (e && e.name === "AbortError") return null; throw e; }
+  } else throw new Error("Open the RTF from its folder (Open a Document ▸ Choose the folder), so the Word copy can be made beside it.");
+  const w = await h.createWritable();
+  await w.write(blob);
+  await w.close();
+  return h;
 }
 
 async function openMdFile(fh, readOnly = false, kind = "md") {
