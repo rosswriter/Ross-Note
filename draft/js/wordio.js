@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.8.3";
+import * as md from "./md.js?v=1.9.22-d1.7.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -311,6 +311,7 @@ export async function readDocx(buf, opts = {}) {
     walk(p, null);
   };
 
+  const olAt = new Map();      // (1.7.0) the Word list each level's numbered items were last in
   const paragraph = (p) => {
     const ppr = kid(p, "pPr");
     let sid = null, num = null, align = null;
@@ -340,8 +341,18 @@ export async function readDocx(buf, opts = {}) {
     runsOf(p, sid && !heading && kind !== "quote" ? styles.flags(sid) : new Set(), heading, out);
     const parts = [[]];
     for (const r of out) { if (r === null) parts.push([]); else parts[parts.length - 1].push(r); }
+    // (RossDraft 1.7.0) a numbered item in another of Word's lists than the one before it at its level: a fresh
+    // start (Restart Numbering), unless its list's start says it goes on
+    let restart = false;
+    if (kind === "ol" && num != null) {
+      const prev = olAt.get(depth);
+      if (prev != null && prev !== num[0]) restart = true;
+      olAt.set(depth, num[0]);
+      for (const d of [...olAt.keys()]) if (d > depth) olAt.delete(d);
+    } else if (kind !== "ul" && kind !== "ol") olAt.clear();
     return parts.map((runs, k) => ({
       kind: k === 0 || kind === "quote" ? kind : (kind === "ul" || kind === "ol" || heading ? null : kind),
+      restart: k === 0 && restart,
       depth, runs: tidyRuns(runs), code, title: isTitle && k === 0, align: code ? null : align,
     }));
   };
@@ -444,6 +455,7 @@ export function toNoteLines(lines, picture) {
       const lead = "  ".repeat(ln.depth - 1);
       out.mark = ln.kind === "ul" ? "ul:" + lead + "- " : "ol:" + lead + "\u0000. ";
     }
+    if (ln.kind === "ol" && ln.restart) out.restart = true;
     for (const r of ln.runs) {
       if (r.img) { const target = picture(r.img); if (target) out.runs.push({ t: OBJ, f: new Set(), img: { src: "", size: "", target } }); continue; }
       out.runs.push({ t: r.t.replace(/\n/g, " "), f: new Set(r.f), href: r.href || null });
@@ -454,14 +466,14 @@ export function toNoteLines(lines, picture) {
 
 // md.js lines -> wordio lines
 export function fromNoteLines(lines) {
-  const { depthOf } = md.listLayout(lines);
+  const { depthOf, restarts } = md.listLayout(lines);
   return lines.map((ln, k) => {
     if (ln.raw != null && (ln.code || ln.runs.map((r) => r.t).join("") === ln.raw)) {
       return { kind: null, depth: 1, code: !!ln.code, runs: [{ t: ln.runs.map((r) => r.t).join(""), f: new Set() }] };
     }
     const heading = !!ln.kind && ln.kind[0] === "h";
     return {
-      kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null,
+      kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null, restart: !!restarts[k],
       runs: ln.runs.map((r) => (r.img ? { t: OBJ, f: new Set(), img: r.img }
         : { t: r.t.split(OBJ).join(""), f: heading ? new Set([...r.f].filter((x) => x !== "b")) : r.f, href: r.href || null })),
     };
@@ -547,7 +559,7 @@ function numberingXml(nOrdered) {
       out += bullet
         ? `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="${"•◦▪"[k % 3]}"/>` +
           `<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${ind}" w:hanging="360"/></w:pPr></w:lvl>`
-        : `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%${k + 1}."/>` +
+        : `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="${["decimal", "lowerLetter", "lowerRoman"][k % 3]}"/><w:lvlText w:val="%${k + 1}."/>` +
           `<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${ind}" w:hanging="360"/></w:pPr></w:lvl>`;
     }
     return out;
@@ -635,7 +647,7 @@ export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria
   let nOrdered = 0, runId = null;
   const orderedIds = lines.map((ln) => {
     if (ln.kind === "ul" || ln.kind === "ol") {
-      if (runId == null) { nOrdered += 1; runId = nOrdered + 1; }
+      if (runId == null || (ln.kind === "ol" && ln.restart)) { nOrdered += 1; runId = nOrdered + 1; }
       return runId;
     }
     runId = null;

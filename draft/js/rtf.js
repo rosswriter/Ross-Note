@@ -40,7 +40,7 @@ const bump = (m, k, by = 1) => m.set(k, (m.get(k) || 0) + by);
 
 // a paragraph's signature: its kind and words with their marks (as the page gives them back)
 export function sigOf(ln) {
-  return (ln.kind || "p") + "|" + (ln.runs || []).map((r) => (r.img ? "￼" : [...(r.f || [])].sort().join("") + ":" + (r.t || ""))).join("¦");
+  return (ln.kind || "p") + "|" + (ln.runs || []).filter((r) => r.raw == null).map((r) => (r.img ? "￼" : [...(r.f || [])].sort().join("") + ":" + (r.t || ""))).join("¦");
 }
 
 export function readRtf(bytes) {
@@ -337,7 +337,9 @@ export function readRtf(bytes) {
       words = m ? m[1] : "";
     }
     return { id: String(k + 1), author: a.author || "", initials: a.initials || "", date: a.date || "",
-      text: a.text.replace(/^\s+/, ""), words, parent: null, done: false };
+      text: a.text.replace(/^\s+/, ""), words, parent: null, done: false,
+      // RossDraft 1.7.0: where it sits (for Scrivener, which keeps them in place): its words' start and end, or its mark
+      span: s0 && e0 ? [s0, e0] : null, at: a.at || null, ref: a.ref };
   });
   if (comments.length) blockers.add("comments");
   else blockers.delete("comments");
@@ -509,6 +511,7 @@ export async function writeRtf(lines, opts = {}) {
         } else body += "[picture]";
         continue;
       }
+      if (r.raw != null) { body += r.raw; continue; }     // RossDraft 1.7.0: Scrivener's comment marks, as they are
       if (!r.t) continue;
       if (r.t.includes("\uE000")) {
         // RossDraft 1.2: a note's mark: RTF's own footnote (an endnote: \ftnalt), its words with it

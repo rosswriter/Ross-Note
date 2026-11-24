@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES } from "./wordio.js?v=1.8.3";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES } from "./wordio.js?v=1.9.22-d1.7.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -177,6 +177,9 @@ function textAndMarks(p) {
       const l = c.localName;
       if (l === "commentRangeStart" || l === "commentRangeEnd") {
         marks.push({ node: c, kind: l === "commentRangeStart" ? "start" : "end", id: wval(c, "id"), off: text.length });
+      } else if (l === "bookmarkStart" || l === "bookmarkEnd") {
+        // (RossDraft 1.7.0) Word's bookmarks: kept at their words when the paragraph changes, as comment marks are
+        marks.push({ node: c, kind: l === "bookmarkStart" ? "start" : "end", id: wval(c, "id"), off: text.length, bm: true });
       } else if (isRef(c)) {
         marks.push({ node: c, kind: "ref", id: wval(wkid(c, "commentReference"), "id"), off: text.length });
       } else if (l === "t") text += c.textContent;
@@ -267,6 +270,44 @@ function partByType(rels, mainPart, type) {
 }
 
 // the scene's comments, for the list beside the page: [{id, author, initials, date, text, words, parent, done}]
+
+// RossDraft 1.7.0: a comment's formatting: lines of runs [{ t, b, i, u, h }] (null when it's all plain)
+const onOff = (rpr, name) => {
+  const e = rpr && [...rpr.children].find((x) => isW(x, name));
+  if (!e) return false;
+  const v = e.getAttributeNS(W, "val") || e.getAttribute("w:val");
+  return name === "u" ? !!v && v !== "none" : name === "highlight" ? !!v && v !== "none" : !(v === "0" || v === "false" || v === "off");
+};
+function richOf(paras) {
+  let any = false;
+  const lines = paras.map((p) => {
+    const runs = [];
+    for (const r of p.getElementsByTagNameNS(W, "r")) {
+      let up = r.parentNode, gone = false;
+      while (up && up !== p) { if (isW(up, "del") || isW(up, "moveFrom")) { gone = true; break; } up = up.parentNode; }
+      if (gone) continue;
+      const rpr = [...r.children].find((x) => isW(x, "rPr"));
+      const f = { b: onOff(rpr, "b"), i: onOff(rpr, "i"), u: onOff(rpr, "u"), h: onOff(rpr, "highlight") };
+      let t = "";
+      for (const x of r.children) {
+        if (isW(x, "t")) t += x.textContent;
+        else if (isW(x, "tab")) t += "\t";
+        else if (isW(x, "br")) t += "\n";
+      }
+      if (!t) continue;
+      if (f.b || f.i || f.u || f.h) any = true;
+      const last = runs[runs.length - 1];
+      if (last && last.b === f.b && last.i === f.i && last.u === f.u && last.h === f.h) last.t += t;
+      else runs.push({ t, ...f });
+    }
+    return runs;
+  });
+  // the lines as the plain text has them (trimmed at the ends)
+  while (lines.length && !lines[0].some((r) => r.t.trim())) lines.shift();
+  while (lines.length && !lines[lines.length - 1].some((r) => r.t.trim())) lines.pop();
+  return any ? lines : null;
+}
+
 export async function readComments(files) {
   const get = async (name) => (files.has(name) ? dec(await files.get(name)()) : null);
   const relsT = await get("word/_rels/document.xml.rels");
@@ -282,6 +323,9 @@ export async function readComments(files) {
     const text = paras.map((p) => textAndMarks(p).text.split(OBJ).join("")).join("\n").trim();
     const item = { id: wval(c, "id"), author: wval(c, "author") || "", initials: wval(c, "initials") || "",
       date: wval(c, "date") || "", text, words: "", parent: null, done: false };
+    // RossDraft 1.7.0: its bold, italic, underline and highlighting, when it has any
+    const rich = richOf(paras);
+    if (rich) item.rich = rich;
     out.push(item);
     const last = paras[paras.length - 1];
     const pid = last && (last.getAttributeNS(W14, "paraId") || last.getAttribute("w14:paraId"));
@@ -450,7 +494,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       lv += bullet
         ? `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="${"•◦▪"[k % 3]}"/>` +
           `<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${ind}" w:hanging="360"/></w:pPr></w:lvl>`
-        : `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%${k + 1}."/>` +
+        : `<w:lvl w:ilvl="${k}"><w:start w:val="1"/><w:numFmt w:val="${["decimal", "lowerLetter", "lowerRoman"][k % 3]}"/><w:lvlText w:val="%${k + 1}."/>` +
           `<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${ind}" w:hanging="360"/></w:pPr></w:lvl>`;
     }
     const frag = parse(`<w:x xmlns:w="${W}"><w:abstractNum w:abstractNumId="${aid}"><w:multiLevelType w:val="hybridMultilevel"/>` +
@@ -607,7 +651,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.7.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -657,6 +701,13 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         ni.setAttributeNS(W, "w:val", numFor.get(j));
         np.append(doc.createElementNS(W, "w:ilvl"), ni);
         ensurePpr().appendChild(np);
+      }
+      if (kind === "ol" && wantNum.has(j)) {
+        // (1.7.0) Restart Numbering / Continue Numbering: this item's Word list, as the page has it
+        if (!np) { np = doc.createElementNS(W, "w:numPr"); np.appendChild(doc.createElementNS(W, "w:ilvl")); ensurePpr().appendChild(np); }
+        let ni = wkid(np, "numId");
+        if (!ni) { ni = doc.createElementNS(W, "w:numId"); np.appendChild(ni); }
+        ni.setAttributeNS(W, "w:val", wantNum.get(j));
       }
       if (np) {
         let il = wkid(np, "ilvl");
@@ -731,6 +782,28 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     if (!groupOf.has(ln.src)) groupOf.set(ln.src, []);
     groupOf.get(ln.src).push(i);
   });
+  // (RossDraft 1.7.0) numbered lists: where the page starts one again (Restart Numbering) and where it goes on,
+  // against the Word lists the paragraphs are in; those that differ are rebuilt with the right one
+  const wantNum = new Map();
+  {
+    const numOf = (i) => {
+      if (i == null || i < 0 || old[i].src == null) return null;
+      const el = srcEl(i), ppr = el && wkid(el, "pPr"), np = ppr && wkid(ppr, "numPr"), ni = np && wkid(np, "numId");
+      return ni ? ni.getAttributeNS(W, "val") : null;
+    };
+    let runNum = null;
+    for (let j = 0; j < lines.length; j++) {
+      const ln = lines[j];
+      if (!(ln.kind === "ol" || ln.kind === "ul") || ln.code) { runNum = null; continue; }
+      if (ln.kind !== "ol") continue;
+      const have = numOf(matched[j] >= 0 ? matched[j] : paired[j]);
+      if (runNum == null) { runNum = have; continue; }
+      if (ln.restart) {
+        if (have && have !== runNum) runNum = have;
+        else { runNum = newNum(false); wantNum.set(j, runNum); }
+      } else if (have !== runNum) wantNum.set(j, runNum);
+    }
+  }
   const used = new Set(), marked = new Set();
   const outEls = [];
   for (let j = 0; j < lines.length;) {
@@ -738,7 +811,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const i = matched[j];
     if (i >= 0 && old[i].src != null) {
       const g = groupOf.get(old[i].src);
-      if (g[0] === i && !used.has(old[i].src) && g.every((ii, t) => matched[j + t] === ii)) {
+      if (g[0] === i && !used.has(old[i].src) && g.every((ii, t) => matched[j + t] === ii && !wantNum.has(j + t))) {
         used.add(old[i].src);
         outEls.push(srcEl(i));
         j += g.length;
@@ -1029,10 +1102,11 @@ function newParaId(taken) {
 }
 export const wordNow = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
-// the paragraphs of a comment's text (each line one), the first with Word's annotation mark
-function fillComment(cdoc, c, text, taken, lastId) {
+// the paragraphs of a comment's text (each line one), the first with Word's annotation mark; with rich (RossDraft
+// 1.7.0: lines of runs [{ t, b, i, u, h }]) its bold, italic, underline and highlighting too
+function fillComment(cdoc, c, text, taken, lastId, rich) {
   for (const x of [...c.children]) c.removeChild(x);
-  const lines = String(text || "").split("\n");
+  const lines = rich && rich.length ? rich : String(text || "").split("\n");
   lines.forEach((line, k) => {
     const p = cdoc.createElementNS(W, "w:p");
     p.setAttributeNS(W14, "w14:paraId", k === lines.length - 1 && lastId ? lastId : newParaId(taken));
@@ -1042,12 +1116,26 @@ function fillComment(cdoc, c, text, taken, lastId) {
       r.appendChild(cdoc.createElementNS(W, "w:annotationRef"));
       p.appendChild(r);
     }
-    if (line) {
+    for (const run of typeof line === "string" ? (line ? [{ t: line }] : []) : line) {
+      if (!run.t) continue;
       const r = cdoc.createElementNS(W, "w:r");
-      const t = cdoc.createElementNS(W, "w:t");
-      t.setAttribute("xml:space", "preserve");
-      t.textContent = line;
-      r.appendChild(t);
+      if (run.b || run.i || run.u || run.h) {
+        const rpr = cdoc.createElementNS(W, "w:rPr");
+        const on = (name, val) => { const e = cdoc.createElementNS(W, "w:" + name); if (val) e.setAttributeNS(W, "w:val", val); rpr.appendChild(e); };
+        if (run.b) on("b");
+        if (run.i) on("i");
+        if (run.h) on("highlight", "yellow");
+        if (run.u) on("u", "single");
+        r.appendChild(rpr);
+      }
+      run.t.split("\t").forEach((piece, j) => {
+        if (j) r.appendChild(cdoc.createElementNS(W, "w:tab"));
+        if (!piece) return;
+        const t = cdoc.createElementNS(W, "w:t");
+        t.setAttribute("xml:space", "preserve");
+        t.textContent = piece;
+        r.appendChild(t);
+      });
       p.appendChild(r);
     }
     c.appendChild(p);
@@ -1094,7 +1182,7 @@ function refRunEl(doc, id) {
 }
 
 // a new comment on the body's words from (paragraph sp, offset so) to (ep, eo); paragraphs as body children
-function addComment(pkg, st, { sp, so, ep, eo, text, author, initials, date, parentId }) {
+function addComment(pkg, st, { sp, so, ep, eo, text, rich, author, initials, date, parentId }) {
   const kids = [...pkg.body.children];
   const P1 = kids[sp], P2 = kids[ep];
   if (parentId == null && (!P1 || !P2 || !isW(P1, "p") || !isW(P2, "p"))) throw new Error("Those words can't take a comment here.");
@@ -1104,7 +1192,7 @@ function addComment(pkg, st, { sp, so, ep, eo, text, author, initials, date, par
   c.setAttributeNS(W, "w:author", author || "Ross Note");
   c.setAttributeNS(W, "w:date", date || wordNow());
   if (initials) c.setAttributeNS(W, "w:initials", initials);
-  fillComment(st.cdoc, c, text, st.taken);
+  fillComment(st.cdoc, c, text, st.taken, null, rich);
   st.cdoc.documentElement.appendChild(c);
   st.comments.push(c);
   st.byId.set(id, c);
@@ -1210,12 +1298,90 @@ export async function commentEdit(files, op) {
   else if (op.kind === "reply") addComment(pkg, st, { ...op, parentId: op.id });
   else if (op.kind === "edit") {
     const ps = c.getElementsByTagNameNS(W, "p");
-    fillComment(st.cdoc, c, op.text, st.taken, ps.length ? paraIdOf(ps[ps.length - 1]) : null);
+    fillComment(st.cdoc, c, op.text, st.taken, ps.length ? paraIdOf(ps[ps.length - 1]) : null, op.rich);
   } else if (op.kind === "resolve") {
     const e = st.exFor(st.pidOf(c), true);
     e.setAttributeNS(W15, "w15:done", op.done ? "1" : "0");
   } else if (op.kind === "delete") dropComment(pkg, st, op.id);
   return pkg.save();
+}
+
+// RossDraft 1.7.0: bookmarks, as Ross Writer's: Word's own (w:bookmarkStart / w:bookmarkEnd, a name), so Word
+// and Ross Writer see the same ones. Word's hidden ones (_Toc…, _GoBack) are left alone.
+// readBookmarks(files) -> [{ id, name, para (index in the body), off, words (the words from there, to find it) }]
+export async function readBookmarks(files) {
+  const pkg = await openPackage(files);
+  const kids = [...pkg.body.children];
+  const out = [];
+  kids.forEach((k, i) => {
+    if (!isW(k, "p")) return;
+    const tm = textAndMarks(k);
+    for (const m of tm.marks) {
+      if (!m.bm || m.kind !== "start") continue;
+      const name = m.node.getAttributeNS(W, "name") || "";
+      if (!name || name.startsWith("_")) continue;
+      let words = tm.text.slice(m.off).replace(/\s+/g, " ").trim().slice(0, 60);
+      if (!words) words = tm.text.slice(0, m.off).replace(/\s+/g, " ").trim().slice(-60);
+      out.push({ id: m.id, name, para: i, off: m.off, words });
+    }
+  });
+  return out;
+}
+
+// bookmarkEdit(files, { kind: "add", name, sp, so }) — a bookmark at that place (a point, as Ross Writer's);
+// { kind: "delete", name } — taken out. A name already there is moved to the new place.
+export async function bookmarkEdit(files, op) {
+  const pkg = await openPackage(files);
+  const byName = (nm) => [...pkg.body.getElementsByTagNameNS(W, "bookmarkStart")].filter((e) => (e.getAttributeNS(W, "name") || "") === nm);
+  const drop = (nm) => {
+    for (const st of byName(nm)) {
+      const id = wval(st, "id");
+      for (const e of [...pkg.body.getElementsByTagNameNS(W, "bookmarkEnd")]) if (wval(e, "id") === id) e.parentNode.removeChild(e);
+      st.parentNode.removeChild(st);
+    }
+  };
+  if (op.kind === "delete") drop(op.name);
+  else if (op.kind === "add") {
+    drop(op.name);
+    const kids = [...pkg.body.children];
+    const P = kids[op.sp];
+    if (!P || !isW(P, "p")) throw new Error("A bookmark can't go there.");
+    const t = textAndMarks(P).text;
+    const so = op.so + (t.length - t.replace(/^\s+/, "").length);
+    const ids = [...pkg.body.getElementsByTagNameNS(W, "bookmarkStart")].map((e) => +wval(e, "id") || 0);
+    const id = String(Math.max(-1, ...ids) + 1);
+    const start = pkg.doc.createElementNS(W, "w:bookmarkStart");
+    start.setAttributeNS(W, "w:id", id);
+    start.setAttributeNS(W, "w:name", op.name);
+    const end = pkg.doc.createElementNS(W, "w:bookmarkEnd");
+    end.setAttributeNS(W, "w:id", id);
+    placeAt(pkg.doc, P, so, end, "end");
+    placeAt(pkg.doc, P, so, start, "start");
+  }
+  return pkg.save();
+}
+
+// RossDraft 1.7.0: Remove Text Colours: the lettering's colours (w:color in the runs' own formatting) taken out of
+// the document's body, so it's all in the usual colour. Highlighting, and links (inside w:hyperlink, or styled as
+// one), are kept. -> { blob, count } or null when there was none.
+export async function stripColours(files) {
+  const pkg = await openPackage(files);
+  let n = 0;
+  for (const c of [...pkg.body.getElementsByTagNameNS(W, "color")]) {
+    const rpr = c.parentNode;
+    if (!rpr || !isW(rpr, "rPr")) continue;
+    const run = rpr.parentNode;
+    if (run && isW(run, "r")) {
+      let up = run.parentNode, link = false;
+      while (up && up !== pkg.body) { if (isW(up, "hyperlink")) { link = true; break; } up = up.parentNode; }
+      const st = [...rpr.children].find((x) => isW(x, "rStyle"));
+      if (link || (st && /hyperlink/i.test(st.getAttributeNS(W, "val") || ""))) continue;
+    }
+    const v = (c.getAttributeNS(W, "val") || "").toLowerCase();
+    rpr.removeChild(c);
+    if (v && v !== "auto" && v !== "000000") n++;
+  }
+  return n ? { blob: await pkg.save(), count: n } : null;
 }
 
 // Comments into a Word file made from notes (Export as Word): each found by its words in its note's part

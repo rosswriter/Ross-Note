@@ -203,7 +203,10 @@ export function parse(text) {
     const am = ALIGN_RE.exec(line);
     const ln = am ? parseLine(am[2] ? "#".repeat(+am[2]) + " " + am[4] : am[4]) : parseLine(line);
     if (am) ln.align = am[3];
-    const { number } = lists.step(ln);
+    if (ln.kind === "ol" && ln.num === 1) ln.restart = true;
+    const { number, restarted } = lists.step(ln);
+    if (!restarted) delete ln.restart;
+    delete ln.num;
     // a line that wouldn't be written back exactly is kept as it was
     if (line.trim() && lineMarkdown(ln, number, { asLoaded: true }) !== line) {
       out.push({ kind: null, runs: [{ t: line, f: new Set() }], raw: line, code: false });
@@ -230,6 +233,8 @@ function parseLine(line) {
     } else {
       kind = "ol"; body = m[10];
       if (m[7] || m[9] !== ". ") mark = "ol:" + m[7] + "\u0000" + m[9];
+      // (RossDraft 1.7.0) its number as written: a 1 where the list would go on is a fresh start
+      return { kind, mark, runs: inlineRuns(body), src: line, num: parseInt(m[8], 10) };
     }
   }
   return { kind, mark, runs: inlineRuns(body), src: line };
@@ -260,20 +265,24 @@ export class ListState {
       for (const k2 of [...lists.keys()]) if (+k2.split("|")[1] === depth) lists.delete(k2);
       lists.set(key, 0);
     }
+    // (RossDraft 1.7.0) Restart Numbering at 1: this item starts its list again
+    let restarted = false;
+    if (ln.kind === "ol" && ln.restart && lists.get(key) > 0) { lists.set(key, 0); restarted = true; }
     lists.set(key, lists.get(key) + 1);
-    return { depth, number: lists.get(key) };
+    return { depth, number: lists.get(key), restarted };
   }
 }
 
 export function listLayout(lines) {
   const st = new ListState();
-  const depthOf = [], numbers = [];
+  const depthOf = [], numbers = [], restarts = [];
   for (const ln of lines) {
     const r = st.step(ln);
     depthOf.push(r.depth);
     numbers.push(r.number);
+    restarts.push(!!r.restarted);
   }
-  return { depthOf, numbers };
+  return { depthOf, numbers, restarts };
 }
 
 function isList(ln) { return ln.kind === "ul" || ln.kind === "ol"; }
@@ -466,4 +475,17 @@ export function titleAsHeading(text, level) {
     }
   }
   return "";
+}
+
+// (RossDraft 1.7.0) a numbered list's number by its level, as Word's multilevel list: 1. / a. / i. / 1. ...
+export function numberLabel(n, depth) {
+  const k = ((depth || 1) - 1) % 3;
+  if (k === 1) { let s = ""; while (n > 0) { n--; s = String.fromCharCode(97 + (n % 26)) + s; n = Math.floor(n / 26); } return s; }
+  if (k === 2) {
+    const R = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
+    let s = "";
+    for (const [v, t] of R) while (n >= v) { s += t; n -= v; }
+    return s;
+  }
+  return String(n);
 }

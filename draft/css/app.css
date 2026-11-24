@@ -181,6 +181,16 @@ button { font: inherit; color: inherit; }
   border-radius: 4px; background: var(--paper); color: var(--ink, inherit); }
 .cform textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .cform .cquote { font-style: italic; color: var(--ui-muted); }
+/* RossDraft 1.7.0: a comment's words with bold, italic, underline and highlighting */
+.cform .crich { font-size: 15px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper);
+  color: var(--ink, inherit); min-height: 7.5em; max-height: 50vh; overflow-y: auto; white-space: pre-wrap; outline: none; }
+.cform .crich:focus { border-color: var(--accent, #3a6ea5); }
+.cform .cbar { display: flex; gap: 4px; margin-bottom: -6px; }
+.cform .cfmt { min-width: 32px; min-height: 28px; border: 1px solid var(--line); border-radius: 3px; background: var(--ui);
+  color: var(--ui-ink); font: inherit; font-size: 14px; cursor: pointer; }
+.cform .cfmt-b { font-weight: 700; } .cform .cfmt-i { font-style: italic; } .cform .cfmt-u { text-decoration: underline; }
+.cform .cfmt-h { background: #fff176; color: #222; }
+.cform .crich mark, .cpanel .ctext mark { background: #fff176; color: #222; }
 .head .hcomments { flex: none; border: 1px solid currentColor; border-radius: 10px; background: none; color: inherit;
   font: inherit; font-size: 12px; font-weight: 400; padding: 0 8px; opacity: .8; cursor: pointer; }
 .head .hcomments.on { opacity: 1; background: rgba(255,255,255,.15); }
@@ -800,3 +810,18 @@ body:not(.classic) #outline .olhead, body:not(.classic) #outline .olempty, body:
 body:not(.classic) #outline .olrow { color: var(--side-ink); }
 body:not(.classic) #outline .olrow:hover { background: var(--side-hover); }
 body:not(.classic) #outline .olrow.cur { background: var(--side-sel); color: #fff; }
+
+/* RossDraft 1.7.0: the Bookmark dialog */
+.bmbox label { display: block; margin-bottom: 10px; }
+.bmbox label input { display: block; width: 100%; margin-top: 6px; }
+.bmbox .bmlist { max-height: 40vh; overflow: auto; }
+.bmbox .bmrow { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.bmbox .bmrow small { color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* RossDraft 1.7.0: Two Pages Side by Side — the page flows into columns of the scroller's height, two to a view */
+body.spread .scroller { overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
+body.spread .page { box-sizing: border-box; height: var(--spread-h, 70vh); width: var(--spread-w, 90vw); max-width: none;
+  margin: 24px; padding: 40px 44px; column-count: 2; column-gap: 88px; column-fill: auto; column-rule: 1px solid var(--line);
+  border-radius: 4px; }
+body.spread .page > .ln { break-inside: avoid-column; }
+body.spread .page > .ln.title { break-before: avoid; }

@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.8.3";
-import * as wordio from "./wordio.js?v=1.8.3";
-import { blockers, patchDocx, sigOf, readComments, commentEdit } from "./wordpatch.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.22";
+import * as md from "./md.js?v=1.9.22-d1.7.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.7.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit } from "./wordpatch.js?v=1.9.22-d1.7.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.7.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -403,6 +403,53 @@ export class ProjectStore {
     const now = this.scenes.get(n.raw.id);
     if (now) { now.shown = keep; now.shownTitle = n.title(); }
     return n.comments;
+  }
+
+  // RossDraft 1.7.0: bookmarks in this entry's Word file (Word's own, as Ross Writer's)
+  async bookmarks(n) {
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc && n.raw && !n.raw.pdf) { try { await this.load(n); } catch (e) { return []; } sc = this.scenes.get(n.raw.id); }
+    if (!sc || !sc.files) return [];
+    try { return await readBookmarks(sc.files); } catch (e) { return []; }
+  }
+
+  async bookmarkOp(n, op) {
+    const sc = this.scenes.get(n.raw.id);
+    if (!sc || !sc.files) throw new Error("This entry has no Word file to keep a bookmark in yet: type something in it first.");
+    const o = { ...op };
+    if (op.kind === "add") {
+      if (op.line < 1) throw new Error("A bookmark goes in the scene's words, not on its title.");
+      [o.sp, o.so] = this.placeOf(sc, op.pageLines, op.line, op.pos);
+    }
+    const blob = await bookmarkEdit(sc.files, o);
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    const keep = n.text;
+    await this.load(n, true);
+    n.text = keep;
+    const now = this.scenes.get(n.raw.id);
+    if (now) { now.shown = keep; now.shownTitle = n.title(); }
+  }
+
+  // RossDraft 1.7.0: Remove Text Colours from this entry's Word file (-> how many places)
+  async stripColours(n) {
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc && n.raw && !n.raw.pdf) { try { await this.load(n); } catch (e) { return 0; } sc = this.scenes.get(n.raw.id); }
+    if (!sc || !sc.files) return 0;              // (a read-only scene too: only the lettering's colour changes)
+    const got = await stripColours(sc.files);
+    if (!got) return 0;
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, got.blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    const keep = n.text;
+    await this.load(n, true);
+    n.text = keep;
+    const now = this.scenes.get(n.raw.id);
+    if (now) { now.shown = keep; now.shownTitle = n.title(); }
+    return got.count;
   }
 
   async findTemplate() {

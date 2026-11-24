@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22";
+import * as md from "./md.js?v=1.9.22-d1.7.0";
 
 const HL = "#ffd54f";
 
@@ -43,6 +43,7 @@ export function lineElement(ln) {
   div.className = "ln";
   if (ln.kind) div.dataset.kind = ln.kind;
   if (ln.mark) div.dataset.mark = ln.mark;
+  if (ln.restart) div.dataset.restart = "1";
   if (ln.raw != null) div.dataset.raw = ln.raw;
   if (ln.code) div.dataset.code = "1";
   if (ln.align && !ln.code && md.ALIGNS.includes(ln.align)) div.dataset.align = ln.align;
@@ -130,6 +131,7 @@ function flagsOf(node, line, heading) {
 export function readLine(div) {
   const kind = div.dataset.kind || null;
   const ln = { kind, mark: div.dataset.mark || null, runs: [] };
+  if (div.dataset.restart && kind === "ol") ln.restart = true;
   if (div.dataset.raw != null) ln.raw = div.dataset.raw;
   if (div.dataset.code) ln.code = true;
   if (div.dataset.align && !ln.code && md.ALIGNS.includes(div.dataset.align)) ln.align = div.dataset.align;
@@ -342,12 +344,14 @@ export function relayout(page) {
   for (const div of lines) {
     if (div.classList.contains("jdiv")) { st = new md.ListState(); titled = false; continue; }   // the next note
     const ln = { kind: div.dataset.kind || null, mark: div.dataset.mark || null,
-      raw: div.dataset.raw != null ? div.dataset.raw : null, code: !!div.dataset.code };
+      raw: div.dataset.raw != null ? div.dataset.raw : null, code: !!div.dataset.code, restart: !!div.dataset.restart };
     const { depth, number } = st.step(ln);
     if (depth) div.dataset.depth = depth; else delete div.dataset.depth;
     if (number != null && ln.kind === "ol") {
-      let label = number + ".";
-      if (ln.mark && ln.mark.startsWith("ol:")) label = number + ln.mark.split("\u0000")[1].trim();
+      // (RossDraft 1.7.0) 1. / a. / i. by level, as in Word and Ross Writer
+      const shown = md.numberLabel(number, depth);
+      let label = shown + ".";
+      if (ln.mark && ln.mark.startsWith("ol:")) label = shown + ln.mark.split("\u0000")[1].trim();
       div.dataset.n = label;
     } else delete div.dataset.n;
     const has = !titled && lineText(div).replace(md.OBJ, "").trim();

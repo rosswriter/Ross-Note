@@ -7,16 +7,25 @@
 // and the index when the tree changed (with Scrivener's own copy, binder.autosave, and its checksums of the files
 // changed taken out, so Scrivener reads them afresh). Every other file is left exactly as it was. The first save
 // in a session keeps a zip of the whole project in RossDraft's storage (the last 10). Entries with Scrivener's own
-// inline notes, comments or footnotes, tables or pictures are read-only (as in Ross Writer), research files too.
+// inline footnotes, linked footnotes, tables or pictures are read-only (as in Ross Writer), research files too.
+// RossDraft 1.7.0: Scrivener's comments can be read, added, changed and deleted, and stay where they are as you
+// edit: Scrivener 3's linked comments (the words carry a scrivcmt:// link; the comment's words are in
+// content.comments beside content.rtf), Scrivener 1 and 2's (RTF annotations, \chatn) and inline notes
+// ({\Scrv_annot …}, in the text itself). Each is kept on its words: on saving, its words are found again in the
+// text as it now is (the nearest place they occur), so Scrivener finds them where it left them.
 // RossDraft's own settings for it (targets, status, Compile) are kept in Settings/rossdraft.json.
 
-import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.22";
-import * as md from "./md.js?v=1.9.22";
-import * as wordio from "./wordio.js?v=1.8.3";
-import * as rtf from "./rtf.js?v=1.9.22";
+import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.22-d1.7.0";
+import * as md from "./md.js?v=1.9.22-d1.7.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.7.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.7.0";
 
 const SPECIAL = new Set(["DraftFolder", "ResearchFolder", "TrashFolder"]);
-const UNSAFE = ["Scrv_annot", "Scrv_fn", "scrivcmt://", "\\chatn"];
+const UNSAFE = ["Scrv_fn"];
+// RossDraft 1.7.0: an inline note, {\Scrv_annot \color={…} \text=…\end_Scrv_annot}, and the mark it's read as
+const INLINE = /\{\\Scrv_annot\s*(\\color=\{[^{}]*\})?\s*\\text=([\s\S]*?)\\end_Scrv_annot\s*\}/g;
+const MARK = "\uE010";
+const RED = "\\color={\\R=1.0\\G=0.0\\B=0.0}";
 // Scrivener 3's named styles, kept as text in its RTF: <$Scr_Ps::0>…<!$Scr_Ps::0>
 const STYLE_TAG = /<!?\$Scr_[A-Za-z]+::\d+>/g;
 const BACKUPS = 10;
@@ -83,6 +92,84 @@ export function nearestFlag(rgb) {
 }
 
 // ------------------------------------------------------------------ the store
+
+// ------------------------------------------------------------ RossDraft 1.7.0: comments kept in place
+const plainOf = (ln) => (ln.runs || []).map((r) => (r.img ? "" : r.t || "")).join("");
+const xmlEsc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function rtfText(t) {
+  return "{\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0{\\fonttbl{\\f0\\fnil Helvetica;}}\n\\pard\\plain\\f0\\fs24 " +
+    String(t).split("\n").map(rtf.esc).join("\\par\n") + "}";
+}
+function wordsOfRtf(s) {
+  try { return rtf.readRtf(bytesOf(s)).lines.map(plainOf).join("\n").trim(); } catch (e) { return ""; }
+}
+// Word's DTTM (the date in \atndate)
+function dttmOf(iso) {
+  const d = new Date(iso || Date.now());
+  if (isNaN(d)) return null;
+  return ((d.getUTCMinutes()) | (d.getUTCHours() << 6) | (d.getUTCDate() << 11) | ((d.getUTCMonth() + 1) << 16) |
+    ((d.getUTCFullYear() - 1900) << 20) | (d.getUTCDay() << 29)) >>> 0;
+}
+// where the words are now: the place they occur nearest where they were; else the word nearest there
+function placeAnchor(a, plain) {
+  const w = a.words || "";
+  if (w) {
+    let best = -1;
+    for (let k = plain.indexOf(w); k >= 0; k = plain.indexOf(w, k + 1)) {
+      if (best < 0 || Math.abs(k - a.start) < Math.abs(best - a.start)) best = k;
+    }
+    if (best >= 0) return [best, best + w.length];
+  }
+  let at = Math.max(0, Math.min(plain.length, a.start));
+  if (a.point && !w) return [at, at];
+  // the word at (or just before) that place
+  const isW = (c) => /[\p{L}\p{N}'’-]/u.test(c || "");
+  let b = at;
+  while (b > 0 && !isW(plain[b - 1]) && !isW(plain[b])) b--;
+  let s0 = b, e0 = b;
+  while (s0 > 0 && isW(plain[s0 - 1])) s0--;
+  while (e0 < plain.length && isW(plain[e0])) e0++;
+  return e0 > s0 ? [s0, e0] : [at, at];
+}
+// the raw RTF put into the lines at plain-text places: [{ off, raw, order }], order: ends, marks, then starts
+function putRaw(wl, inserts) {
+  inserts.sort((x, y) => x.off - y.off || x.order - y.order);
+  let base = 0, k = 0;
+  for (const ln of wl) {
+    const len = plainOf(ln).length;
+    const here = [];
+    while (k < inserts.length && inserts[k].off <= base + len) here.push(inserts[k++]);
+    if (here.length) {
+      const out = [];
+      let pos = 0, h = 0;
+      for (const r of ln.runs || []) {
+        if (r.img || r.raw != null) { out.push(r); continue; }
+        const t = r.t || "";
+        let from = 0;
+        while (h < here.length && here[h].off - base <= pos + t.length) {
+          const cut = here[h].off - base - pos;
+          if (cut > from) out.push({ ...r, t: t.slice(from, cut) });
+          from = Math.max(from, cut);
+          out.push({ raw: here[h].raw });
+          h++;
+        }
+        if (from < t.length) out.push({ ...r, t: t.slice(from) });
+        pos += t.length;
+      }
+      while (h < here.length) out.push({ raw: here[h++].raw });
+      ln.runs = out;
+    }
+    base += len + 1;
+  }
+  while (k < inserts.length) { if (wl.length) (wl[wl.length - 1].runs = wl[wl.length - 1].runs || []).push({ raw: inserts[k].raw }); k++; }
+}
+
+// the comments, as the list beside the page shows them
+function commentList(anchors) {
+  return anchors.map((a, k) => ({ id: String(k + 1), author: a.author || (a.kind === "inline" ? "Inline note" : "Comment"),
+    initials: a.initials || "", date: a.date || "", text: a.text || "", words: a.words || "", parent: null, done: false, scriv: a.kind }));
+}
+
 export class ScrivStore extends ProjectStore {
   constructor(dirHandle, fileName) {
     super(dirHandle, fileName);
@@ -223,8 +310,9 @@ export class ScrivStore extends ProjectStore {
         if (this.v3) { for await (const [name, h] of d.entries()) if (h.kind === "file" && name.startsWith("content.") && !name.endsWith(".rtf")) other = name; }
         else for (const name of this.docNames) if (name.startsWith(P.stem + ".") && !name.endsWith(".rtf")) other = name;
       } catch (e) { other = null; }
-      this.scenes.set(raw.id, { mtime: 0, look: null, paras: [], readOnly: null });
+      this.scenes.set(raw.id, { mtime: 0, look: null, paras: [], readOnly: null, anchors: [], comments: [], entries: new Map(), linkIds: [] });
       n.modified = 0;
+      if (!other) n.comments = [];
       if (other) {
         info.other = P.base + "/" + other;
         if (/\.pdf$/i.test(other)) raw.pdf = info.other;
@@ -241,19 +329,28 @@ export class ScrivStore extends ProjectStore {
     if (!force && known && known.mtime === file.lastModified && known.text != null) {
       n.text = known.shown != null && known.shownTitle === n.title() ? known.shown : md.serialize([this.titleLine(n), ...known.noteLines], { dir: [] });
       n.readOnly = known.readOnly;
+      n.comments = known.comments || [];
       n.modified = file.lastModified;
       return n.text;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
     const s = latin1(bytes);
     const why = [];
-    if (UNSAFE.some((m) => s.includes(m))) why.push("Scrivener's own inline notes, comments or footnotes");
-    const got = rtf.readRtf(bytesOf(s.replace(STYLE_TAG, "")));
-    for (const b of got.blockers) if (!why.includes(b)) why.push(b);
+    if (UNSAFE.some((m) => s.includes(m))) why.push("Scrivener's own inline footnotes");
+    // 1.7.0: inline notes are read as marks in the text, and kept beside it
+    const inl = [];
+    const s2 = s.replace(INLINE, (m0, col, txt) => {
+      inl.push({ color: col || RED, text: wordsOfRtf("{\\rtf1\\ansi " + txt + "}") });
+      return "{\\uc1\\u-8176?}";
+    });
+    const got = rtf.readRtf(bytesOf(s2.replace(STYLE_TAG, "")));
+    const cm = await this.commentsIn(P, got, inl, why);
+    for (const b of got.blockers) if (b !== "comments" && !why.includes(b)) why.push(b);
     const noteLines = wordio.toNoteLines(got.lines, () => null);
     const ro = this.readOnlyAll || (why.length ? why : null);
     const text = md.serialize([this.titleLine(n), ...noteLines], { dir: [] });
-    this.scenes.set(raw.id, { mtime: file.lastModified, look: got.look, paras: got.paras, readOnly: ro, noteLines, text });
+    this.scenes.set(raw.id, { mtime: file.lastModified, look: got.look, paras: got.paras, readOnly: ro, noteLines, text, ...cm });
+    n.comments = cm.comments;
     n.readOnly = ro;
     n.modified = file.lastModified;
     n.text = text;
@@ -315,12 +412,19 @@ export class ScrivStore extends ProjectStore {
     while (wl.length && isEmpty(wl[0])) wl.shift();
     while (wl.length && isEmpty(wl[wl.length - 1])) wl.pop();
     const sc = this.scenes.get(raw.id) || {};
+    const linked = this.placeComments(sc, wl);
     const out = await rtf.writeRtf(wl, { look: sc.look || { font: "Times New Roman", fs: 24, sl: 0, slmult: 0 }, paras: sc.paras || [],
       pictureBytes: (img) => this.pictureBytes(img) });
     await this.backup();
     const P = this.paths(info);
     await writeAt(this.handle, P.content, bytesOf(out));
     this.changed.add(P.content);
+    // Scrivener 3's linked comments: their words, in content.comments
+    const xml = this.v3 ? this.commentsXml(sc, linked) : null;
+    if (xml != null) {
+      await writeAt(this.handle, P.base + "/content.comments", enc.encode(xml));
+      this.changed.add(P.base + "/content.comments");
+    }
     info.el.setAttribute("Modified", now());
     this.treeDirty = true;
     await this.saveProject();
@@ -328,6 +432,167 @@ export class ScrivStore extends ProjectStore {
     n.text = text;
     const k = this.scenes.get(raw.id);
     if (k) { k.shown = text; k.shownTitle = n.title(); }
+  }
+
+
+  // ------------------------------------------------------------ RossDraft 1.7.0: Scrivener's comments
+  // what readRtf found, made into comments kept on their words: { anchors, comments, entries, linkIds }
+  async commentsIn(P, got, inl, why) {
+    const entries = new Map();
+    if (this.v3) {
+      const cf = await fileAt(this.handle, P.base + "/content.comments");
+      if (cf) {
+        try {
+          const doc = new DOMParser().parseFromString((await cf.text()).replace(/^﻿/, ""), "application/xml");
+          for (const el of doc.getElementsByTagName("Comment")) {
+            entries.set(el.getAttribute("ID"), { attrs: [...el.attributes].map((a) => [a.name, a.value]), rtf: el.textContent,
+              footnote: /^yes$/i.test(el.getAttribute("Footnote") || "") });
+          }
+        } catch (e) { /* none read */ }
+      }
+    }
+    const lines = got.lines;
+    const starts = [];
+    let b = 0;
+    for (const ln of lines) { starts.push(b); b += plainOf(ln).length + 1; }
+    const offOf = (p) => (p ? (starts[p.line] != null ? starts[p.line] : Math.max(0, b - 1)) + p.pos : null);
+    // the inline notes' marks and the linked comments' words, taken out of the text (at their places as read)
+    const marks = [], links = [];
+    let base = 0;
+    for (const ln of lines) {
+      let pos = 0;
+      const out = [];
+      for (const r of ln.runs || []) {
+        if (r.img) { out.push(r); continue; }
+        const t = r.t || "";
+        const id = r.href && r.href.startsWith("scrivcmt://") ? r.href.slice(11) : null;
+        let clean = "";
+        for (let i = 0; i < t.length; i++) { if (t[i] === MARK) marks.push(base + pos + i); else clean += t[i]; }
+        if (id) {
+          const last = links[links.length - 1];
+          if (last && last.id === id && last.e === base + pos) last.e = base + pos + t.length;
+          else links.push({ id, s: base + pos, e: base + pos + t.length });
+        }
+        const nr = { ...r, t: clean, href: id ? null : r.href };
+        const prev = out[out.length - 1];
+        const same = (x, y) => [...(x.f || [])].sort().join("") === [...(y.f || [])].sort().join("");
+        if (!clean) { /* nothing left */ }
+        else if (prev && !prev.img && !prev.href && !nr.href && same(prev, nr)) prev.t += clean;
+        else out.push(nr);
+        pos += t.length;
+      }
+      ln.runs = out;
+      base += pos + 1;
+    }
+    const adj = (o) => o - marks.filter((m) => m < o).length;
+    const plain = lines.map(plainOf).join("\n");
+    const anchors = [];
+    // a note at a place, on the word before it (and what came between)
+    const pointAt = (at) => {
+      const m = /([\p{L}\p{N}'’-]+)([^\p{L}\p{N}]*)$/u.exec(plain.slice(Math.max(0, at - 300), at));
+      return m ? { start: at - m[0].length, end: at - m[2].length, words: m[1], tail: m[2], point: true } : { start: at, end: at, words: "", tail: "", point: true };
+    };
+    marks.forEach((m, k) => anchors.push({ kind: "inline", ...pointAt(adj(m)), text: inl[k] ? inl[k].text : "", color: inl[k] ? inl[k].color : RED }));
+    for (const c of got.comments || []) {
+      const who = { text: c.text, author: c.author, initials: c.initials, date: c.date };
+      if (c.span) {
+        const s0 = adj(offOf(c.span[0])), e0 = adj(offOf(c.span[1]));
+        anchors.push({ kind: "atn", start: s0, end: e0, words: plain.slice(s0, e0), ...who });
+      } else anchors.push({ kind: "atn", ...pointAt(adj(offOf(c.at) || 0)), ...who });
+    }
+    for (const l of links) {
+      const e = entries.get(l.id);
+      if (e && e.footnote) { if (!why.includes("Scrivener's own linked footnotes")) why.push("Scrivener's own linked footnotes"); continue; }
+      const s0 = adj(l.s), e0 = adj(l.e);
+      const text = e ? wordsOfRtf(e.rtf) : "";
+      anchors.push({ kind: "link", id: l.id, start: s0, end: e0, words: plain.slice(s0, e0), text, text0: text });
+    }
+    anchors.sort((x, y) => x.start - y.start);
+    return { anchors, entries, linkIds: links.map((l) => l.id), comments: commentList(anchors) };
+  }
+
+  // the comments put back into the lines being written, each on its words as they now are; gives the linked ones
+  placeComments(sc, wl) {
+    const anchors = sc.anchors || [];
+    if (!anchors.length) return [];
+    const plain = wl.map(plainOf).join("\n");
+    const ins = [], linked = [];
+    let ref = 0;
+    for (const a of anchors) {
+      let [s0, e0] = placeAnchor(a, plain);
+      const nl = plain.indexOf("\n", s0);
+      if (nl >= 0 && e0 > nl) e0 = nl;          // within its paragraph
+      let at = e0;
+      if (a.point && a.tail && plain.slice(e0, e0 + a.tail.length) === a.tail) at += a.tail.length;
+      if (a.kind === "inline") {
+        ins.push({ off: at, order: 1, raw: `{\\Scrv_annot ${a.color || RED} \\text=${rtf.esc(a.text || "")}\\end_Scrv_annot}` });
+      } else if (a.kind === "link") {
+        const open = `{\\field{\\*\\fldinst{HYPERLINK "scrivcmt://${a.id}"}}{\\fldrslt `;
+        if (e0 > s0) { ins.push({ off: s0, order: 2, raw: open }); ins.push({ off: e0, order: 0, raw: "}}" }); }
+        else ins.push({ off: s0, order: 1, raw: open + "}}" });
+        linked.push(a);
+      } else {
+        ref++;
+        const d = dttmOf(a.date);
+        const note = `{\\*\\atnid ${rtf.esc(a.initials || "")}}{\\*\\atnauthor ${rtf.esc(a.author || "")}}\\chatn` +
+          `{\\*\\annotation{\\*\\atnref ${ref}}${d != null && a.date ? `{\\*\\atndate ${d}}` : ""} ${(a.text || "").split("\n").map(rtf.esc).join("\\par ")}}`;
+        if (a.point || e0 <= s0) ins.push({ off: at, order: 1, raw: note });
+        else { ins.push({ off: s0, order: 2, raw: `{\\*\\atrfstart ${ref}}` }); ins.push({ off: e0, order: 0, raw: `{\\*\\atrfend ${ref}}` + note }); }
+      }
+    }
+    putRaw(wl, ins);
+    return linked;
+  }
+
+  // content.comments as it should now be (null: as it is)
+  commentsXml(sc, linked) {
+    const entries = new Map(sc.entries || []);
+    let dirty = false;
+    for (const id of sc.linkIds || []) if (!linked.some((a) => a.id === id) && entries.has(id)) { entries.delete(id); dirty = true; }
+    for (const a of linked) {
+      const e = entries.get(a.id);
+      if (e && a.text === a.text0) continue;
+      entries.set(a.id, { attrs: e ? e.attrs : [["ID", a.id], ["Footnote", "No"]], rtf: rtfText(a.text || "") });
+      dirty = true;
+    }
+    if (!dirty) return null;
+    const out = ['<?xml version="1.0" encoding="UTF-8"?>', "<Comments>"];
+    for (const [, e] of entries) {
+      out.push(`<Comment ${e.attrs.map(([k, v]) => `${k}="${xmlEsc(v)}"`).join(" ")}><![CDATA[${e.rtf.split("]]>").join("]]]]><![CDATA[>")}]]></Comment>`);
+    }
+    out.push("</Comments>", "");
+    return out.join("\n");
+  }
+
+  // a change to an entry's comments ({kind: add|edit|delete}, as ProjectStore.commentOp); no replies or resolving
+  async commentOp(n, op) {
+    if (this.readOnlyAll) throw new Error("This project is open read-only (Scrivener has it open).");
+    if (n.readOnly) throw new Error(`“${n.title()}” has ${n.readOnly.join(", ")}: edit it in Scrivener.`);
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc || !sc.anchors) { const keep = n.text; await this.load(n); n.text = keep; sc = this.scenes.get(n.raw.id); }
+    const anchors = sc.anchors = (sc.anchors || []).map((a) => ({ ...a }));
+    const k = op.id != null ? +op.id - 1 : -1;
+    if (op.kind === "add") {
+      const L = op.pageLines || [];
+      if (op.a.line < 1) throw new Error("Select words in the text, not the title.");
+      let off = 0;
+      for (let i = 1; i < op.a.line; i++) off += (L[i] || "").length + 1;
+      const end = op.b.line === op.a.line ? op.b.pos : (L[op.a.line] || "").length;
+      const words = (L[op.a.line] || "").slice(op.a.pos, end);
+      const add = { start: off + op.a.pos, end: off + end, words, text: op.text, author: op.author || "", initials: op.initials || "",
+        date: new Date().toISOString().replace(/\.\d+Z$/, "Z") };
+      if (this.v3) anchors.push({ kind: "link", id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).toUpperCase(), ...add });
+      else anchors.push({ kind: "atn", ...add });
+      anchors.sort((x, y) => x.start - y.start);
+    } else if (op.kind === "edit") {
+      if (!anchors[k]) throw new Error("That comment isn't there any more.");
+      anchors[k].text = op.text;
+    } else if (op.kind === "delete") {
+      if (!anchors[k]) throw new Error("That comment isn't there any more.");
+      anchors.splice(k, 1);
+    } else throw new Error("Scrivener's comments have no replies or resolving: edit or delete them instead.");
+    await this.write(n, n.text);
+    return n.comments;
   }
 
   // ------------------------------------------------------------ the index, notes and synopses
