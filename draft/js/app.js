@@ -1,14 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.7.1";
-import * as ed from "./editor.js?v=1.9.22-d1.7.1";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.7.1";
-import * as spell from "./spell.js?v=1.9.22-d1.7.1";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.7.1";
+import * as md from "./md.js?v=1.9.22-d1.8.1";
+import * as ed from "./editor.js?v=1.9.22-d1.8.1";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.8.1";
+import * as spell from "./spell.js?v=1.9.22-d1.8.1";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.8.1";
 
 if (ED.project) alsoScrivener();
+md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.7.1";
+import { ED } from "./edition.js?v=1.9.22-d1.8.1";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -85,6 +86,7 @@ function applyLook() {
   const s = S.settings;
   document.documentElement.classList.toggle("dark", !!s.dark);
   document.body.classList.toggle("dark", !!s.dark);
+  document.body.classList.toggle("gridlines", !!s.gridlines);     // (1.8.0) faint guides where a table has no lines
   $("app").classList.toggle("dark", !!s.dark);
   document.documentElement.style.setProperty("--size", s.size + "px");
   // 1.9.21: the interface size (menus, bars, the list, dialogs; the page keeps its own text size), and darker text
@@ -693,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.7.1")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.8.1")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -820,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.7.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.8.1");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1642,7 +1644,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
+    const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1774,7 +1776,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.7.1");
+    const EP = await import("./epub.js?v=1.9.22-d1.8.1");
     return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
@@ -1795,7 +1797,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.7.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.8.1");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1836,7 +1838,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2644,7 +2646,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.7.1"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.8.1"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2668,7 +2670,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.7.1");
+  const X = await import("./export.js?v=1.9.22-d1.8.1");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2696,7 +2698,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.7.1");
+  const X = await import("./export.js?v=1.9.22-d1.8.1");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3413,6 +3415,12 @@ function rememberCaret() { savedCaret = { pane: A, c: ed.caret(page) }; }
 
 onPages("beforeinput", (e) => {
   if (A.joined) { guardJoined(e, A); if (e.defaultPrevented) return; }
+  // (1.8.0) in a table's cell: the browser's own typing there (Enter: a new paragraph in the cell); nothing in a
+  // scene that can't be written
+  if (cellAt(e.target) || cellOfSel()) {
+    if (page.contentEditable === "false") e.preventDefault();
+    return;
+  }
   if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
     e.preventDefault();
     enter();
@@ -3501,6 +3509,7 @@ const INLINE = [
 ];
 
 onPages("input", (e) => {
+  if (cellAt(e.target) || cellOfSel()) { tidyCell(cellAt(e.target) || cellOfSel()); changed(); return; }
   if (ed.tidy(page)) { /* put right */ }
   if (e.inputType === "insertText" && e.data) {
     const ch = e.data[e.data.length - 1];
@@ -3685,6 +3694,14 @@ document.addEventListener("keydown", (e) => {
 onPages("paste", async (e) => {
   const dt = e.clipboardData;
   if (!dt) return;
+  if (cellOfSel()) {
+    // (1.8.0) into a table's cell: the words only
+    e.preventDefault();
+    if (page.contentEditable === "false") return;
+    const t = (dt.getData("text/plain") || "").replace(/\r\n?/g, "\n");
+    if (t) document.execCommand("insertText", false, t);
+    return;
+  }
   const files = [...dt.files].filter((f) => f.type.startsWith("image/"));
   e.preventDefault();
   if (files.length) { await addPictures(files); return; }
@@ -3738,6 +3755,7 @@ function pasteLines(lines, plain) {
 
 onPages("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
 onPages("drop", async (e) => {
+  if (cellAt(e.target)) { e.preventDefault(); return; }
   const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
   if (!files.length) return;
   e.preventDefault();
@@ -3971,7 +3989,7 @@ const MENU_ORDER = {
   fileDrop: ["New Note Under This One", "Save As RTF…", "Delete Note…"],
   edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Paste as Plain Text", "Select All", "-",
     "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", /^List All/, "Search the Notes (the list)", "-", "Go To…"],
-  insert: ["Picture…", "Keep Photos at Full Size", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
+  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
     "Bookmark…", "-", "Date", "Date and Time"],
   format: ["Fonts…", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Change Case", "-",
     "Heading 1", "Heading 2", "Heading 3", "Normal Text", "-", "Bullets and Numbering", "Indent (as a Quote)", "-",
@@ -4082,6 +4100,7 @@ function menuItemsAll(name) {
       { label: "Date and Time", fn: COMMANDS.datetime, keys: "Ctrl+Shift+;" },
       "-",
       { label: "Picture…", fn: COMMANDS.picture },
+      ...(ED.project ? [{ label: "Table", sub: tableItems() }] : []),
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
       ...(ED.project ? [{ label: "Bookmark…", fn: insertBookmark, keys: "Ctrl+Shift+F5", off: !A.note }] : []),
@@ -4531,7 +4550,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.7.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.8.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4679,7 +4698,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.7.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.8.1");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4751,7 +4770,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.7.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.8.1");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4955,7 +4974,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -4992,7 +5011,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.7.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5031,7 +5050,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.7.1"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.8.1"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5323,7 +5342,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.7.1");
+  const R = await import("./rtf.js?v=1.9.22-d1.8.1");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5415,7 +5434,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -5977,7 +5996,8 @@ function pageMenu(e, p) {
   const canComment = !!(S.store && S.store.isProject && p.note && p.note.comments);
   items.push({ label: "Comment…", keys: "Ctrl+Alt+M", off: !canComment, fn: addComment });
   items.push({ label: "Highlight", keys: "Ctrl+Shift+H", off: ro || !has, fn: COMMANDS.highlight });
-  if (ED.project) items.push({ label: "Bullets and Numbering", off: ro, sub: listItems() });
+  if (ED.project) items.push({ label: "Bullets and Numbering", off: ro || !!cellOfSel(), sub: listItems() });
+  if (ED.project) items.push({ label: "Table", sub: tableItems() });
   // 1.9.1: the split, straight from here
   const sp = S.settings.split;
   items.push("-");
@@ -7242,7 +7262,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.7.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -7262,6 +7282,376 @@ async function saveAsBlob(st, n, name, ext) {
 // Tab / Shift+Tab (and Ctrl+M / Ctrl+Shift+M) on a list item: a level in or out (bullets • ◦ ▪, numbers 1. a. i.,
 // saved as Word's list levels); Restart Numbering at 1 / Continue Numbering; all in Format ▸ Bullets and
 // Numbering and on right-click.
+
+// ------------------------------------------------------------------ RossDraft 1.8.0: tables, as Ross Writer's
+// A table is one line of the page (editor.js tableElement): its cells are typed in as Ross Writer's are; Tab and
+// Shift+Tab go from cell to cell (Tab in the last cell adds a row); Up and Down leave the table at its top and
+// foot. Insert ▸ Table… puts one in; Insert ▸ Table (and the right-click menu, in a cell) has the rows, columns,
+// Make Columns Equal, Hide Table Lines and Show Table Gridlines. Saved into the scene's Word file (wordpatch:
+// the table's own settings kept), or as a Markdown table in a note.
+function cellAt(node) {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const td = el && el.closest ? el.closest("td.rcell") : null;
+  return td && P.some((p) => p.page.contains(td)) ? td : null;
+}
+function cellOfSel() {
+  const s = window.getSelection();
+  return s.rangeCount ? cellAt(s.anchorNode) : null;
+}
+function tableOf(td) {
+  const tr = td.parentElement, tb = tr.parentElement;
+  return { tr, tb, line: td.closest(".tline"), r: [...tb.children].indexOf(tr), c: [...tr.children].indexOf(td) };
+}
+// a cell kept as paragraphs (<div class="cp">) however the typing left it
+function tidyCell(td) {
+  if (!td) return;
+  if (!td.firstChild) { td.appendChild(cellPara()); return; }
+  let loose = null;
+  for (const c of [...td.childNodes]) {
+    if (c.nodeType === 1 && (c.tagName === "DIV" || c.tagName === "P")) {
+      loose = null;
+      if (c.tagName === "P" || !c.classList.contains("cp")) {
+        const d = c.tagName === "P" ? document.createElement("div") : c;
+        if (d !== c) { while (c.firstChild) d.appendChild(c.firstChild); c.replaceWith(d); }
+        d.className = "cp";
+      }
+      continue;
+    }
+    if (c.nodeType === 3 && !c.data && !loose) { c.remove(); continue; }
+    if (c.nodeType === 1 && c.tagName === "BR" && !loose && td.childNodes.length > 1) { c.remove(); continue; }
+    if (!loose) { loose = document.createElement("div"); loose.className = "cp"; c.before(loose); }
+    loose.appendChild(c);
+  }
+}
+function cellPara() {
+  const d = document.createElement("div");
+  d.className = "cp";
+  d.appendChild(document.createElement("br"));
+  return d;
+}
+function newCell() {
+  return ed.cellElement([{ kind: null, runs: [] }]);
+}
+function caretInto(el, atEnd) {
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let t = null, last = null;
+  while ((t = w.nextNode())) { if (!last && !atEnd) { last = t; break; } last = t; }
+  const r = document.createRange();
+  if (last) r.setStart(last, atEnd ? last.data.length : 0);
+  else {
+    const blk = (atEnd ? el.querySelector(".cp:last-child") : el.querySelector(".cp")) || el;
+    r.setStart(blk, 0);
+  }
+  r.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  const host = el.closest ? el.closest("td.rcell") : null;
+  (host || el).focus && (host || el).focus({ preventScroll: true });
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+function tableRO() { return page.contentEditable === "false" || !!(A.note && A.note.readOnly); }
+function tableChanged() { ed.relayout(page); changed(); }
+function insertTableAt(rows, cols) {
+  if (tableRO()) return;
+  if (cellOfSel()) { toast("Not inside a table: put the cursor where the table should go."); return; }
+  const line = caretLine();
+  const cells = Array.from({ length: rows }, () => Array.from({ length: cols }, () => [{ kind: null, runs: [] }]));
+  const tl = ed.lineElement({ kind: "table", runs: [], cells });
+  if (line && line.dataset.kind !== "table" && !ed.lineText(line).trim() && line.previousElementSibling &&
+      !line.previousElementSibling.classList.contains("jdiv")) line.replaceWith(tl);
+  else if (line) line.after(tl);
+  else page.appendChild(tl);
+  // a line after it to go on writing in
+  if (!tl.nextElementSibling || tl.nextElementSibling.classList.contains("jdiv")) tl.after(ed.lineElement({ kind: null, runs: [] }));
+  caretInto(tl.querySelector("td"), false);
+  tableChanged();
+}
+async function insertTableDialog() {
+  if (tableRO()) { toast("This scene can't be changed here."); return; }
+  if (cellOfSel()) { toast("Not inside a table: put the cursor where the table should go."); return; }
+  const keep = ed.caret(page);
+  const box = document.createElement("div");
+  box.className = "cform";
+  box.innerHTML = '<label>Rows<input type="number" class="trows" min="1" max="100" value="3"></label>' +
+    '<label>Columns<input type="number" class="tcols" min="1" max="20" value="3"></label>';
+  setTimeout(() => box.querySelector(".trows").select(), 50);
+  for (const i of box.querySelectorAll("input")) i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("dialog").querySelector(".extra.main").click(); } });
+  const v = await ask("Insert Table", box, [["Insert", "ok", true]]);
+  if (v !== "ok") return;
+  const rows = Math.max(1, Math.min(100, parseInt(box.querySelector(".trows").value, 10) || 3));
+  const cols = Math.max(1, Math.min(20, parseInt(box.querySelector(".tcols").value, 10) || 3));
+  page.focus();
+  if (keep) ed.setCaret(page, keep);
+  insertTableAt(rows, cols);
+}
+function tableRow(where) {
+  const td = cellOfSel();
+  if (!td || tableRO()) return;
+  const { tr } = tableOf(td);
+  const nr = document.createElement("tr");
+  for (let k = 0; k < tr.children.length; k++) nr.appendChild(newCell());
+  if (where > 0) tr.after(nr); else tr.before(nr);
+  caretInto(nr.children[Math.min(tableOf(td).c, nr.children.length - 1)], false);
+  tableChanged();
+}
+function tableCol(where) {
+  const td = cellOfSel();
+  if (!td || tableRO()) return;
+  const { tb, c } = tableOf(td);
+  const t = tb.parentElement;
+  const ws = ed.widthsOf(t);
+  if (ws) {
+    // (1.8.1) the new column takes half of the one it's beside
+    const half = Math.max(300, Math.round(ws[c] / 2));
+    ws[c] = Math.max(300, ws[c] - half);
+    ws.splice(where > 0 ? c + 1 : c, 0, half);
+    ed.setWidths(t, ws);
+  }
+  let first = null;
+  for (const tr of tb.children) {
+    const ref = tr.children[c];
+    const nc = newCell();
+    if (where > 0) ref.after(nc); else ref.before(nc);
+    if (tr === td.parentElement) first = nc;
+  }
+  caretInto(first, false);
+  tableChanged();
+}
+function tableDelete(what) {
+  const td = cellOfSel();
+  if (!td || tableRO()) return;
+  const { tr, tb, line, r, c } = tableOf(td);
+  const nRows = tb.children.length, nCols = tr.children.length;
+  if (what === "table" || (what === "row" && nRows === 1) || (what === "col" && nCols === 1)) {
+    const next = line.nextElementSibling && !line.nextElementSibling.classList.contains("jdiv") ? line.nextElementSibling : null;
+    const prev = line.previousElementSibling;
+    const blank = ed.lineElement({ kind: null, runs: [] });
+    if (!next) line.after(blank);
+    line.remove();
+    const to = next || blank;
+    page.focus();
+    ed.placeCaret(to, 0);
+    tableChanged();
+    toast("Table deleted. Ctrl+Z puts it back.", 1600);
+    return;
+  }
+  if (what === "row") {
+    const to = tb.children[r + 1] || tb.children[r - 1];
+    tr.remove();
+    caretInto(to.children[Math.min(c, to.children.length - 1)], false);
+  } else {
+    const t = tb.parentElement, ws = ed.widthsOf(t);
+    if (ws) {
+      // (1.8.1) its width to the column beside it
+      const gone = ws.splice(c, 1)[0];
+      ws[Math.min(c, ws.length - 1)] += gone;
+      ed.setWidths(t, ws);
+    }
+    for (const row of tb.children) if (row.children[c]) row.children[c].remove();
+    caretInto(tr.children[Math.min(c, tr.children.length - 1)], false);
+  }
+  tableChanged();
+}
+function tableEqual() {
+  const td = cellOfSel();
+  if (!td || tableRO()) return;
+  const line = tableOf(td).line, t = line.querySelector(":scope > table");
+  const ws = ed.widthsOf(t);
+  const n = t.querySelector("tr").children.length;
+  const total = ws ? ws.reduce((a, b) => a + b, 0) : 9000;
+  ed.setWidths(t, Array(n).fill(Math.floor(total / n)));
+  line.dataset.equal = "1";
+  tableChanged();
+  toast("Columns equal (in the Word file).", 1400);
+}
+function tableLines() {
+  const td = cellOfSel();
+  if (!td || tableRO()) return;
+  const line = tableOf(td).line;
+  if (line.dataset.nolines) delete line.dataset.nolines; else line.dataset.nolines = "1";
+  tableChanged();
+  toast(line.dataset.nolines ? "Table lines hidden." + (S.settings.gridlines ? "" : " Insert ▸ Table ▸ Show Table Gridlines shows faint guides on screen.") : "Table lines shown.", 2200);
+}
+function setGridlines() {
+  S.settings.gridlines = !S.settings.gridlines;
+  saveSettings();
+  document.body.classList.toggle("gridlines", !!S.settings.gridlines);
+}
+function tableItems() {
+  const td = cellOfSel(), ro = tableRO(), off = !td || ro;
+  const line = td ? tableOf(td).line : null;
+  return [
+    { label: "Insert Table…", fn: insertTableDialog, off: ro || !!td || !A.note },
+    "-",
+    { label: "Insert Row Above", fn: () => tableRow(-1), off },
+    { label: "Insert Row Below", fn: () => tableRow(1), off },
+    { label: "Insert Column Left", fn: () => tableCol(-1), off },
+    { label: "Insert Column Right", fn: () => tableCol(1), off },
+    "-",
+    { label: "Delete Row", fn: () => tableDelete("row"), off },
+    { label: "Delete Column", fn: () => tableDelete("col"), off },
+    { label: "Delete Table", fn: () => tableDelete("table"), off },
+    "-",
+    { label: "Make Columns Equal", fn: tableEqual, off },
+    { label: "Hide Table Lines", on: !!(line && line.dataset.nolines), fn: tableLines, off },
+    { label: "Show Table Gridlines", on: !!S.settings.gridlines, fn: setGridlines },
+  ];
+}
+
+// (1.8.1) a column's edge dragged, as in Ross Writer: the pointer on the line between two columns (or at the
+// the table keeps its width) becomes ↔; dragging moves it, the column on the left wider and the one on the right
+// narrower. Saved as the Word table's column widths.
+const COL_EDGE = 5;
+function colEdgeAt(e) {
+  const td = e.target && e.target.closest ? e.target.closest("td.rcell") : null;
+  if (!td || !P.some((p) => p.page.contains(td))) return null;
+  const r = td.getBoundingClientRect();
+  const tr = td.parentElement;
+  let c = [...tr.children].indexOf(td);
+  if (Math.abs(e.clientX - r.right) <= COL_EDGE && c < tr.children.length - 1) return { td, c };
+  if (c > 0 && Math.abs(e.clientX - r.left) <= COL_EDGE) return { td: tr.children[c - 1], c: c - 1 };
+  return null;
+}
+let colDrag = null;
+document.addEventListener("pointermove", (e) => {
+  if (colDrag) return;
+  const at = colEdgeAt(e);
+  for (const p of P) p.page.classList.toggle("coledge", !!at && p.page.contains(at.td));
+}, { passive: true });
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  const at = colEdgeAt(e);
+  if (!at) return;
+  const line = at.td.closest(".tline"), t = line.querySelector(":scope > table");
+  const pg = line.parentElement;
+  if (pg.contentEditable === "false") return;
+  e.preventDefault();
+  e.stopPropagation();
+  const n = at.td.parentElement.children.length;
+  const px = [...at.td.parentElement.children].map((c) => c.getBoundingClientRect().width);
+  const tablePx = t.getBoundingClientRect().width;
+  let ws = ed.widthsOf(t);
+  if (!ws || ws.length !== n) {
+    // the widths as they show now, out of the text's width (about 9,000 twips)
+    const total = Math.round(9000 * Math.min(1, tablePx / Math.max(1, pg.getBoundingClientRect().width)));
+    ws = px.map((w) => Math.round(total * w / tablePx));
+  }
+  const perPx = ws.reduce((a, b) => a + b, 0) / tablePx;
+  colDrag = { t, line, c: at.c, x0: e.clientX, ws0: ws.slice(), perPx, last: at.c === n - 1, moved: false };
+  document.body.classList.add("coldrag");
+  const move = (ev) => {
+    const d = Math.round((ev.clientX - colDrag.x0) * colDrag.perPx);
+    const w = colDrag.ws0.slice();
+    const MIN = 360;
+    if (colDrag.last) w[colDrag.c] = Math.max(MIN, Math.min(colDrag.ws0[colDrag.c] + d, 9000 * 1.5));
+    else {
+      const dd = Math.max(MIN - w[colDrag.c], Math.min(d, w[colDrag.c + 1] - MIN));
+      w[colDrag.c] += dd;
+      w[colDrag.c + 1] -= dd;
+    }
+    colDrag.moved = true;
+    ed.setWidths(colDrag.t, w);
+  };
+  const up = () => {
+    document.removeEventListener("pointermove", move);
+    document.body.classList.remove("coldrag");
+    const was = colDrag;
+    colDrag = null;
+    if (was.moved) {
+      delete was.line.dataset.equal;
+      setActive(P.find((p) => p.page === pg) || A);
+      tableChanged();
+    }
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up, { once: true });
+  document.addEventListener("pointercancel", up, { once: true });
+}, true);
+
+// Tab and Shift+Tab: the next cell or the one before (Tab in the last cell: a new row)
+function tableTab(td, d) {
+  const { tr, tb, r, c } = tableOf(td);
+  const cells = [...tb.querySelectorAll(":scope > tr > td")];
+  const k = cells.indexOf(td) + d;
+  if (k >= cells.length) {
+    if (tableRO()) return;
+    const nr = document.createElement("tr");
+    for (let x = 0; x < tr.children.length; x++) nr.appendChild(newCell());
+    tb.appendChild(nr);
+    caretInto(nr.children[0], false);
+    tableChanged();
+    return;
+  }
+  if (k < 0) return;
+  const to = cells[k];
+  caretInto(to, false);
+  // the whole of its words chosen, as Word does
+  const sel = window.getSelection();
+  const rr = document.createRange();
+  rr.selectNodeContents(to);
+  if (ed.lineText(to).trim()) { sel.removeAllRanges(); sel.addRange(rr); }
+  void r; void c;
+}
+// Up at the top of a cell / Down at its foot: the cell above or below; out of the table at its edges
+function tableEdge(td, d) {
+  const sel = window.getSelection();
+  const blk = (() => { let n = sel.anchorNode; while (n && n.parentNode !== td) n = n.parentNode; return n; })();
+  const paras = [...td.childNodes].filter((n) => n.nodeType === 1 || (n.nodeType === 3 && n.data.trim()));
+  if (paras.length > 1 && blk && blk !== (d < 0 ? paras[0] : paras[paras.length - 1])) return false;
+  const { tb, line, r, c } = tableOf(td);
+  const row = tb.children[r + d];
+  if (row) { caretInto(row.children[Math.min(c, row.children.length - 1)], d < 0); return true; }
+  let to = d < 0 ? line.previousElementSibling : line.nextElementSibling;
+  if (!to || to.classList.contains("jdiv")) {
+    if (tableRO()) return true;
+    to = ed.lineElement({ kind: null, runs: [] });
+    if (d < 0) line.before(to); else line.after(to);
+    tableChanged();
+  }
+  page.focus();
+  if (to.dataset.kind === "table") caretInto(d < 0 ? to.querySelector("tr:last-child td") : to.querySelector("td"), d < 0);
+  else ed.placeCaret(...(d < 0 ? ed.pointAt(to, ed.lineText(to).length) : ed.pointAt(to, 0)));
+  return true;
+}
+// a scene that can't be written: its tables' cells can't be typed in either
+for (const p of P) {
+  const sync = () => {
+    const v = p.page.contentEditable === "false" ? "false" : "true";
+    for (const td of p.page.querySelectorAll("td.rcell")) if (td.contentEditable !== v) td.contentEditable = v;
+  };
+  new MutationObserver(sync).observe(p.page, { attributes: true, attributeFilter: ["contenteditable"], childList: true });
+}
+window.addEventListener("keydown", (e) => {
+  const td = cellOfSel();
+  if (!td || !page.contains(td)) return;
+  const k = e.key, mod = e.ctrlKey || e.metaKey;
+  if (k === "Tab" && !mod && !e.altKey) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    tableTab(td, e.shiftKey ? -1 : 1);
+    return;
+  }
+  if ((k === "ArrowUp" || k === "ArrowDown") && !mod && !e.altKey && !e.shiftKey) {
+    e.stopImmediatePropagation();
+    if (tableEdge(td, k === "ArrowUp" ? -1 : 1)) e.preventDefault();
+    return;
+  }
+  if (!mod && !e.altKey && (k === "Enter" || k === "Backspace" || k === "Delete" || k.length === 1)) {
+    e.stopImmediatePropagation();          // the browser's own typing in the cell
+    if (tableRO()) e.preventDefault();
+    return;
+  }
+  // what changes a whole line (headings, lists, quotes, alignment) isn't for a cell
+  if (mod && !e.altKey && ((/^[1-6]$/.test(k) && !e.shiftKey) || (e.shiftKey && /^[nN78&*mM]$/.test(k)) ||
+      (!e.shiftKey && /^[lLeErRjJmM]$/.test(k)))) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    toast("That's for a paragraph, not a table's cell.", 1400);
+  }
+}, true);
+
 function caretLine() {
   const c = ed.caret(page);
   return c ? page.children[c.a.line] : null;
@@ -7338,7 +7728,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.7.1"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.8.1"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -7485,7 +7875,7 @@ async function insertBookmark() {
 }
 
 // for the tests
-window.RN = { toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

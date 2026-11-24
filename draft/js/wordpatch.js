@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES } from "./wordio.js?v=1.9.22-d1.7.1";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES } from "./wordio.js?v=1.9.22-d1.8.1";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -30,7 +30,7 @@ const TEXT_WIDTH_EMU = 5760720;
 const BLOCKERS = [
   // (RossDraft 1.2: footnotes and endnotes are kept and edited: their marks are in the page's words)
   [/<w:(ins|del|moveFrom|moveTo)\b|<w:(rPr|pPr|sectPr|tblPr|tcPr|trPr)Change\b/, "tracked changes"],
-  [/<w:tbl\b/, "a table"],
+  // (RossDraft 1.8.0: tables are shown and edited; merged cells, a table in a table: readDocx's trouble says so)
   [/<w:txbxContent\b|<mc:AlternateContent\b|<w:object\b/, "a text box or shape"],
   [/<m:oMath/, "an equation"],
   [/<w:sdt\b/, "a content control"],
@@ -48,6 +48,9 @@ export function blockers(docText) {
 // ------------------------------------------------------------------ comparing lines
 const FLAGS = "bisuh";
 function sigOf(ln) {
+  if (ln.kind === "table" && ln.cells) {
+    return JSON.stringify(["table", ln.noLines ? 1 : 0, ln.equal ? 1 : 0, (ln.widths || []).map((x) => Math.round(x)).join(","), ln.cells.map((r) => r.map((c) => c.map((p) => sigOf({ runs: p.runs })))) ]);
+  }
   const runs = [];
   for (const r of ln.runs || []) {
     if (r.img) {
@@ -651,7 +654,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.7.1");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.8.1");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -771,6 +774,110 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     return p;
   };
 
+  // --- (RossDraft 1.8.0) a table: the old one's (oi) table settings, rows' and cells' settings kept where they are
+  // (by place); each cell's paragraphs: unchanged ones as they were, changed ones with the old paragraph's look;
+  // rows and columns added take their neighbours' settings; Equal Column Widths and Hide / Show Lines applied
+  const buildTable = async (ln, j, oi) => {
+    const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
+    const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
+    const textW = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
+    const rows = ln.cells;
+    const n = Math.max(1, ...rows.map((r) => r.length));
+    const oldT = oi != null ? srcEl(oi) : null;
+    if (!oldT) {
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.8.1");
+      const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
+      return doc.importNode(t, true);
+    }
+    const oldCells = old[oi].cells || [];
+    const t = doc.createElementNS(W, "w:tbl");
+    const tblPr = wkid(oldT, "tblPr") ? wkid(oldT, "tblPr").cloneNode(true) : doc.createElementNS(W, "w:tblPr");
+    // lines: hidden (none) or shown (thin), when that's what changed
+    const bdOff = (bd) => !!bd && wkids(bd).length > 0 && wkids(bd).every((e) => ["none", "nil"].includes(wval(e)));
+    let bd = wkid(tblPr, "tblBorders");
+    if (!!ln.noLines !== (bd ? bdOff(bd) : !wkid(tblPr, "tblStyle"))) {
+      if (bd) tblPr.removeChild(bd);
+      bd = doc.createElementNS(W, "w:tblBorders");
+      for (const side of ["top", "left", "bottom", "right", "insideH", "insideV"]) {
+        const e = doc.createElementNS(W, "w:" + side);
+        if (ln.noLines) e.setAttributeNS(W, "w:val", "nil");
+        else { e.setAttributeNS(W, "w:val", "single"); e.setAttributeNS(W, "w:sz", "4"); e.setAttributeNS(W, "w:space", "0"); e.setAttributeNS(W, "w:color", "808080"); }
+        bd.appendChild(e);
+      }
+      // CT_TblPr's order: tblStyle, tblpPr, tblOverlap, bidiVisual, tblStyleRowBandSize, tblStyleColBandSize, tblW, jc,
+      // tblCellSpacing, tblInd, tblBorders, shd, tblLayout, tblCellMar, tblLook
+      const after = ["shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription"];
+      const nextEl = wkids(tblPr).find((e) => after.includes(e.localName));
+      tblPr.insertBefore(bd, nextEl || null);
+    }
+    t.appendChild(tblPr);
+    // the columns: as they were if there are as many and they're not to be made equal
+    const oldGrid = wkid(oldT, "tblGrid");
+    const oldCols = oldGrid ? wkids(oldGrid, "gridCol").map((g) => +wval(g, "w") || 0) : [];
+    const total = oldCols.reduce((a, b) => a + b, 0) || textW;
+    // (1.8.1) the widths the page has (a column's edge dragged), else the old ones; equal when asked
+    let cols = ln.equal ? Array(n).fill(Math.floor(total / n))
+      : ln.widths && ln.widths.length === n && ln.widths.every((x) => x > 0) ? ln.widths.map((x) => Math.round(x))
+      : oldCols.length === n ? oldCols : Array(n).fill(Math.floor(total / n));
+    const sameGrid = cols.length === oldCols.length && cols.every((x, k) => x === oldCols[k]);
+    if (!sameGrid) {
+      // the table's own width with them, when it's given in twips
+      const tw = wkid(tblPr, "tblW");
+      if (tw && wval(tw, "type") === "dxa") tw.setAttributeNS(W, "w:w", String(cols.reduce((a, b) => a + b, 0)));
+    }
+    const grid = doc.createElementNS(W, "w:tblGrid");
+    for (const w of cols) { const g = doc.createElementNS(W, "w:gridCol"); g.setAttributeNS(W, "w:w", String(w)); grid.appendChild(g); }
+    t.appendChild(grid);
+    const oldRows = wkids(oldT, "tr");
+    const neutral = doc.createElementNS(W, "w:p");
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      const otr = oldRows[Math.min(r, oldRows.length - 1)] || null;
+      const tr = doc.createElementNS(W, "w:tr");
+      const trPr = otr && wkid(otr, "trPr");
+      if (trPr && r < oldRows.length) tr.appendChild(trPr.cloneNode(true));
+      else if (trPr) {
+        const c = trPr.cloneNode(true);
+        for (const x of wkids(c)) if (x.localName === "tblHeader" || x.localName === "trPrChange") c.removeChild(x);
+        if (c.children.length) tr.appendChild(c);
+      }
+      const otcs = otr ? wkids(otr, "tc") : [];
+      for (let c = 0; c < n; c++) {
+        const otc = otcs[Math.min(c, otcs.length - 1)] || null;
+        const tc = doc.createElementNS(W, "w:tc");
+        const tcPr = otc && wkid(otc, "tcPr") ? wkid(otc, "tcPr").cloneNode(true) : doc.createElementNS(W, "w:tcPr");
+        for (const x of wkids(tcPr)) if (["gridSpan", "vMerge", "hMerge", "tcPrChange"].includes(x.localName)) tcPr.removeChild(x);
+        if (!sameGrid || !wkid(tcPr, "tcW")) {
+          let w = wkid(tcPr, "tcW");
+          if (!w) { w = doc.createElementNS(W, "w:tcW"); tcPr.insertBefore(w, tcPr.firstChild); }
+          w.setAttributeNS(W, "w:w", String(cols[c]));
+          w.setAttributeNS(W, "w:type", "dxa");
+        }
+        if (ln.noLines) for (const x of wkids(tcPr, "tcBorders")) tcPr.removeChild(x);
+        tc.appendChild(tcPr);
+        const ops = otc ? wkids(otc, "p") : [];
+        const same = r < oldRows.length && c < otcs.length;
+        const was = same ? ((oldCells[r] || [])[c] || []) : [];
+        const paras = row[c] && row[c].length ? row[c] : [{ kind: null, runs: [] }];
+        for (let k = 0; k < paras.length; k++) {
+          const p = paras[k];
+          if (same && was[k] && ops[k] && sigOf({ runs: was[k].runs }) === sigOf({ runs: p.runs })) {
+            tc.appendChild(ops[k]);          // unchanged: the very paragraph
+            continue;
+          }
+          const look = ops[Math.min(k, ops.length - 1)] || null;
+          const jc = look && wkid(wkid(look, "pPr"), "jc");
+          const al = jc ? { both: "justify", center: "center", right: "right", end: "right" }[wval(jc)] || null : null;
+          const np = await buildP({ kind: null, runs: p.runs || [], align: al, depth: 1 }, j, { el: look || neutral, key: "p" }, false);
+          tc.appendChild(np);
+        }
+        tr.appendChild(tc);
+      }
+      t.appendChild(tr);
+    }
+    return t;
+  };
+
   // --- the body, line by line
   const A = oldSigs && oldSigs.length === old.length ? oldSigs : old.map(sigOf);
   const B = lines.map(sigOf);
@@ -807,6 +914,22 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
   const used = new Set(), marked = new Set();
   const outEls = [];
   for (let j = 0; j < lines.length;) {
+    if (lines[j].kind === "table" && lines[j].cells) {
+      // (RossDraft 1.8.0) a table: as it was if it's the same; else the old one's settings with the new words
+      const i = matched[j];
+      if (i >= 0 && old[i].src != null && old[i].kind === "table" && !used.has(old[i].src)) {
+        used.add(old[i].src);
+        outEls.push(srcEl(i));
+        j++;
+        continue;
+      }
+      const pi = i >= 0 ? i : paired[j];
+      let was = null;
+      if (pi >= 0 && old[pi].src != null && old[pi].kind === "table" && !used.has(old[pi].src)) { used.add(old[pi].src); was = pi; }
+      outEls.push(await buildTable(lines[j], j, was));
+      j++;
+      continue;
+    }
     if (lines[j].table) { outEls.push(await buildP(lines[j], j, null, false)); j++; continue; }   // (Compile's tables: always new)
     const i = matched[j];
     if (i >= 0 && old[i].src != null) {
@@ -818,7 +941,8 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         continue;
       }
     }
-    const pi = i >= 0 ? i : paired[j];
+    let pi = i >= 0 ? i : paired[j];
+    if (pi >= 0 && old[pi].kind === "table") pi = -1;      // (a paragraph doesn't take a table's look)
     const tmpl = pi >= 0 && old[pi].src != null ? { el: srcEl(pi), key: kindKey(old[pi]) } : null;
     const oneToOne = !!tmpl && !used.has(old[pi].src) && (groupOf.get(old[pi].src) || []).length === 1;
     if (oneToOne) used.add(old[pi].src);

@@ -11,7 +11,7 @@
 // epubBlob(lines, meta, pictureBytes) -> an EPUB 3 (with an EPUB 2 table of contents), as Ross Writer's epubout.
 // printHtml(lines, layout, meta) -> the book as HTML for the print view (and "Save as PDF").
 
-import { zip, NOTE_RE } from "./wordio.js?v=1.9.22-d1.7.1";
+import { zip, NOTE_RE } from "./wordio.js?v=1.9.22-d1.8.1";
 
 // RossDraft 1.2: the notes of several scenes in one book: each scene's marks given new ids, in order (footnotes
 // 1, 2, 3…; endnotes 1, 2, 3…), so they never clash. parts: [{ lines, notes (Map "f17" -> words) }]
@@ -64,6 +64,12 @@ export function groupTables(lines) {
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i];
+    if (ln.kind === "table" && ln.cells && !ln.table) {
+      // (RossDraft 1.8.0) a table line: its rows of words, as Compile's writers take them
+      out.push({ kind: null, code: false, cells: ln.cells, noLines: ln.noLines, part: ln.part, runs: [],
+        table: ln.cells.map((r) => r.map((c) => c.map((p) => (p.runs || []).map((x) => x.t || "").join("")).join(" "))) });
+      continue;
+    }
     if (ln.code && ROW_RE.test(textOf(ln)) && lines[i + 1] && lines[i + 1].code && SEP_RE.test(textOf(lines[i + 1]))) {
       const rows = [cellsOf(textOf(ln))];
       let j = i + 2;

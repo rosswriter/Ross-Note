@@ -10,6 +10,68 @@
 //     code: true for code, tables and rules (shown in monospace, always written as typed) }
 
 export const OBJ = "￼";
+
+// RossDraft 1.8.0: tables, as Ross Writer shows them: a table is one line { kind: "table", cells: rows of cells,
+// each cell its paragraphs ({ kind: null, runs }), noLines, equal, runs: [] }, written as a Markdown pipe table
+// (a cell's paragraphs joined with <br>, "|" in the words as "\|"), with "<!-- table: nolines equal -->" on the
+// line before when it has those. Only where setTables(true) (RossDraft): elsewhere such lines stay as written.
+let TABLES = false;
+export function setTables(on) { TABLES = !!on; }
+export function tablesOn() { return TABLES; }
+const TROW_RE = /^\|.*\|$/;
+const TSEP_RE = /^\|(?: ?:?-{3,}:? ?\|)+$/;
+const TFLAGS_RE = /^<!-- table:((?: (?:nolines|equal|w=\d+(?:,\d+)*))+) -->$/;
+function splitRow(s) {
+  const inner = s.slice(1, -1);
+  const out = [];
+  let cur = "";
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "\\" && inner[i + 1] === "|") { cur += "\\|"; i++; continue; }
+    if (inner[i] === "|") { out.push(cur); cur = ""; continue; }
+    cur += inner[i];
+  }
+  out.push(cur);
+  return out.map((c) => c.trim());
+}
+function cellParas(text) {
+  return text.split("<br>").map((p) => ({ kind: null, runs: inlineRuns(p.split("\\|").join("|")) }));
+}
+// lines[i…] as a table line, and how many text lines it took; null when they aren't one written back exactly
+function tableAt(lines, i) {
+  let flags = "", at = i;
+  const fm = TFLAGS_RE.exec(lines[i]);
+  if (fm) { flags = fm[1]; at = i + 1; }
+  if (!(at + 1 < lines.length && TROW_RE.test(lines[at]) && TSEP_RE.test(lines[at + 1]))) return null;
+  const rows = [splitRow(lines[at])];
+  let j = at + 2;
+  while (j < lines.length && TROW_RE.test(lines[j]) && !TSEP_RE.test(lines[j])) { rows.push(splitRow(lines[j])); j++; }
+  const w = Math.max(...rows.map((r) => r.length));
+  const ln = { kind: "table", runs: [], cells: rows.map((r) => Array.from({ length: w }, (_, k) => cellParas(r[k] || ""))) };
+  if (/nolines/.test(flags)) ln.noLines = true;
+  if (/equal/.test(flags)) ln.equal = true;
+  const wm = / w=([\d,]+)/.exec(flags);
+  if (wm) ln.widths = wm[1].split(",").map(Number);       // (1.8.1) the columns' widths (Word's, twentieths of a point)
+  if (tableMarkdown(ln) !== lines.slice(i, j).join("\n")) return null;
+  return [ln, j - i];
+}
+function tableMarkdown(ln, opts = {}) {
+  const rows = ln.cells || [];
+  const w = Math.max(1, ...rows.map((r) => r.length));
+  const cell = (paras) => (paras || []).map((p) => lineMarkdown({ kind: null, runs: p.runs || [] }, null, opts)
+    .split("|").join("\\|").replace(/^\s+|\s+$/g, "")).join("<br>");
+  const out = [];
+  const flags = [ln.noLines ? "nolines" : "", ln.equal ? "equal" : "",
+    ln.widths && ln.widths.length === w ? "w=" + ln.widths.map((x) => Math.round(x)).join(",") : ""].filter(Boolean);
+  if (flags.length) out.push("<!-- table: " + flags.join(" ") + " -->");
+  rows.forEach((r, k) => {
+    out.push("| " + Array.from({ length: w }, (_, c) => cell(r[c])).join(" | ") + " |");
+    if (k === 0) out.push("|" + Array(w).fill(" --- ").join("|") + "|");
+  });
+  return out.join("\n");
+}
+export function tableText(ln) {
+  return (ln.cells || []).map((r) => r.map((c) => c.map((p) => (p.runs || []).map((x) => x.t || "").join("")).join(" ")).join(" ")).join(" ");
+}
 const ESC_CHARS = "\\*_~=<`#";
 const URL_RE = /(?:https?|file|ftp):\/\/[^\s<>\]\["]+|www\.[^\s<>\]\["]+\.[^\s<>\]\["]+|mailto:[^\s<>]+/y;
 const DEST = String.raw`((?:[^()\s]|\([^()\s]*\))+)`;      // balanced ( ) in a name: "photo (2).jpg"
@@ -182,7 +244,12 @@ export function parse(text) {
   const out = [];
   const lists = new ListState();
   let fence = null;
-  for (const line of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (TABLES && fence === null && (line[0] === "|" || line.startsWith("<!-- table:"))) {
+      const got = tableAt(lines, li);
+      if (got) { out.push(got[0]); lists.reset(); li += got[1] - 1; continue; }
+    }
     let code = false;
     const fm = FENCE_RE.exec(line);
     if (fence !== null) {
@@ -315,6 +382,7 @@ function sameFlags(a, b) {
 
 // opts: { dir: the note's folder (parts), asLoaded }
 export function lineMarkdown(ln, number, opts = {}) {
+  if (ln.kind === "table") return tableMarkdown(ln, opts);
   if (ln.raw != null) {
     const text = ln.runs.map((r) => r.t).join("");
     if (text === ln.raw || ln.code) return text;

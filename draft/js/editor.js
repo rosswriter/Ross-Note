@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.7.1";
+import * as md from "./md.js?v=1.9.22-d1.8.1";
 
 const HL = "#ffd54f";
 
@@ -38,7 +38,95 @@ export function numberNotes(page) {
   return labels;
 }
 
+// RossDraft 1.8.0: a table, as one line of the page: the table itself can't be typed over (contenteditable
+// false), its cells can (each cell's paragraphs a <div class="cp">). md.js has the line; readLine reads it back.
+export function tableElement(ln) {
+  const div = document.createElement("div");
+  div.className = "ln tline";
+  div.dataset.kind = "table";
+  div.contentEditable = "false";
+  if (ln.noLines) div.dataset.nolines = "1";
+  if (ln.equal) div.dataset.equal = "1";
+  const t = document.createElement("table");
+  t.className = "rtable";
+  const tb = document.createElement("tbody");
+  const w = Math.max(1, ...(ln.cells || []).map((r) => r.length));
+  if (ln.widths && ln.widths.length === w) setWidths(t, ln.widths);
+  for (const row of ln.cells || []) {
+    const tr = document.createElement("tr");
+    for (let c = 0; c < w; c++) tr.appendChild(cellElement(row[c] || []));
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  div.appendChild(t);
+  return div;
+}
+// (1.8.1) the columns' widths (Word's twips) as a <colgroup>: each column its share of the table
+export function setWidths(t, widths) {
+  let cg = t.querySelector(":scope > colgroup");
+  if (!widths) { if (cg) cg.remove(); t.classList.remove("fixed"); return; }
+  if (!cg) { cg = document.createElement("colgroup"); t.insertBefore(cg, t.firstChild); }
+  cg.textContent = "";
+  const sum = widths.reduce((a, b) => a + b, 0) || 1;
+  for (const x of widths) {
+    const c = document.createElement("col");
+    c.dataset.w = String(Math.round(x));
+    c.style.width = (100 * x / sum).toFixed(3) + "%";
+    cg.appendChild(c);
+  }
+  t.classList.add("fixed");
+}
+export function widthsOf(t) {
+  const cols = t.querySelectorAll(":scope > colgroup > col");
+  return cols.length ? [...cols].map((c) => +c.dataset.w || 0) : null;
+}
+export function cellElement(paras) {
+  const td = document.createElement("td");
+  td.contentEditable = "true";
+  td.className = "rcell";
+  for (const p of paras.length ? paras : [{ kind: null, runs: [] }]) {
+    const d = lineElement({ kind: null, runs: p.runs || [], align: p.align });
+    d.className = "cp";
+    td.appendChild(d);
+  }
+  return td;
+}
+// a cell's paragraphs, however the browser's editing left them (stray words, <br>s, <div>s)
+export function readCell(td) {
+  const paras = [];
+  let loose = null;
+  const flush = () => { if (loose) { paras.push(readLine(loose)); loose = null; } };
+  for (const c of td.childNodes) {
+    if (c.nodeType === 1 && (c.tagName === "DIV" || c.tagName === "P")) {
+      flush();
+      paras.push(readLine(c));
+    } else if (c.nodeType === 1 && c.tagName === "BR") {
+      if (loose) flush(); else if (paras.length || c.nextSibling) paras.push({ kind: null, runs: [] });
+    } else {
+      if (!loose) loose = document.createElement("div");
+      loose.appendChild(c.cloneNode(true));
+    }
+  }
+  flush();
+  for (const p of paras) { p.kind = null; delete p.mark; delete p.restart; }
+  if (!paras.length) paras.push({ kind: null, runs: [] });
+  return paras;
+}
+export function readTable(div) {
+  const ln = { kind: "table", runs: [], cells: [] };
+  for (const tr of div.querySelectorAll(":scope > table > tbody > tr")) ln.cells.push([...tr.children].filter((c) => c.tagName === "TD").map(readCell));
+  if (div.dataset.nolines) ln.noLines = true;
+  if (div.dataset.equal) ln.equal = true;
+  const t = div.querySelector(":scope > table");
+  const ws = t && widthsOf(t);
+  const n = Math.max(0, ...ln.cells.map((r) => r.length));
+  if (ws && ws.length === n && ws.every((x) => x > 0)) ln.widths = ws;
+  return ln;
+}
+const isCellStart = (c) => c.nodeType === 1 && (c.tagName === "TD" || c.tagName === "TR" || (c.classList && c.classList.contains("cp"))) && !!c.previousElementSibling;
+
 export function lineElement(ln) {
+  if (ln.kind === "table") return tableElement(ln);
   const div = document.createElement("div");
   div.className = "ln";
   if (ln.kind) div.dataset.kind = ln.kind;
@@ -129,6 +217,7 @@ function flagsOf(node, line, heading) {
 }
 
 export function readLine(div) {
+  if (div.dataset.kind === "table") return readTable(div);
   const kind = div.dataset.kind || null;
   const ln = { kind, mark: div.dataset.mark || null, runs: [] };
   if (div.dataset.restart && kind === "ol") ln.restart = true;
@@ -237,6 +326,7 @@ function textLen(n) {
   let k = 0;
   const walk = (x) => {
     for (const c of x.childNodes) {
+      if (isCellStart(c)) k += 1;
       if (c.nodeType === 3) k += c.data.length;
       else if (c.tagName === "IMG") k += 1;
       else if (c.tagName === "SUP" && c.classList && c.classList.contains("fnref")) k += c.dataset.m.length;
@@ -251,6 +341,7 @@ export function lineText(line) {
   let s = "";
   const walk = (x) => {
     for (const c of x.childNodes) {
+      if (isCellStart(c)) s += " ";      // (a table's cells and paragraphs: a space between)
       if (c.nodeType === 3) s += c.data;
       else if (c.tagName === "IMG") s += md.OBJ;
       else if (c.tagName === "SUP" && c.classList.contains("fnref")) s += c.dataset.m;
@@ -267,6 +358,7 @@ export function pointAt(line, pos) {
   let last = null;
   const walk = (x) => {
     for (const c of x.childNodes) {
+      if (isCellStart(c)) k += 1;
       if (c.nodeType === 3) {
         if (k + c.data.length >= pos) return [c, pos - k];
         k += c.data.length;

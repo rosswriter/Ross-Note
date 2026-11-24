@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.7.1";
+import * as md from "./md.js?v=1.9.22-d1.8.1";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -357,7 +357,46 @@ export async function readDocx(buf, opts = {}) {
     }));
   };
 
-  const table = (tb) => {
+  // RossDraft 1.8.0: a table as one line, its cells' paragraphs with their formatting, as Ross Writer shows it;
+  // one RossDraft can't write back (merged cells, a table in a table) as before: rows of words, and said so
+  const trouble = new Set();
+  const table = (tb, idx) => {
+    const merged = [...tb.getElementsByTagNameNS(W, "gridSpan")].some((g) => +(g.getAttributeNS(W, "val") || g.getAttribute("w:val") || 1) > 1) ||
+      tb.getElementsByTagNameNS(W, "vMerge").length || tb.getElementsByTagNameNS(W, "hMerge").length;
+    const nested = [...tb.getElementsByTagNameNS(W, "tc")].some((tc) => tc.getElementsByTagNameNS(W, "tbl").length);
+    if (merged) trouble.add("a table with merged cells");
+    if (nested) trouble.add("a table inside a table");
+    if (!merged && !nested) {
+      const cells = [];
+      for (const tr of kids(tb, "tr")) {
+        const row = [];
+        for (const tc of kids(tr, "tc")) {
+          const paras = [];
+          for (const p of kids(tc, "p")) {
+            for (const ln of paragraph(p)) {
+              paras.push({ kind: null, runs: ln.runs.filter((r) => !r.img), align: ln.align || null });
+            }
+          }
+          if (tc.getElementsByTagNameNS(W, "drawing").length || tc.getElementsByTagNameNS(W, "pict").length) trouble.add("a picture in a table");
+          row.push(paras.length ? paras : [{ kind: null, runs: [] }]);
+        }
+        if (row.length) cells.push(row);
+      }
+      if (cells.length) {
+        const w = Math.max(...cells.map((r) => r.length));
+        for (const r of cells) while (r.length < w) r.push([{ kind: null, runs: [] }]);
+        const bd = kid(kid(tb, "tblPr"), "tblBorders");
+        const off = (e) => ["none", "nil"].includes(e.getAttributeNS(W, "val") || e.getAttribute("w:val"));
+        // (no lines of its own and no table style: Word shows none)
+        const noLines = bd ? kids(bd).length > 0 && kids(bd).every(off) : !kid(kid(tb, "tblPr"), "tblStyle");
+        const ln = { kind: "table", runs: [], cells, noLines, code: false, depth: 1 };
+        const gw = kids(kid(tb, "tblGrid"), "gridCol").map((g) => parseInt(g.getAttributeNS(W, "w") || g.getAttribute("w:w") || "0", 10));
+        if (gw.length === w && gw.every((x) => x > 0)) ln.widths = gw;
+        if (idx != null) ln.src = idx;
+        lines.push(ln);
+        return;
+      }
+    }
     const rows = [];
     for (const tr of kids(tb, "tr")) {
       const cells = [];
@@ -389,7 +428,7 @@ export async function readDocx(buf, opts = {}) {
         const ls = paragraph(c);
         if (top) ls.forEach((ln) => { ln.src = idx; });
         lines.push(...ls);
-      } else if (c.localName === "tbl") table(c);
+      } else if (c.localName === "tbl") table(c, top ? idx : null);
       else if (c.localName === "sdt") { const sc = kid(c, "sdtContent"); if (sc) block(sc); }
       else if (c.localName === "ins" || c.localName === "customXml") block(c);
     });
@@ -416,10 +455,10 @@ export async function readDocx(buf, opts = {}) {
       notes.set(kind + (n.getAttributeNS(W, "id") || n.getAttribute("w:id")), paras.join("\n").replace(/^\s+/, ""));
     }
   }
-  if (opts.keep) return { lines, media, title, files, docText, notes };
+  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble] };
   const tidy = [];
   for (const ln of lines) {
-    const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind;
+    const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind && !ln.cells;
     if (empty && (!tidy.length || tidy[tidy.length - 1]._empty)) continue;
     ln._empty = empty;
     tidy.push(ln);
@@ -445,6 +484,12 @@ export function splitSections(lines) {
 // wordio lines -> md.js lines (lists deeper than one get a marker with their indent)
 export function toNoteLines(lines, picture) {
   return lines.map((ln) => {
+    if (ln.kind === "table" && ln.cells) {
+      const out = { kind: "table", runs: [], cells: ln.cells.map((r) => r.map((c) => toNoteLines(c, picture).map((p) => ({ kind: null, runs: p.runs })))) };
+      if (ln.noLines) out.noLines = true;
+      if (ln.widths) out.widths = ln.widths.slice();
+      return out;
+    }
     if (ln.code) {
       const t = ln.runs.map((r) => r.t).join("");
       return { kind: null, runs: [{ t, f: new Set() }], raw: t, code: true };
@@ -468,6 +513,14 @@ export function toNoteLines(lines, picture) {
 export function fromNoteLines(lines) {
   const { depthOf, restarts } = md.listLayout(lines);
   return lines.map((ln, k) => {
+    if (ln.kind === "table" && ln.cells) {
+      const cells = ln.cells.map((r) => r.map((c) => fromNoteLines(c.map((p) => ({ kind: null, runs: p.runs || [] })))
+        .map((p) => ({ kind: null, depth: 1, code: false, align: null, restart: false, runs: p.runs }))));
+      // (table: the rows' words, for the writers that only know those: RTF, e-book, print)
+      return { kind: "table", depth: 1, code: false, runs: [], cells, noLines: !!ln.noLines, equal: !!ln.equal,
+        widths: ln.widths && ln.widths.length ? ln.widths.slice() : null,
+        table: cells.map((r) => r.map((c) => c.map((p) => p.runs.map((x) => x.t || "").join("")).join(" "))) };
+    }
     if (ln.raw != null && (ln.code || ln.runs.map((r) => r.t).join("") === ln.raw)) {
       return { kind: null, depth: 1, code: !!ln.code, runs: [{ t: ln.runs.map((r) => r.t).join(""), f: new Set() }] };
     }
@@ -641,6 +694,36 @@ export function tableXml(rows, width = 9072) {
     "</w:tbl>";
 }
 
+// RossDraft 1.8.0: a table line with its cells' formatting (bold, italic, underline, strikethrough,
+// highlighting), even columns, thin lines (none when noLines). rowsOrLine: a table line, or Compile's rows of words
+export function cellsTableXml(ln, width = 9072) {
+  const rows = ln.cells || [];
+  const n = Math.max(1, ...rows.map((r) => r.length));
+  const cw = Math.floor(width / n);
+  // (1.8.1) the widths the page gave them (dragged), scaled to the text's width
+  const ws = ln.widths && ln.widths.length === n && !ln.equal ? (() => {
+    const sum = ln.widths.reduce((a, b2) => a + b2, 0) || 1;
+    return ln.widths.map((x) => Math.max(200, Math.round(x * Math.min(1, width / sum))));
+  })() : Array(n).fill(cw);
+  const b = (side) => ln.noLines ? `<w:${side} w:val="nil"/>` : `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="808080"/>`;
+  const runX = (r) => {
+    const t = (r.t || "").split(OBJ).join("");
+    if (!t) return "";
+    const f = r.f || new Set();
+    const pr = (f.has("b") ? "<w:b/>" : "") + (f.has("i") ? "<w:i/>" : "") + (f.has("s") ? "<w:strike/>" : "") +
+      (f.has("h") ? '<w:highlight w:val="yellow"/>' : "") + (f.has("u") ? '<w:u w:val="single"/>' : "");
+    return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ""}<w:t xml:space="preserve">${x(t)}</w:t></w:r>`;
+  };
+  const para = (p) => `<w:p><w:pPr><w:ind w:firstLine="0"/>${p.align ? `<w:jc w:val="${p.align === "justify" ? "both" : p.align}"/>` : ""}</w:pPr>` +
+    (p.runs || []).map(runX).join("") + "</w:p>";
+  return `<w:tbl><w:tblPr><w:tblW w:w="${ws.reduce((a, b2) => a + b2, 0)}" w:type="dxa"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(b).join("")}</w:tblBorders>` +
+    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+    `<w:tblGrid>${ws.map((x2) => `<w:gridCol w:w="${x2}"/>`).join("")}</w:tblGrid>` +
+    rows.map((r) => `<w:tr>${Array.from({ length: n }, (_, k) => `<w:tc><w:tcPr><w:tcW w:w="${ws[k]}" w:type="dxa"/></w:tcPr>` +
+      ((r[k] && r[k].length ? r[k] : [{ runs: [] }]).map(para).join("")) + "</w:tc>").join("")}</w:tr>`).join("") +
+    "</w:tbl>";
+}
+
 export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria", opts = {}) {
   const body = [], rels = [], media = [], usedNotes = [];
   const links = new Map();
@@ -684,6 +767,7 @@ export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria
   for (let k = 0; k < lines.length; k++) {
     const ln = lines[k];
     const kind = ln.kind;
+    if (ln.cells) { body.push(cellsTableXml(ln, 11906 - 2 * (opts.margins || 1417))); continue; }
     if (ln.table) { body.push(tableXml(ln.table, 11906 - 2 * (opts.margins || 1417))); continue; }
     // the paragraph's settings, in the order Word's schema has them
     let style = "", num = "", spacing = "", ind = "", jc = "";

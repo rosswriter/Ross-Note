@@ -830,3 +830,18 @@ body.spread .page { box-sizing: border-box; height: var(--spread-h, 70vh); width
   border-radius: 4px; }
 body.spread .page > .ln { break-inside: avoid-column; }
 body.spread .page > .ln.title { break-before: avoid; }
+
+/* RossDraft 1.8.0: tables, as Ross Writer shows them */
+.page .tline { margin: .5em 0; overflow-x: auto; }
+.page .rtable { border-collapse: collapse; width: 100%; table-layout: auto; font-size: .95em; line-height: 1.35; }
+.page .rtable td { border: 1px solid #8a8378; padding: 4px 7px; vertical-align: top; min-width: 2.5em; outline: none; }
+.page .rtable td:focus-within { box-shadow: inset 0 0 0 2px rgba(59, 120, 180, .45); }
+.page .rtable td .cp { min-height: 1.35em; text-indent: 0 !important; margin: 0 !important; }
+.page .tline[data-nolines] .rtable td { border-color: transparent; }
+body.gridlines .page .tline[data-nolines] .rtable td { border: 1px dotted rgba(128, 128, 128, .55); }
+.dark .page .rtable td { border-color: #6b665e; }
+.dark body.gridlines .page .tline[data-nolines] .rtable td, body.dark.gridlines .page .tline[data-nolines] .rtable td { border-color: rgba(200, 200, 200, .35); }
+/* 1.8.1: a column's edge dragged */
+.page .rtable.fixed { table-layout: fixed; }
+.page.coledge, .page.coledge td.rcell, body.coldrag, body.coldrag * { cursor: col-resize !important; }
+body.coldrag { user-select: none; -webkit-user-select: none; }
