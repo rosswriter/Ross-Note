@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.10.1";
-import * as ed from "./editor.js?v=1.9.22-d1.10.1";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.10.1";
-import * as spell from "./spell.js?v=1.9.22-d1.10.1";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.10.1";
+import * as md from "./md.js?v=1.9.22-d1.10.2";
+import * as ed from "./editor.js?v=1.9.22-d1.10.2";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.10.2";
+import * as spell from "./spell.js?v=1.9.22-d1.10.2";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.10.2";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.10.1";
+import { ED } from "./edition.js?v=1.9.22-d1.10.2";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.10.1")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.10.2")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.10.1");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.10.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.10.2");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1645,7 +1645,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.10.1");
+    const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1777,7 +1777,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.10.1");
+    const EP = await import("./epub.js?v=1.9.22-d1.10.2");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1801,7 +1801,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.10.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.10.2");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1842,7 +1842,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.1");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2501,28 +2501,38 @@ async function commentAction(p, c, kind) {
 
 // the words a comment is on, found in the page, selected and scrolled to
 function goToWords(p, words) {
-  const want = (words || "").replace(/\s+/g, " ").trim().slice(0, 80);
-  if (!want) return;
+  // (1.10.2) found however the page has them: note marks, pictures and runs of spaces left out on both sides
+  const norm = (t) => t.replace(/\uE000[^\uE001]*\uE001/g, "").replace(/[\uFFFC\uE000-\uE0FF]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\s+/g, " ");
+  const want = norm(words || "").trim().slice(0, 80);
+  if (!want) { toast("That bookmark has no words beside it to find."); return false; }
   const lines = [...p.page.children];
-  const starts = [];
-  let at = 0;
-  const text = lines.map((d) => { const t = ed.lineText(d); starts.push(at); at += t.length + 1; return t; }).join(" ");
-  const k = text.replace(/\s/g, " ").indexOf(want);
-  if (k < 0) { toast("Those words aren't in the page any more."); return; }
-  const where = (off) => {
-    let i = 0;
-    while (i + 1 < starts.length && starts[i + 1] <= off) i++;
-    return ed.pointAt(lines[i], off - starts[i]);
-  };
+  // the page's text, letter by letter, each kept letter with its place (line, letters in)
+  let flat = "";
+  const at = [];
+  lines.forEach((d, i) => {
+    const t = ed.lineText(d);
+    for (let k = 0; k < t.length; k++) {
+      const c = t[k];
+      if (c === "\uE000") { const e = t.indexOf("\uE001", k); if (e > k) { k = e; continue; } }   // (a note's whole mark)
+      if (c === "\uFFFC" || (c >= "\uE000" && c <= "\uE0FF")) continue;
+      const n = norm(c);
+      if (n === " " && flat.endsWith(" ")) continue;
+      flat += n;
+      at.push([i, k]);
+    }
+    if (!flat.endsWith(" ")) { flat += " "; at.push([i, t.length]); }
+  });
+  const k = flat.indexOf(want);
+  if (k < 0) { toast("Those words aren't in the page any more."); return false; }
+  const [l0, p0] = at[k], [l1, p1] = at[k + want.length - 1];
   const r = document.createRange();
-  r.setStart(...where(k));
-  r.setEnd(...where(k + want.length));
+  r.setStart(...ed.pointAt(lines[l0], p0));
+  r.setEnd(...ed.pointAt(lines[l1], p1 + 1));
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(r);
-  const div = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-  const line = div && div.closest(".ln");
-  if (line) line.scrollIntoView({ block: "center" });
+  lines[l0].scrollIntoView({ block: "center" });
+  return true;
 }
 
 // saved, or being saved, in the status bar
@@ -2655,7 +2665,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.10.1"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.10.2"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2679,7 +2689,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.10.1");
+  const X = await import("./export.js?v=1.9.22-d1.10.2");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2707,7 +2717,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.10.1");
+  const X = await import("./export.js?v=1.9.22-d1.10.2");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3781,10 +3791,14 @@ async function bookCommentOp(n, op) {
 async function bookBookmarkOp(n, op) {
   if (op.kind === "delete") BK.marks = BK.marks.filter((m) => !(m.kind === "bm" && m.entry === n.raw.id && m.name === op.name));
   else {
-    // the caret's place (its paragraph in its chapter)
-    const sel = window.getSelection();
-    const at = sel.rangeCount ? bookWhere(A, sel.anchorNode, sel.anchorOffset) : null;
-    const where = at || { n, line: Math.max(1, op.line || 1), pos: op.pos || 0 };
+    // the caret's place as Insert ▸ Bookmark… had it (op.line: the page's line, joined page or not), in its chapter
+    let where = null;
+    const el = op.line != null ? A.page.children[op.line] : null;
+    if (el) for (const part of bookParts(A)) { const k = part.lines.indexOf(el); if (k >= 0) { where = { n: part.n, line: k, pos: op.pos || 0 }; break; } }
+    if (!where) {
+      const sel = window.getSelection();
+      where = (sel.rangeCount && A.page.contains(sel.anchorNode) ? bookWhere(A, sel.anchorNode, sel.anchorOffset) : null) || { n, line: 1, pos: 0 };
+    }
     const part = bookParts(A).find((p) => p.n === where.n);
     const t = part && part.lines[where.line] ? ed.lineText(part.lines[where.line]) : "";
     const start = Math.min(where.pos, Math.max(0, t.length - 1));
@@ -5122,7 +5136,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.10.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.10.2")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5270,7 +5284,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.10.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.10.2");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5342,7 +5356,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.10.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.10.2");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5546,7 +5560,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.10.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5583,7 +5597,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.10.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5622,7 +5636,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.10.1"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.10.2"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5914,7 +5928,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.10.1");
+  const R = await import("./rtf.js?v=1.9.22-d1.10.2");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6006,7 +6020,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -7843,7 +7857,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -8322,7 +8336,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.10.1"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.10.2"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -8390,7 +8404,25 @@ function bookmarkName(t) {
 
 async function goToBookmark(n, bm) {
   if (A.note !== n && !(A.joined && A.joined.includes(n))) await openNote(n);
+  else if (A.joined && bookOn()) await openNote(n);           // (a book as one page: scrolled to its chapter)
   await new Promise((ok) => setTimeout(ok, 120));
+  // (1.10.2) a book's own bookmark: its very place
+  const m = bookOn() && BK.marks.find((x) => x.id === bm.id);
+  if (m) {
+    const part = bookParts(A).find((p) => p.n === n);
+    const line = part && part.lines[m.line];
+    if (line) {
+      const r = document.createRange();
+      const t = ed.lineText(line);
+      r.setStart(...ed.pointAt(line, Math.min(m.start, t.length)));
+      r.setEnd(...ed.pointAt(line, Math.min(m.end, t.length)));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      line.scrollIntoView({ block: "center" });
+      return;
+    }
+  }
   goToWords(A, bm.words);
 }
 
