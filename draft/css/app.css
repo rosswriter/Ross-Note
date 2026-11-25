@@ -845,3 +845,16 @@ body.gridlines .page .tline[data-nolines] .rtable td { border: 1px dotted rgba(1
 .page .rtable.fixed { table-layout: fixed; }
 .page.coledge, .page.coledge td.rcell, body.coldrag, body.coldrag * { cursor: col-resize !important; }
 body.coldrag { user-select: none; -webkit-user-select: none; }
+/* RossDraft 1.9.0: a paragraph's own line spacing (against single: the screen's line height is single here),
+   Start on New Page and a page break (a dashed line above), the words' own sizes against the scene's usual */
+.page .ln[data-ls] { line-height: calc(var(--lh) * var(--ls) / 1.15); }
+.page .ln[data-newpage], .page .ln[data-pagebreak] { position: relative; margin-top: 1.6em; }
+.page .ln[data-newpage]::before, .page .ln[data-pagebreak]::before {
+  content: "page break"; position: absolute; left: 0; right: 0; top: -1.25em; height: 1em; font: 11px/1 system-ui, sans-serif;
+  color: var(--dim, #999); text-align: center; letter-spacing: .08em; text-transform: uppercase;
+  border-top: 1px dashed currentColor; padding-top: 2px; pointer-events: none; user-select: none; }
+.page .ln[data-newpage]::before { content: "starts on a new page"; }
+.page sup:not(.fnref), .page sub { font-size: .7em; line-height: 0; }
+.cform.wfont label { display: flex; flex-direction: column; gap: 4px; }
+.cform.wfont input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: inherit; }
+.cform .wf-sample { padding: 10px; border: 1px dashed var(--line); border-radius: 4px; min-height: 2.2em; }

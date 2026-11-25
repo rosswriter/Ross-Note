@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.8.1";
-import * as ed from "./editor.js?v=1.9.22-d1.8.1";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.8.1";
-import * as spell from "./spell.js?v=1.9.22-d1.8.1";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.8.1";
+import * as md from "./md.js?v=1.9.22-d1.9.0";
+import * as ed from "./editor.js?v=1.9.22-d1.9.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.9.0";
+import * as spell from "./spell.js?v=1.9.22-d1.9.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.9.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.8.1";
+import { ED } from "./edition.js?v=1.9.22-d1.9.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.8.1")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.9.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.8.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.9.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1644,7 +1644,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
+    const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1776,7 +1776,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.8.1");
+    const EP = await import("./epub.js?v=1.9.22-d1.9.0");
     return openProject(null, fh.name, new EP.EpubStore(fh), fh);
   }
   let ro = false;
@@ -1797,7 +1797,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.8.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.9.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1838,7 +1838,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2619,6 +2619,7 @@ function showText(text, pane = A) {
   const lines = md.parse(text);
   const dir = pane.note.folderParts();
   for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, dir);
+  pane.page.style.setProperty("--usz", String(pane.note.usz || 24));
   ed.renderLines(pane.page, lines);
   ed.relayout(pane.page);
   pane.page.contentEditable = pane.note.readOnly ? "false" : "true";
@@ -2646,7 +2647,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.8.1"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.9.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2670,7 +2671,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.8.1");
+  const X = await import("./export.js?v=1.9.22-d1.9.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2698,7 +2699,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.8.1");
+  const X = await import("./export.js?v=1.9.22-d1.9.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3324,6 +3325,255 @@ function updateButtons() {
   }
 }
 
+
+// ------------------------------------------------------------------ RossDraft 1.9.0: the words' own look
+// Font… (Ctrl+D: the font and size of the chosen words, as in Word and Ross Writer), Grow / Shrink Font
+// (Ctrl+Shift+> / <, with words chosen), Text Colour, Highlight Colour, Superscript (Ctrl+.), Subscript (Ctrl+,),
+// Line Spacing for the paragraphs, Page Break (Ctrl+Enter) and Start on New Page. Written into the Word file
+// (wordpatch: rFonts, sz, color, highlight, vertAlign; spacing, pageBreakBefore, a page-break run).
+const WORD_FONTS = ["Cambria", "Calibri", "Times New Roman", "Georgia", "Garamond", "EB Garamond", "Book Antiqua",
+  "Palatino Linotype", "Baskerville Old Face", "Arial", "Helvetica", "Verdana", "Tahoma", "Courier New", "Courier Prime",
+  "Literata", "Lora", "Source Serif 4", "Inter"];
+const FONT_SIZES = [8, 9, 10, 10.5, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72];
+const TEXT_COLOURS = [["Automatic", null], ["Black", "000000"], ["Dark Red", "C00000"], ["Red", "FF0000"],
+  ["Orange", "C55A11"], ["Gold", "BF9000"], ["Green", "00B050"], ["Dark Green", "375623"], ["Blue", "0070C0"],
+  ["Dark Blue", "1F3864"], ["Purple", "7030A0"], ["Grey", "7F7F7F"]];
+const HL_COLOURS = [["Yellow", "yellow"], ["Green", "green"], ["Turquoise", "cyan"], ["Pink", "magenta"], ["Grey", "lightGray"]];
+function hasWordsChosen() {
+  const sel = window.getSelection();
+  return !!sel.rangeCount && !sel.isCollapsed && P.some((p) => p.page.contains(sel.anchorNode));
+}
+function lookRO() { return page.contentEditable === "false" || !!(A.note && A.note.readOnly) || !!cellOfSel() && tableRO(); }
+// is this element one that gives the words a look of this kind (c:, font:, sz:, hc:)?
+function givesLook(el, pre) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.dataset && el.dataset.rd) return el.dataset.rd.startsWith(pre);
+  if (pre === "hc:") return !!(el.dataset && el.dataset.hc) || el.tagName === "MARK" || (el.style && !!el.style.backgroundColor && el.style.backgroundColor !== "transparent");
+  if (el.tagName === "FONT") return (pre === "c:" && el.hasAttribute("color")) || (pre === "font:" && el.hasAttribute("face"));
+  const st = el.style;
+  return !!st && ((pre === "c:" && !!st.color) || (pre === "font:" && !!st.fontFamily) || (pre === "sz:" && !!st.fontSize));
+}
+function unwrapEl(el) { el.replaceWith(...el.childNodes); }
+// an element around `inner` split so `inner` is outside it (what's before and after keeps it)
+function splitOut(outer, inner) {
+  const before = document.createRange();
+  before.setStart(outer, 0);
+  before.setEndBefore(inner);
+  const after = document.createRange();
+  after.setStartAfter(inner);
+  after.setEnd(outer, outer.childNodes.length);
+  const a = after.extractContents(), b = before.extractContents();
+  if (b.textContent) { const c = outer.cloneNode(false); c.appendChild(b); outer.before(c); }
+  if (a.textContent) { const c = outer.cloneNode(false); c.appendChild(a); outer.after(c); }
+  unwrapEl(outer);
+}
+function lookSpan(pre, value) {
+  const sp = document.createElement("span");
+  if (pre === "hc:") {
+    sp.style.backgroundColor = ed.HLS[value] || ed.HLS.yellow;
+    sp.dataset.hc = value;
+    return sp;
+  }
+  sp.dataset.rd = pre + value;
+  if (pre === "c:") sp.style.color = "#" + value;
+  if (pre === "font:") sp.style.fontFamily = `"${value}", var(--page-font, serif)`;
+  if (pre === "sz:") sp.style.fontSize = `calc(1em * ${value} / var(--usz, 24))`;
+  return sp;
+}
+// the chosen words given a look of this kind (value null: none of their own)
+function setWordsLook(pre, value) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { toast("Choose the words first."); return false; }
+  if (lookRO()) { toast("This can't be changed here."); return false; }
+  const host = cellOfSel() || page;
+  // each chosen piece of words wrapped (the ends split where the choice starts and stops)
+  const r0 = sel.getRangeAt(0);
+  let { startContainer: sc, startOffset: so, endContainer: ec, endOffset: eo } = r0;
+  if (ec.nodeType === 3 && eo < ec.data.length && eo > 0) ec.splitText(eo);
+  if (sc.nodeType === 3 && so > 0 && so < sc.data.length) {
+    const rest = sc.splitText(so);
+    if (ec === sc) { ec = rest; eo = rest.data.length; }
+    sc = rest; so = 0;
+  }
+  const rr = document.createRange();
+  rr.setStart(sc, so);
+  rr.setEnd(ec, eo);
+  const root = rr.commonAncestorContainer.nodeType === 1 ? rr.commonAncestorContainer : rr.commonAncestorContainer.parentNode;
+  const texts = [];
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let t = tw.nextNode(); t; t = tw.nextNode()) {
+    if (!t.data || !rr.intersectsNode(t)) continue;
+    if (t === ec && eo === 0) continue;
+    if (t === sc && so >= t.data.length) continue;
+    const el = t.parentElement;
+    if (!el || !page.contains(el) || el.closest(".fnref") || el.closest('[contenteditable="false"]:not(.page)') && !el.closest("td.rcell")) continue;
+    texts.push(t);
+  }
+  if (!texts.length) return false;
+  const beforeHtml = page.innerHTML;
+  const marks = texts.map((t) => { const m = document.createElement("span"); t.before(m); m.appendChild(t); return m; });
+  const made = [];
+  for (const m of marks) {
+    const line = m.closest(".ln, .cp") || host;
+    // inside it: no look of this kind of their own
+    for (const e of [...m.querySelectorAll("*")]) {
+      if (!givesLook(e, pre)) continue;
+      if (e.dataset.rd || e.dataset.hc || e.tagName === "MARK") unwrapEl(e);
+      else if (e.tagName === "FONT") e.removeAttribute(pre === "c:" ? "color" : "face");
+      else if (pre === "c:") e.style.removeProperty("color");
+      else if (pre === "font:") e.style.removeProperty("font-family");
+      else if (pre === "sz:") e.style.removeProperty("font-size");
+      else if (pre === "hc:") e.style.removeProperty("background-color");
+    }
+    // around it: out of any of this kind
+    for (let up = m.parentElement; up && up !== line && up !== host; ) {
+      const next = up.parentElement;
+      if (givesLook(up, pre)) splitOut(up, m);
+      up = next;
+    }
+    const sp = value == null ? document.createElement("span") : lookSpan(pre, value);
+    sp.append(...m.childNodes);
+    m.replaceWith(sp);
+    made.push(sp);
+  }
+  // the words still chosen; empty spans away
+  const r = document.createRange();
+  r.setStartBefore(made[0]);
+  r.setEndAfter(made[made.length - 1]);
+  for (const sp of made) if (value == null || !sp.textContent) unwrapEl(sp);
+  sel.removeAllRanges();
+  try { sel.addRange(r); } catch (e) { /* as it is */ }
+  tidyStyles();
+  afterEdit();
+  OL.undo = { page, before: beforeHtml, after: page.innerHTML };      // (Ctrl+Z puts it back)
+  return true;
+}
+function lookAtSel(pre) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  let n = sel.getRangeAt(0).startContainer;
+  if (n.nodeType === 3 && sel.getRangeAt(0).startOffset >= n.data.length && n.nextSibling) n = n.nextSibling;
+  for (let e = n.nodeType === 1 ? n : n.parentElement; e && !e.classList.contains("ln") && !e.classList.contains("page"); e = e.parentElement) {
+    if (e.dataset && e.dataset.rd && e.dataset.rd.startsWith(pre)) return e.dataset.rd.slice(pre.length);
+  }
+  return null;
+}
+async function fontWordsDialog() {
+  if (!ED.project) return fontsDialog();
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { toast("Choose the words first (the page's own typeface: View ▸ Typeface)."); return; }
+  if (lookRO()) { toast("This can't be changed here."); return; }
+  const keep = sel.getRangeAt(0).cloneRange();
+  const usz = (A.note && A.note.usz) || 24;
+  const curF = lookAtSel("font:"), curS = lookAtSel("sz:");
+  const box = document.createElement("div");
+  box.className = "cform wfont";
+  box.innerHTML = `<label>Font<input class="wf-name" list="wf-fonts" value="${(curF || "").replace(/"/g, "")}" placeholder="As the document"></label>` +
+    `<datalist id="wf-fonts">${WORD_FONTS.map((f) => `<option value="${f}">`).join("")}</datalist>` +
+    `<label>Size<input class="wf-size" list="wf-sizes" value="${curS ? +curS / 2 : ""}" placeholder="${usz / 2} (as the document)" inputmode="decimal"></label>` +
+    `<datalist id="wf-sizes">${FONT_SIZES.map((x) => `<option value="${x}">`).join("")}</datalist>` +
+    `<div class="wf-sample">The night came down on St David’s.</div>`;
+  const nameI = box.querySelector(".wf-name"), sizeI = box.querySelector(".wf-size"), sample = box.querySelector(".wf-sample");
+  const show = () => {
+    sample.style.fontFamily = nameI.value.trim() ? `"${nameI.value.trim()}", serif` : "";
+    const z = parseFloat(sizeI.value);
+    sample.style.fontSize = z > 0 ? Math.min(40, z * 1.333) + "px" : "";
+  };
+  nameI.addEventListener("input", show);
+  sizeI.addEventListener("input", show);
+  show();
+  setTimeout(() => nameI.select(), 50);
+  const v = await ask("Font of the Chosen Words", box, [["As the Document", "clear"], ["OK", "ok", true]]);
+  if (!v) return;
+  page.focus();
+  sel.removeAllRanges();
+  sel.addRange(keep);
+  if (v === "clear") { setWordsLook("font:", null); setWordsLook("sz:", null); return; }
+  const name = nameI.value.trim().replace(/["<>;]/g, "").slice(0, 60);
+  const z = parseFloat(sizeI.value);
+  if (name !== (curF || "")) setWordsLook("font:", name || null);
+  if (!(z > 0)) { if (curS) setWordsLook("sz:", null); }
+  else { const hp = Math.round(Math.min(400, Math.max(2, z)) * 2); if (String(hp) !== curS) setWordsLook("sz:", hp === usz ? null : String(hp)); }
+}
+function growFont(d) {
+  const usz = (A.note && A.note.usz) || 24;
+  const cur = +(lookAtSel("sz:") || usz) / 2;
+  let next = d > 0 ? FONT_SIZES.find((x) => x > cur) || cur + 12 : [...FONT_SIZES].reverse().find((x) => x < cur) || Math.max(1, cur - 1);
+  const hp = Math.round(next * 2);
+  if (setWordsLook("sz:", hp === usz ? null : String(hp))) toast(next + " point", 900);
+}
+function supSub(kind) {
+  if (lookRO()) return;
+  page.focus();
+  document.execCommand("styleWithCSS", false, false);
+  document.execCommand(kind === "sup" ? "superscript" : "subscript");
+  afterEdit();
+}
+function textColour(hex) { setWordsLook("c:", hex); }
+function highlightColour(name) {
+  if (name == null) { setWordsLook("hc:", null); return; }
+  setWordsLook("hc:", name);
+}
+// the paragraphs' own line spacing (null: the document's usual)
+function paraSpacing(ls) {
+  if (lookRO()) return;
+  const beforeHtml = page.innerHTML;
+  const lines = ed.selectedLines(page).filter((d) => d.dataset.kind !== "table" && !d.dataset.code);
+  for (const d of lines) {
+    if (ls) { d.dataset.ls = ls; d.style.setProperty("--ls", ls); }
+    else { delete d.dataset.ls; d.style.removeProperty("--ls"); }
+  }
+  afterEdit();
+  OL.undo = { page, before: beforeHtml, after: page.innerHTML };
+  toast(ls ? `Line spacing ${ls === "1" ? "single" : ls === "2" ? "double" : ls}` : "Line spacing as the document", 1000);
+}
+function startNewPage() {
+  if (lookRO()) return;
+  const beforeHtml = page.innerHTML;
+  const lines = ed.selectedLines(page).filter((d) => d.dataset.kind !== "table");
+  const on = !lines.every((d) => d.dataset.newpage);
+  for (const d of lines) { if (on) d.dataset.newpage = "1"; else delete d.dataset.newpage; }
+  afterEdit();
+  OL.undo = { page, before: beforeHtml, after: page.innerHTML };
+}
+function pageBreak() {
+  if (lookRO() || cellOfSel()) return;
+  page.focus();
+  const got = splitAtCaret();
+  if (!got) return;
+  const [line, nl] = got;
+  if (line.dataset.ls) { nl.dataset.ls = line.dataset.ls; nl.style.setProperty("--ls", line.dataset.ls); }
+  if (line.dataset.align) nl.dataset.align = line.dataset.align;
+  nl.dataset.pagebreak = "1";
+  ed.placeCaret(nl, 0);
+  afterEdit();
+  scrollCaretIntoView();
+}
+function lookItems() {
+  const ro = lookRO();
+  const lineNow = caretLine();
+  return {
+    font: [
+      { label: "Font…", fn: fontWordsDialog, keys: "Ctrl+D", off: ro },
+      { label: "Grow Font", fn: () => growFont(1), keys: "Ctrl+Shift+>", off: ro },
+      { label: "Shrink Font", fn: () => growFont(-1), keys: "Ctrl+Shift+<", off: ro },
+    ],
+    colour: [
+      ...TEXT_COLOURS.map(([l, h]) => ({ label: l, fn: () => textColour(h), off: ro })),
+    ],
+    hl: [
+      ...HL_COLOURS.map(([l, n]) => ({ label: l, fn: () => highlightColour(n), off: ro })),
+      "-",
+      { label: "No Highlight", fn: () => highlightColour(null), off: ro },
+    ],
+    spacing: [
+      ...[["Line Spacing 1.0", "1"], ["Line Spacing 1.15", "1.15"], ["Line Spacing 1.5", "1.5"], ["Line Spacing 2.0", "2"]].map(([l, v]) => ({ label: l, on: !!lineNow && lineNow.dataset.ls === v, fn: () => paraSpacing(v), off: ro })),
+      "-",
+      { label: "As the Document", fn: () => paraSpacing(null), off: ro },
+    ],
+  };
+}
+
 const COMMANDS = {
   bold: () => { exec("bold"); afterEdit(); },
   italic: () => { exec("italic"); afterEdit(); },
@@ -3487,6 +3737,7 @@ function enter() {
   }
   if (line.dataset.code) { nl.dataset.code = "1"; nl.dataset.raw = ""; }
   else if (line.dataset.align) nl.dataset.align = line.dataset.align;      // as in Word: the next line goes on aligned
+  if (line.dataset.ls && !line.dataset.code) { nl.dataset.ls = line.dataset.ls; nl.style.setProperty("--ls", line.dataset.ls); }
   ed.placeCaret(nl, 0);
   afterEdit();
   scrollCaretIntoView();
@@ -3638,7 +3889,7 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.shiftKey && (k === "*" || e.code === "Digit8")) fn = COMMANDS.ul;
   else if (c && e.shiftKey && (k === "&" || e.code === "Digit7")) fn = COMMANDS.ol;
   else if (c && e.shiftKey && (k === "D" || k === "d")) fn = COMMANDS.dark;
-  else if (c && !e.shiftKey && !e.altKey && (k === "d" || k === "D" || e.code === "KeyD")) fn = fontsDialog;
+  else if (c && !e.shiftKey && !e.altKey && (k === "d" || k === "D" || e.code === "KeyD")) fn = ED.project ? fontWordsDialog : fontsDialog;
   else if (c && e.shiftKey && !e.altKey && (k === "L" || k === "l")) fn = () => { if (S.settings.spread) toggleSpread(); else togglePageView(); };
   else if (c && e.altKey && !e.shiftKey && (k === "p" || k === "P" || e.code === "KeyP") && ED.project) fn = toggleSpread;
   else if (c && e.altKey && !e.shiftKey && (k === "j" || k === "J" || e.code === "KeyJ")) fn = toggleList;
@@ -3651,6 +3902,11 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.altKey && !e.shiftKey && (k === "=" || k === "+" || e.code === "Equal")) fn = () => commentSize(1);
   else if (c && e.altKey && !e.shiftKey && (k === "-" || e.code === "Minus")) fn = () => commentSize(-1);
   else if (c && e.altKey && !e.shiftKey && (k === "0" || e.code === "Digit0")) fn = () => commentSize(0);
+  else if (c && e.shiftKey && !e.altKey && ED.project && (k === ">" || e.code === "Period") && hasWordsChosen()) fn = () => growFont(1);
+  else if (c && e.shiftKey && !e.altKey && ED.project && (k === "<" || e.code === "Comma") && hasWordsChosen()) fn = () => growFont(-1);
+  else if (c && !e.shiftKey && !e.altKey && ED.project && (k === "." || e.code === "Period")) fn = () => supSub("sup");
+  else if (c && !e.shiftKey && !e.altKey && ED.project && (k === "," || e.code === "Comma")) fn = () => supSub("sub");
+  else if (c && !e.shiftKey && !e.altKey && ED.project && k === "Enter") fn = pageBreak;
   else if (c && e.shiftKey && (k === ">" || e.code === "Period")) fn = COMMANDS.bigger;
   else if (c && e.shiftKey && (k === "<" || e.code === "Comma")) fn = COMMANDS.smaller;
   else if (c && e.shiftKey && !e.altKey && (k === "G" || k === "g")) fn = () => findGo(true);
@@ -3989,11 +4245,12 @@ const MENU_ORDER = {
   fileDrop: ["New Note Under This One", "Save As RTF…", "Delete Note…"],
   edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Paste as Plain Text", "Select All", "-",
     "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", /^List All/, "Search the Notes (the list)", "-", "Go To…"],
-  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
+  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
     "Bookmark…", "-", "Date", "Date and Time"],
-  format: ["Fonts…", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Change Case", "-",
+  format: ["Font", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Highlight Colour", "Text Colour",
+    "Superscript", "Subscript", "Change Case", "-",
     "Heading 1", "Heading 2", "Heading 3", "Normal Text", "-", "Bullets and Numbering", "Indent (as a Quote)", "-",
-    "Align Left", "Centre", "Align Right", "Justify", "-", "Clear Formatting", "Remove Text Colours…"],
+    "Align Left", "Centre", "Align Right", "Justify", "Line Spacing", "Start on New Page", "-", "Clear Formatting", "Remove Text Colours…"],
   notes: ["New Note Under This One", "-", "Move Up", "Move Down", "Move Out a Level", "Move Under the Note Above", "-",
     "Select Everything in the List (as one page)", "Count Words (with the notes under it)…", "Notebook Colour…", "-",
     "Synopsis and Notes", "Status", "Include in Compile", "Targets and Status…", "Daily Word Target…", "Add a PDF…", "-", "Delete Note…"],
@@ -4100,7 +4357,7 @@ function menuItemsAll(name) {
       { label: "Date and Time", fn: COMMANDS.datetime, keys: "Ctrl+Shift+;" },
       "-",
       { label: "Picture…", fn: COMMANDS.picture },
-      ...(ED.project ? [{ label: "Table", sub: tableItems() }] : []),
+      ...(ED.project ? [{ label: "Table", sub: tableItems() }, { label: "Page Break", fn: pageBreak, keys: "Ctrl+Enter" }] : []),
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
       ...(ED.project ? [{ label: "Bookmark…", fn: insertBookmark, keys: "Ctrl+Shift+F5", off: !A.note }] : []),
@@ -4115,7 +4372,15 @@ function menuItemsAll(name) {
       } },
     ];
     case "format": return [
-      { label: "Fonts…", fn: fontsDialog, keys: "Ctrl+D" },
+      ...(ED.project ? (() => { const L = lookItems(); return [
+        { label: "Font", sub: L.font },
+        { label: "Text Colour", sub: L.colour },
+        { label: "Highlight Colour", sub: L.hl },
+        { label: "Superscript", fn: () => supSub("sup"), keys: "Ctrl+." },
+        { label: "Subscript", fn: () => supSub("sub"), keys: "Ctrl+," },
+        { label: "Line Spacing", sub: L.spacing },
+        { label: "Start on New Page", on: !!(caretLine() && caretLine().dataset.newpage), fn: startNewPage },
+      ]; })() : [{ label: "Fonts…", fn: fontsDialog, keys: "Ctrl+D" }]),
       "-",
       { label: "Bold", fn: COMMANDS.bold, keys: "Ctrl+B" },
       { label: "Italic", fn: COMMANDS.italic, keys: "Ctrl+I" },
@@ -4206,7 +4471,7 @@ function menuItemsAll(name) {
         { label: "Red Text Cursor", on: s.caret === "red", fn: () => setCaret(s.caret === "red" ? "normal" : "red") },
       ] },
       { label: "Interface Size", sub: UI_SIZES.map(([l, v]) => ({ label: `${l} (${v}%)`, on: (s.ui || 100) === v, fn: () => setUiSize(v) })) },
-      { label: "Line Spacing", sub: [
+      { label: ED.project ? "Line Spacing on Screen" : "Line Spacing", sub: [
         ...SPACINGS.map(([l, v]) => ({ label: l, on: s.spacing === v, fn: spacing(v), keys: { 100: "Alt+1", 150: "Alt+3", 200: "Alt+2" }[v] })),
         "-",
         { label: "Space Between Paragraphs", on: s.paraGap, fn: () => { s.paraGap = !s.paraGap; saveSettings(); applyLook(); } },
@@ -4550,7 +4815,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.8.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.9.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4698,7 +4963,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.8.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.9.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -4770,7 +5035,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.8.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.9.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -4974,7 +5239,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5011,7 +5276,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.8.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5050,7 +5315,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.8.1"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.9.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5342,7 +5607,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.8.1");
+  const R = await import("./rtf.js?v=1.9.22-d1.9.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5434,7 +5699,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -7168,7 +7433,7 @@ if (ED.project) { buildOutline(); if (S.settings.outline) setTimeout(renderOutli
 
 // ------------------------------------------------------------------ RossDraft 1.7.0: Remove Text Colours
 // Coloured lettering (from Word, or a client's) taken out of the Word files: this scene, the scenes on this page,
-// or every scene. RossDraft's page doesn't show colours (they're kept in the files), and Compile never adds them.
+// or every scene. (1.9.0: the page shows them now.) Compile never adds them.
 async function removeColours() {
   const st = S.store;
   if (!st || typeof st.stripColours !== "function") {
@@ -7183,7 +7448,7 @@ async function removeColours() {
   if (every.length > 1) btns.push([`Every Scene (${every.length})`, "all", !btns.length]);
   if (!btns.length) return;
   const v = await ask("Remove Text Colours", askText("Coloured lettering is taken out of the Word files, so it's all in the usual colour. " +
-    "Highlighting and links are kept.\n\n(The page doesn't show colours; a compiled book never has them.)"), btns);
+    "Highlighting and links are kept.\n\n(A compiled book never has them.)"), btns);
   if (!v) return;
   const list = v === "all" ? every : here;
   await flushSave();
@@ -7194,6 +7459,8 @@ async function removeColours() {
       if (k) { places += k; scenes++; }
     }
   }, { after: 0 });
+  // the pages showing them, without the colours now
+  for (const p of P) if (p.note && !p.joined && list.includes(p.note) && p.page.dataset.loaded) showText(p.note.text, p);
   toast(places ? `Text colours removed: ${places} place${places === 1 ? "" : "s"} in ${scenes} ${st.isDoc ? "document" : scenes === 1 ? "scene" : "scenes"}.`
     : "No text colours found: nothing to remove.", 5000);
 }
@@ -7262,7 +7529,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.8.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -7728,7 +7995,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.8.1"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.9.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -7875,7 +8142,7 @@ async function insertBookmark() {
 }
 
 // for the tests
-window.RN = { insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

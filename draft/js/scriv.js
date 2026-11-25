@@ -15,10 +15,10 @@
 // text as it now is (the nearest place they occur), so Scrivener finds them where it left them.
 // RossDraft's own settings for it (targets, status, Compile) are kept in Settings/rossdraft.json.
 
-import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.22-d1.8.1";
-import * as md from "./md.js?v=1.9.22-d1.8.1";
-import * as wordio from "./wordio.js?v=1.9.22-d1.8.1";
-import * as rtf from "./rtf.js?v=1.9.22-d1.8.1";
+import { ProjectStore, PNote, FLAG_COLOURS } from "./project.js?v=1.9.22-d1.9.0";
+import * as md from "./md.js?v=1.9.22-d1.9.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.9.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.9.0";
 
 const SPECIAL = new Set(["DraftFolder", "ResearchFolder", "TrashFolder"]);
 const UNSAFE = ["Scrv_fn"];

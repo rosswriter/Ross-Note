@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.8.1";
+import * as md from "./md.js?v=1.9.22-d1.9.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -194,6 +194,35 @@ class Numbering {
 
 const xml = (text) => new DOMParser().parseFromString(text, "application/xml");
 
+// RossDraft 1.9.0: a document's usual look — the font, size and colour most of its words have of their own, and
+// the line spacing most of its paragraphs have of their own (null: none of their own). Words that differ carry it
+// (font:, sz:, c:); paragraphs that differ carry ls. wordpatch has the same reckoning.
+export function usualLook(body) {
+  const tally = { font: new Map(), sz: new Map(), color: new Map(), line: new Map() };
+  const add = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
+  const val = (el, a = "val") => (el ? el.getAttributeNS(W, a) || el.getAttribute("w:" + a) : null);
+  for (const p of body.getElementsByTagNameNS(W, "p")) {
+    const ppr = [...p.children].find((c) => c.localName === "pPr");
+    const sp = ppr && [...ppr.children].find((c) => c.localName === "spacing");
+    const rule = sp && val(sp, "lineRule");
+    add(tally.line, sp && val(sp, "line") && (!rule || rule === "auto") ? val(sp, "line") : null, 1);
+  }
+  for (const r of body.getElementsByTagNameNS(W, "r")) {
+    let n = 0;
+    for (const t of r.getElementsByTagNameNS(W, "t")) n += t.textContent.length;
+    if (!n) continue;
+    const rpr = [...r.children].find((c) => c.localName === "rPr");
+    const k = (name) => rpr && [...rpr.children].find((c) => c.localName === name);
+    const rf = k("rFonts");
+    add(tally.font, rf ? val(rf, "ascii") || val(rf, "hAnsi") : null, n);
+    add(tally.sz, k("sz") ? val(k("sz")) : null, n);
+    const c = k("color") && val(k("color"));
+    add(tally.color, c && c !== "auto" ? c.toUpperCase() : null, n);
+  }
+  const top = (m) => { let best = null, bn = -1; for (const [k, n] of m) if (n > bn) { best = k; bn = n; } return best; };
+  return { font: top(tally.font), sz: top(tally.sz), color: top(tally.color), line: top(tally.line) };
+}
+
 async function relsOf(files, path) {
   const out = new Map();
   if (!files.has(path)) return out;
@@ -234,6 +263,8 @@ export async function readDocx(buf, opts = {}) {
   const media = new Map();
   const lines = [];
   const pending = [];
+  const bodyEl = doc.getElementsByTagNameNS(W, "body")[0];
+  const usual = bodyEl ? usualLook(bodyEl) : { font: null, sz: null, color: null, line: null };
 
   const picture = (rid) => {
     const rel = rels.get(rid);
@@ -271,6 +302,17 @@ export async function readDocx(buf, opts = {}) {
         if (shd && !["auto", "ffffff", "none", ""].includes((wv(shd, "fill") || "auto").toLowerCase())) f.add("h");
         const va = kid(rpr, "vanish");
         if (va && !["0", "false"].includes(wv(va) || "true")) return;
+        // (1.9.0) its own look where it differs from the document's usual
+        if (hl && f.has("h") && !["yellow", "none", "white"].includes(wv(hl) || "yellow")) f.add("hc:" + wv(hl));
+        const col = kid(rpr, "color") && wv(kid(rpr, "color"));
+        if (col && col !== "auto" && /^[0-9A-Fa-f]{6}$/.test(col) && col.toUpperCase() !== usual.color && !href) f.add("c:" + col.toUpperCase());
+        const vs = kid(rpr, "vertAlign") && wv(kid(rpr, "vertAlign"));
+        if (vs === "superscript") f.add("sup"); else if (vs === "subscript") f.add("sub");
+        const rf = kid(rpr, "rFonts");
+        const fn = rf && (wv(rf, "ascii") || wv(rf, "hAnsi"));
+        if (fn && fn !== usual.font && !/["<>]/.test(fn)) f.add("font:" + fn);
+        const sz = kid(rpr, "sz") && wv(kid(rpr, "sz"));
+        if (sz && /^\d+$/.test(sz) && sz !== usual.sz) f.add("sz:" + sz);
       }
       if (heading) f.delete("b");
       for (const c of r.children) {
@@ -322,6 +364,22 @@ export async function readDocx(buf, opts = {}) {
       const np = kid(ppr, "numPr");
       if (np && kid(np, "numId")) num = [wv(kid(np, "numId")), kid(np, "ilvl") ? +wv(kid(np, "ilvl")) || 0 : 0];
     }
+    // (1.9.0) its own line spacing (where it differs from the usual), Start on New Page, a page break before it
+    let ls = null, newPage = false, brk = false;
+    if (ppr) {
+      const sp = kid(ppr, "spacing");
+      const line = sp && wv(sp, "line"), rule = sp && wv(sp, "lineRule");
+      if (line && (!rule || rule === "auto") && line !== usual.line) ls = String(Math.round(+line / 240 * 100) / 100);
+      const pb = kid(ppr, "pageBreakBefore");
+      if (pb && !["0", "false", "off"].includes(wv(pb) || "true")) newPage = true;
+    }
+    {
+      const r0 = kids(p, "r")[0];
+      if (r0) {
+        const ks = kids(r0).filter((c) => c.localName !== "rPr" && c.localName !== "lastRenderedPageBreak");
+        if (ks.length === 1 && ks[0].localName === "br" && wv(ks[0], "type") === "page") brk = true;
+      }
+    }
     let kind = styles.kind(sid);
     if (num == null && sid) num = styles.num(sid);
     let depth = kind === "ul" || kind === "ol" ? styles.listDepth(sid) : 1;
@@ -354,6 +412,7 @@ export async function readDocx(buf, opts = {}) {
       kind: k === 0 || kind === "quote" ? kind : (kind === "ul" || kind === "ol" || heading ? null : kind),
       restart: k === 0 && restart,
       depth, runs: tidyRuns(runs), code, title: isTitle && k === 0, align: code ? null : align,
+      ls: code ? null : ls, pageBreak: k === 0 && newPage, brk: k === 0 && brk,
     }));
   };
 
@@ -455,7 +514,7 @@ export async function readDocx(buf, opts = {}) {
       notes.set(kind + (n.getAttributeNS(W, "id") || n.getAttribute("w:id")), paras.join("\n").replace(/^\s+/, ""));
     }
   }
-  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble] };
+  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble], usual };
   const tidy = [];
   for (const ln of lines) {
     const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind && !ln.cells;
@@ -496,6 +555,9 @@ export function toNoteLines(lines, picture) {
     }
     const out = { kind: ln.kind, mark: null, runs: [] };
     if (ln.align) out.align = ln.align;
+    if (ln.ls) out.ls = ln.ls;                 // (1.9.0)
+    if (ln.pageBreak) out.newpage = true;
+    if (ln.brk) out.brk = true;
     if ((ln.kind === "ul" || ln.kind === "ol") && ln.depth > 1) {
       const lead = "  ".repeat(ln.depth - 1);
       out.mark = ln.kind === "ul" ? "ul:" + lead + "- " : "ol:" + lead + "\u0000. ";
@@ -527,6 +589,7 @@ export function fromNoteLines(lines) {
     const heading = !!ln.kind && ln.kind[0] === "h";
     return {
       kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null, restart: !!restarts[k],
+      ls: ln.ls || null, pageBreak: !!ln.newpage || !!ln.pageBreak, brk: !!ln.brk,
       runs: ln.runs.map((r) => (r.img ? { t: OBJ, f: new Set(), img: r.img }
         : { t: r.t.split(OBJ).join(""), f: heading ? new Set([...r.f].filter((x) => x !== "b")) : r.f, href: r.href || null })),
     };
@@ -635,8 +698,15 @@ export function rpr(f, link) {
   if (f.has("b")) p += "<w:b/><w:bCs/>";
   if (f.has("i")) p += "<w:i/><w:iCs/>";
   if (f.has("s")) p += "<w:strike/>";
-  if (f.has("h")) p += '<w:highlight w:val="yellow"/>';   // highlight before u: Word's order
+  const v = (pre) => { const k = [...f].find((x2) => x2.startsWith(pre)); return k ? k.slice(pre.length) : null; };
+  // (1.9.0) the words' own look; CT_RPr's order: rFonts, b, i, strike, color, sz, highlight, u, vertAlign
+  const font = v("font:"), col = v("c:"), sz = v("sz:"), hc = v("hc:");
+  if (font) p = `<w:rFonts w:ascii="${xa(font)}" w:hAnsi="${xa(font)}" w:cs="${xa(font)}"/>` + p;
+  if (col) p += `<w:color w:val="${col}"/>`;
+  if (sz) p += `<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>`;
+  if (f.has("h")) p += `<w:highlight w:val="${hc || "yellow"}"/>`;   // highlight before u: Word's order
   if (f.has("u") && !link) p += '<w:u w:val="single"/>';
+  if (f.has("sup")) p += '<w:vertAlign w:val="superscript"/>'; else if (f.has("sub")) p += '<w:vertAlign w:val="subscript"/>';
   return p ? `<w:rPr>${p}</w:rPr>` : "";
 }
 
@@ -789,8 +859,13 @@ export async function writeDocx(lines, pictureBytes, title = "", font = "Cambria
     const align = ln.align || ((kind === "h1" || kind === "h2") && opts.headingsPlain ? "center" : null) ||
       (opts.justify && isBody ? "justify" : null);
     if (align && !ln.code) jc = `<w:jc w:val="${align === "justify" ? "both" : align}"/>`;
+    // (1.9.0) the paragraph's own line spacing
+    if (ln.ls && !ln.code) {
+      const line = ` w:line="${Math.round(+ln.ls * 240)}" w:lineRule="auto"`;
+      spacing = spacing ? spacing.replace("/>", line + "/>") : `<w:spacing${line}/>`;
+    }
     const ppr = style + (ln.pageBreak ? "<w:pageBreakBefore/>" : "") + num + spacing + ind + jc;
-    let out = "<w:p>" + (ppr ? `<w:pPr>${ppr}</w:pPr>` : "");
+    let out = "<w:p>" + (ppr ? `<w:pPr>${ppr}</w:pPr>` : "") + (ln.brk ? '<w:r><w:br w:type="page"/></w:r>' : "");
     for (const r of ln.runs || []) {
       if (r.img) { out += await pictureXml(r.img); continue; }
       const t = r.t.split(OBJ).join("");

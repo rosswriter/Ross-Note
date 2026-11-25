@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES } from "./wordio.js?v=1.9.22-d1.8.1";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.9.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -59,7 +59,10 @@ function sigOf(ln) {
     }
     const t = (r.t || "").split(OBJ).join("");
     if (!t) continue;
-    const f = [...FLAGS].filter((k) => r.f && r.f.has(k)).join("");
+    let f = [...FLAGS].filter((k) => r.f && r.f.has(k)).join("");
+    // (1.9.0) the words' own colour, font, size, highlight colour, superscript, subscript
+    const more = r.f ? [...r.f].filter((k) => k.includes(":") || k === "sup" || k === "sub").sort() : [];
+    if (more.length) f += "|" + more.join("|");
     const h = r.href || "";
     const last = runs[runs.length - 1];
     if (last && !last[3] && last[1] === f && last[2] === h) last[0] += t;
@@ -68,6 +71,7 @@ function sigOf(ln) {
   const k = ln.kind || "";
   const sig = [k, k === "ul" || k === "ol" ? ln.depth || 1 : 0, ln.code ? 1 : 0, runs];
   if (ln.align && !ln.code) sig.push(ln.align);       // (unaligned lines' signatures as before 1.8.3)
+  if ((ln.ls || ln.pageBreak || ln.brk) && !ln.code) sig.push("ls" + (ln.ls || "") + (ln.pageBreak ? "np" : "") + (ln.brk ? "pb" : ""));
   return JSON.stringify(sig);
 }
 
@@ -129,7 +133,9 @@ const RPR_ORDER = ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCap
   "shadow", "emboss", "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color", "spacing", "w", "kern",
   "position", "sz", "szCs", "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em",
   "lang", "eastAsianLayout", "specVanish", "oMath"];
+// (1.9.0: colour, font, size and superscript/subscript are the words' own now, each run's, or the usual)
 const OURS = new Set(["rStyle", "b", "bCs", "i", "iCs", "strike", "dstrike", "highlight", "u", "shd", "vanish",
+  "color", "rFonts", "sz", "szCs", "vertAlign",
   "specVanish", "webHidden", "rPrChange"]);
 
 function sortRpr(rpr) {
@@ -640,6 +646,18 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     return c;
   };
 
+  // (1.9.0) the document's usual look: what words without a look of their own are given (as they had)
+  const usual = usualLook(body);
+  const usualEl = {};
+  for (const r of body.getElementsByTagNameNS(W, "r")) {
+    const rp = wkid(r, "rPr");
+    if (!rp) continue;
+    const rf = wkid(rp, "rFonts"), sz = wkid(rp, "sz"), szc = wkid(rp, "szCs"), col = wkid(rp, "color");
+    if (!usualEl.rFonts && rf && usual.font && (wval(rf, "ascii") || wval(rf, "hAnsi")) === usual.font) usualEl.rFonts = rf;
+    if (!usualEl.sz && sz && usual.sz && wval(sz) === usual.sz) { usualEl.sz = sz; usualEl.szCs = szc || null; }
+    if (!usualEl.color && col && usual.color && (wval(col) || "").toUpperCase() === usual.color) usualEl.color = col;
+  }
+
   // ordered lists: each run of them its own numbering (as wordio writes)
   const numFor = new Map();   // line index -> numId for new lists with nothing to follow
 
@@ -654,7 +672,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.8.1");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.9.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -729,8 +747,25 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         ppr.removeChild(jc);
       }
     }
-    // RossDraft's Compile: a chapter on a new page
+    // RossDraft's Compile: a chapter on a new page; (1.9.0) Start on New Page, on or off
     if (ln.pageBreak && !(ppr && wkid(ppr, "pageBreakBefore"))) ensurePpr().appendChild(doc.createElementNS(W, "w:pageBreakBefore"));
+    else if (!ln.pageBreak && ppr) for (const x of wkids(ppr, "pageBreakBefore")) ppr.removeChild(x);
+    // (1.9.0) its own line spacing; none of its own: the usual
+    if (!ln.code) {
+      let sp = ppr && wkid(ppr, "spacing");
+      const rule = sp && wval(sp, "lineRule");
+      if (ln.ls) {
+        if (!sp) sp = ensurePpr().appendChild(doc.createElementNS(W, "w:spacing"));
+        sp.setAttributeNS(W, "w:line", String(Math.round(+ln.ls * 240)));
+        sp.setAttributeNS(W, "w:lineRule", "auto");
+      } else if (sp && wval(sp, "line") && (!rule || rule === "auto") && wval(sp, "line") !== usual.line) {
+        if (usual.line) sp.setAttributeNS(W, "w:line", usual.line);
+        else {
+          for (const a of ["line", "lineRule"]) { sp.removeAttributeNS(W, a); sp.removeAttribute("w:" + a); }
+          if (!sp.attributes.length) ppr.removeChild(sp);
+        }
+      }
+    }
     if (ppr) { sortPpr(ppr); if (ppr.children.length) p.appendChild(ppr); }
     // the look of the words: the old paragraph's, or one like it; headings and the like without one
     // take their style's own (no run look), plain text the scene's usual
@@ -751,8 +786,21 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       if (f.has("b")) { add("b"); add("bCs"); }
       if (f.has("i")) { add("i"); add("iCs"); }
       if (f.has("s")) add("strike");
-      if (f.has("h")) add("highlight", "yellow");
+      // (1.9.0) its own font, size, colour, highlight colour, superscript / subscript; else the usual (as it had)
+      const look = (pre) => { const k = [...f].find((x) => x.startsWith(pre)); return k ? k.slice(pre.length) : null; };
+      const fnt = look("font:"), sz = look("sz:"), col = look("c:"), hc = look("hc:");
+      if (fnt) {
+        const e = doc.createElementNS(W, "w:rFonts");
+        for (const a of ["ascii", "hAnsi", "cs"]) e.setAttributeNS(W, "w:" + a, fnt);
+        rp.appendChild(e);
+      } else if (base && usualEl.rFonts) rp.appendChild(usualEl.rFonts.cloneNode(true));
+      if (sz) { add("sz", sz); add("szCs", sz); }
+      else if (base && usualEl.sz) { rp.appendChild(usualEl.sz.cloneNode(true)); if (usualEl.szCs) rp.appendChild(usualEl.szCs.cloneNode(true)); }
+      if (col) add("color", col);
+      else if (base && usualEl.color && !r.href) rp.appendChild(usualEl.color.cloneNode(true));
+      if (f.has("h")) add("highlight", hc || "yellow");
       if (f.has("u") && !r.href) add("u", "single");
+      if (f.has("sup")) add("vertAlign", "superscript"); else if (f.has("sub")) add("vertAlign", "subscript");
       sortRpr(rp);
       const pieces = t.includes(NOTE_A) && !ln.code ? splitNotes(t) : [{ t }];
       for (const piece of pieces) {
@@ -767,6 +815,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         else xml += `<w:r>${rx}</w:r>`;
       }
     }
+    if (ln.brk && !ln.code) xml = '<w:r><w:br w:type="page"/></w:r>' + xml;      // (1.9.0) a page break before it
     if (xml) {
       const frag = parse(`<w:x xmlns:w="${W}" xmlns:r="${R}" xmlns:wp="${WP}" xmlns:a="${A_}" xmlns:pic="${PIC}">${xml}</w:x>`);
       for (const c of [...frag.documentElement.children]) p.appendChild(doc.importNode(c, true));
@@ -785,7 +834,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.8.1");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.9.0");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }

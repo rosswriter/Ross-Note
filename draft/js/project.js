@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.9.22-d1.8.1";
-import * as wordio from "./wordio.js?v=1.9.22-d1.8.1";
-import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit } from "./wordpatch.js?v=1.9.22-d1.8.1";
-import * as rtf from "./rtf.js?v=1.9.22-d1.8.1";
+import * as md from "./md.js?v=1.9.22-d1.9.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.9.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit } from "./wordpatch.js?v=1.9.22-d1.9.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.9.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -236,6 +236,7 @@ export class ProjectStore {
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;
     n.comments = sc.comments || [];
+    n.usz = sc.usual && sc.usual.sz ? +sc.usual.sz : 24;      // (1.9.0) the words' usual size, for those of their own
     n.fnotes = new Map(sc.notes || []);     // RossDraft 1.2: the scene's footnotes and endnotes, "f17" -> words
     n.fnDirty = false;
     n.modified = file.lastModified;
@@ -272,7 +273,7 @@ export class ProjectStore {
     let comments = [];
     try { comments = await readComments(got.files); } catch (e) { comments = []; }
     return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments,
-      notes: got.notes || new Map() };
+      notes: got.notes || new Map(), usual: got.usual || null };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are
@@ -444,11 +445,8 @@ export class ProjectStore {
     await writeFile(d, name, got.blob);
     n.raw.modified = nowIso();
     await this.saveProject();
-    const keep = n.text;
+    // (1.9.0: the page shows the words' colours now: it's given the scene as it is without them)
     await this.load(n, true);
-    n.text = keep;
-    const now = this.scenes.get(n.raw.id);
-    if (now) { now.shown = keep; now.shownTitle = n.title(); }
     return got.count;
   }
 

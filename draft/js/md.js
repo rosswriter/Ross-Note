@@ -86,6 +86,8 @@ const RULE_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 // a line's alignment (Ross Note 1.6.8 / 1.9.3): <p align="center">…</p>, a heading <h2 align="center">…</h2>
 export const ALIGNS = ["center", "right", "justify"];
 const ALIGN_RE = /^<(p|h([1-6])) align="(center|right|justify)">(.*)<\/\1>$/s;
+// (RossDraft 1.9.0) and its own line spacing, Start on New Page, a page break before it
+const PARA_RE = /^<(p|h([1-6]))((?: align="(?:center|right|justify)")?(?: ls="\d+(?:\.\d+)?")?(?: newpage)?(?: pagebreak)?)>(.*)<\/\1>$/s;
 const ALNUM = /[\p{L}\p{N}_]/u;     // Python's isalnum() (and "_" never matters here)
 
 function isalnum(c) { return !!c && /[\p{L}\p{N}]/u.test(c); }
@@ -108,9 +110,28 @@ export function urlSpan(text, i) {
 export function hrefOf(url) { return url.startsWith("www.") ? "http://" + url : url; }
 
 // ------------------------------------------------------------------ inline
+// (1.9.0) the words' own look, as HTML in the Markdown: c:RRGGBB colour, font:Name, sz:N (Word's half-points),
+// hc:name (a highlight's colour, with h), sup, sub
+const SPAN_RE = /<span style="(color:#[0-9A-Fa-f]{6}|font-family:[^";<>]{1,60}|font-size:\d{1,3}(?:\.5)?pt)">/y;
+const MARKC_RE = /<mark class="hl-([A-Za-z]{2,12})">/y;
+function spanKey(st) {
+  if (st.startsWith("color:#")) return "c:" + st.slice(7).toUpperCase();
+  if (st.startsWith("font-family:")) return "font:" + st.slice(12).trim();
+  if (st.startsWith("font-size:")) return "sz:" + Math.round(parseFloat(st.slice(10)) * 2);
+  return null;
+}
+function spanOpen(k) {
+  if (k.startsWith("c:")) return `<span style="color:#${k.slice(2)}">`;
+  if (k.startsWith("font:")) return `<span style="font-family:${k.slice(5)}">`;
+  if (k.startsWith("sz:")) return `<span style="font-size:${+k.slice(3) / 2}pt">`;
+  return "";
+}
+export const isLookFlag = (k) => /^(c|font|sz|hc):/.test(k) || k === "sup" || k === "sub";
+
 export function inlineRuns(text) {
   const out = [];
   const state = new Set();
+  const spans = [];
   let buf = [];
   let i = 0;
   const n = text.length;
@@ -153,6 +174,24 @@ export function inlineRuns(text) {
       i += 2;
       continue;
     }
+    // RossDraft 1.9.0: the words' own colour, font, size, highlight colour, superscript and subscript
+    if (c === "<") {
+      const sp = stickyMatch(SPAN_RE, text, i);
+      if (sp && closes("</span>", i + sp[0].length)) {
+        const key = spanKey(sp[1]);
+        if (key) { flush(); state.add(key); spans.push(key); i += sp[0].length; continue; }
+      }
+      if (text.startsWith("</span>", i) && spans.length) { flush(); state.delete(spans.pop()); i += 7; continue; }
+      const mk = stickyMatch(MARKC_RE, text, i);
+      if (mk && closes("</mark>", i + mk[0].length)) { flush(); state.add("h"); state.add("hc:" + mk[1]); i += mk[0].length; continue; }
+      const sv = /^<(\/?)(sup|sub)>/.exec(text.slice(i, i + 6));
+      if (sv && (sv[1] ? state.has(sv[2]) : closes("</" + sv[2] + ">", i + 5))) {
+        flush();
+        if (sv[1]) state.delete(sv[2]); else state.add(sv[2]);
+        i += sv[0].length;
+        continue;
+      }
+    }
     const two = text.slice(i, i + 2);
     const low3 = text.slice(i, i + 3).toLowerCase();
     if (low3 === "<u>" && (state.has("u") || closes("</u>", i + 3) || closes("</U>", i + 3))) {
@@ -165,7 +204,7 @@ export function inlineRuns(text) {
       flush(); state.add("h"); i += 6; continue;
     }
     if (text.slice(i, i + 7).toLowerCase() === "</mark>" && state.has("h")) {
-      flush(); state.delete("h"); i += 7; continue;
+      flush(); state.delete("h"); for (const k of [...state]) if (k.startsWith("hc:")) state.delete(k); i += 7; continue;
     }
     if (two === "**" || two === "__" || two === "~~" || two === "==") {
       const key = { "**": "b", "__": "b", "~~": "s", "==": "h" }[two];
@@ -267,9 +306,16 @@ export function parse(text) {
       lists.reset();
       continue;
     }
-    const am = ALIGN_RE.exec(line);
+    const pm = PARA_RE.exec(line);
+    const am = pm && pm[3] ? pm : null;
     const ln = am ? parseLine(am[2] ? "#".repeat(+am[2]) + " " + am[4] : am[4]) : parseLine(line);
-    if (am) ln.align = am[3];
+    if (am) {
+      const a = / align="(\w+)"/.exec(am[3]), l = / ls="([\d.]+)"/.exec(am[3]);
+      if (a) ln.align = a[1];
+      if (l) ln.ls = l[1];
+      if (/ newpage/.test(am[3])) ln.newpage = true;
+      if (/ pagebreak/.test(am[3])) ln.brk = true;
+    }
     if (ln.kind === "ol" && ln.num === 1) ln.restart = true;
     const { number, restarted } = lists.step(ln);
     if (!restarted) delete ln.restart;
@@ -356,9 +402,18 @@ function isList(ln) { return ln.kind === "ul" || ln.kind === "ol"; }
 export function listNumbers(lines) { return listLayout(lines).numbers; }
 
 // ------------------------------------------------------------------ writing a note
-const OPEN = { b: "**", i: "*", s: "~~", h: "==", u: "<u>" };
-const CLOSE = { b: "**", i: "*", s: "~~", h: "==", u: "</u>" };
+const OPEN = { b: "**", i: "*", s: "~~", h: "==", u: "<u>", sup: "<sup>", sub: "<sub>" };
+const CLOSE = { b: "**", i: "*", s: "~~", h: "==", u: "</u>", sup: "</sup>", sub: "</sub>" };
 const ORDER = ["u", "h", "s", "b", "i"];
+// (1.9.0) a run's keys to open, outermost first: font, size, colour; then u, h (with its colour), s, b, i; sup/sub
+function keysOf(f) {
+  const hc = [...f].find((k) => k.startsWith("hc:"));
+  const look = [...f].filter((k) => /^(font|sz|c):/.test(k)).sort((a, b) => "fsc".indexOf(a[0]) - "fsc".indexOf(b[0]));
+  const basic = ORDER.filter((k) => f.has(k)).map((k) => (k === "h" && hc ? "h:" + hc.slice(3) : k));
+  return look.concat(basic, ["sup", "sub"].filter((k) => f.has(k)));
+}
+const openOf = (k) => OPEN[k] || (k.startsWith("h:") ? `<mark class="hl-${k.slice(2)}">` : spanOpen(k));
+const closeOf = (k) => CLOSE[k] || (k.startsWith("h:") ? "</mark>" : "</span>");
 
 function escape(t, atStart) {
   let s = "";
@@ -366,7 +421,7 @@ function escape(t, atStart) {
     const c = t[k];
     if (c === "[" && stickyMatch(LINK_AT, t, k)) s += "\\";
     if ("\\*_~=<`".includes(c)) {
-      if ("*_~=".includes(c) || c === "\\" || (c === "<" && /^<\/?(u|mark)>/i.test(t.slice(k, k + 7))) || c === "`") s += "\\";
+      if ("*_~=".includes(c) || c === "\\" || (c === "<" && /^<\/?(u|mark|span|sup|sub)\b/i.test(t.slice(k, k + 7))) || c === "`") s += "\\";
     }
     s += c;
   }
@@ -403,7 +458,7 @@ export function lineMarkdown(ln, number, opts = {}) {
   let pending = "";
   for (const r of merged) {
     if (r.img) {
-      while (openNow.length) out.push(CLOSE[openNow.pop()]);
+      while (openNow.length) out.push(closeOf(openNow.pop()));
       out.push(pending);
       pending = "";
       out.push(pictureOut(r.img, opts));
@@ -414,25 +469,35 @@ export function lineMarkdown(ln, number, opts = {}) {
     const lead = t.slice(0, t.length - t.replace(/^ +/, "").length);
     const trail = core ? t.slice(t.replace(/ +$/, "").length) : "";
     if (!core) { pending += t; continue; }
-    if ([...openNow].some((k) => !r.f.has(k))) {
-      while (openNow.length && [...openNow].some((k) => !r.f.has(k))) out.push(CLOSE[openNow.pop()]);
+    const want = keysOf(r.f);
+    // close back to where what's open is still wanted, in order (so the tags nest)
+    const fancy = (k) => k.includes(":") || k === "sup" || k === "sub";
+    if (want.some(fancy) || openNow.some(fancy)) {
+      let keep = 0;
+      while (keep < openNow.length && keep < want.length && openNow[keep] === want[keep]) keep++;
+      while (openNow.length > keep) out.push(closeOf(openNow.pop()));
+    } else if (openNow.some((k) => !want.includes(k))) {
+      // (as before 1.9.0, so notes written then read back the same)
+      while (openNow.length && openNow.some((k) => !want.includes(k))) out.push(closeOf(openNow.pop()));
     }
     out.push(pending + lead);
     pending = "";
-    for (const k of ORDER) if (r.f.has(k) && !openNow.includes(k)) { out.push(OPEN[k]); openNow.push(k); }
+    for (const k of want) if (!openNow.includes(k)) { out.push(openOf(k)); openNow.push(k); }
     const link = r.href;
     if (link == null) out.push(escape(core, !out.join("").trim()));
     else if (hrefOf(core) === link && urlSpan(core, 0) === core.length) out.push(core);
     else out.push("[" + escape(core, false).replace(/]/g, "\\]") + "](" + link.replace(/\)/g, "%29").replace(/ /g, "%20") + ")");
     pending = trail;
   }
-  while (openNow.length) out.push(CLOSE[openNow.pop()]);
+  while (openNow.length) out.push(closeOf(openNow.pop()));
   out.push(pending);
   const body = out.join("");
   const al = ALIGNS.includes(ln.align) ? ln.align : null;
-  if (al && heading) return `<${kind} align="${al}">${body}</${kind}>`;
+  const ls = ln.ls && /^\d+(\.\d+)?$/.test(String(ln.ls)) ? String(ln.ls) : null;
+  const attrs = (al ? ` align="${al}"` : "") + (ls ? ` ls="${ls}"` : "") + (ln.newpage ? " newpage" : "") + (ln.brk ? " pagebreak" : "");
+  if (attrs && heading) return `<${kind}${attrs}>${body}</${kind}>`;
   const whole = lineOut(ln, kind, heading, body, number);
-  return al && body.trim() ? `<p align="${al}">${whole}</p>` : whole;
+  return attrs && (body.trim() || ln.newpage || ln.brk) ? `<p${attrs}>${whole}</p>` : whole;
 }
 
 function lineOut(ln, kind, heading, body, number) {
@@ -473,8 +538,8 @@ export function serialize(lines, opts = {}) {
 export function titleOf(text, limit = 80) {
   for (const line of text.split("\n")) {
     let s = line.trim();
-    const am = ALIGN_RE.exec(s);
-    if (am) s = am[4].trim();
+    const am = PARA_RE.exec(s);
+    if (am && am[3]) s = am[4].trim();
     const m = BLOCK_RE.exec(s);
     if (m) s = (m[1] ? m[2] : m[4] ? m[6] : m[10]) || "";
     const q = QUOTE_RE.exec(s);

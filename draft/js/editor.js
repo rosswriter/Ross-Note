@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.8.1";
+import * as md from "./md.js?v=1.9.22-d1.9.0";
 
 const HL = "#ffd54f";
 
@@ -125,6 +125,21 @@ export function readTable(div) {
 }
 const isCellStart = (c) => c.nodeType === 1 && (c.tagName === "TD" || c.tagName === "TR" || (c.classList && c.classList.contains("cp"))) && !!c.previousElementSibling;
 
+// (RossDraft 1.9.0) the words' own look: colour, font, size (shown against the scene's usual size, --usz)
+export const HLS = { yellow: "#fff176", green: "#b9f6ca", cyan: "#b2ebf2", magenta: "#f8bbd0", lightGray: "#e0e0e0",
+  red: "#ffcdd2", blue: "#bbdefb", darkYellow: "#e6d690", darkGreen: "#a5d6a7", darkCyan: "#80cbc4", darkMagenta: "#ce93d8",
+  darkRed: "#ef9a9a", darkBlue: "#9fa8da", darkGray: "#bdbdbd", black: "#9e9e9e" };
+function lookWrap(f, wrap) {
+  for (const k of f) {
+    if (k.startsWith("c:")) wrap("span", "color: #" + k.slice(2) + ";", { rd: k });
+  }
+  for (const k of f) {
+    if (k.startsWith("sz:")) wrap("span", `font-size: calc(1em * ${+k.slice(3)} / var(--usz, 24));`, { rd: k });
+  }
+  for (const k of f) {
+    if (k.startsWith("font:")) wrap("span", `font-family: "${k.slice(5).replace(/"/g, "")}", var(--page-font, serif);`, { rd: k });
+  }
+}
 export function lineElement(ln) {
   if (ln.kind === "table") return tableElement(ln);
   const div = document.createElement("div");
@@ -135,6 +150,10 @@ export function lineElement(ln) {
   if (ln.raw != null) div.dataset.raw = ln.raw;
   if (ln.code) div.dataset.code = "1";
   if (ln.align && !ln.code && md.ALIGNS.includes(ln.align)) div.dataset.align = ln.align;
+  // (RossDraft 1.9.0) its own line spacing; Start on New Page; a page break before it
+  if (ln.ls && !ln.code) { div.dataset.ls = String(ln.ls); div.style.setProperty("--ls", String(ln.ls)); }
+  if (ln.newpage) div.dataset.newpage = "1";
+  if (ln.brk) div.dataset.pagebreak = "1";
   for (const r of ln.runs) {
     if (r.img) { div.appendChild(pictureElement(r.img)); continue; }
     if (!r.t) continue;
@@ -154,11 +173,18 @@ export function lineElement(ln) {
       e.appendChild(node);
       node = e;
     };
+    if (r.f.has("sup")) wrap("sup");
+    if (r.f.has("sub")) wrap("sub");
     if (r.f.has("i")) wrap("i");
     if (r.f.has("b")) wrap("b");
     if (r.f.has("s")) wrap("strike");
-    if (r.f.has("h")) wrap("span", "background-color: " + HL + ";");
+    if (r.f.has("h")) {
+      const hc = [...r.f].find((k) => k.startsWith("hc:"));
+      wrap("span", "background-color: " + (hc ? HLS[hc.slice(3)] || HL : HL) + ";");
+      if (hc) node.dataset.hc = hc.slice(3);
+    }
     if (r.f.has("u")) wrap("u");
+    lookWrap(r.f, (tag, style, data) => { wrap(tag, style); Object.assign(node.dataset, data); });
     if (r.href) {
       const a = document.createElement("a");
       a.href = r.href;
@@ -191,6 +217,53 @@ function hasBackground(el) {
   return !!bg && bg !== "transparent" && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg) && bg !== "initial" && bg !== "inherit";
 }
 
+// (1.9.0) an element's colour, font, size, highlight colour (ours: data-rd / data-hc; else its style or <font>)
+const has = (f, p) => [...f].some((k) => k.startsWith(p));
+export function hexOf(c) {
+  if (!c) return null;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
+  if (m) return (m[1].length === 3 ? [...m[1]].map((x) => x + x).join("") : m[1]).toUpperCase();
+  const r = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/.exec(c);
+  if (r && (r[4] == null || +r[4] > 0)) return [r[1], r[2], r[3]].map((x) => (+x).toString(16).padStart(2, "0")).join("").toUpperCase();
+  return null;
+}
+function nearestHl(c) {
+  const h = hexOf(c);
+  if (!h) return null;
+  const rgb = (x) => [0, 2, 4].map((k) => parseInt(x.slice(k, k + 2), 16));
+  const a = rgb(h);
+  let best = null, bd = 1e9;
+  for (const [name, v] of Object.entries(HLS)) {
+    const b = rgb(v.slice(1));
+    const d = a.reduce((s, x, k) => s + (x - b[k]) ** 2, 0);
+    if (d < bd) { bd = d; best = name; }
+  }
+  return best;
+}
+function lookOf(e, f) {
+  const rd = e.dataset && e.dataset.rd;
+  if (rd) {
+    const p = rd.slice(0, rd.indexOf(":") + 1);
+    if (p && !has(f, p)) f.add(rd);
+    return;
+  }
+  if (e.dataset && e.dataset.hc && !has(f, "hc:")) { if (e.dataset.hc !== "yellow") f.add("hc:" + e.dataset.hc); return; }
+  const st = e.style;
+  if (e.tagName === "FONT") {
+    const col = hexOf(e.getAttribute("color"));
+    if (col && !has(f, "c:")) f.add("c:" + col);
+    const face = e.getAttribute("face");
+    if (face && !has(f, "font:")) f.add("font:" + face.split(",")[0].replace(/["']/g, "").trim());
+  }
+  if (st) {
+    const col = st.color && hexOf(st.color);
+    if (col && !has(f, "c:")) f.add("c:" + col);
+    if (st.backgroundColor && hasBackground(e) && !has(f, "hc:")) {
+      const n = nearestHl(st.backgroundColor);
+      if (n && n !== "yellow") f.add("hc:" + n);
+    }
+  }
+}
 function flagsOf(node, line, heading) {
   const f = new Set();
   let href = null;
@@ -202,6 +275,8 @@ function flagsOf(node, line, heading) {
     else if (t === "S" || t === "STRIKE" || t === "DEL") f.add("s");
     else if (t === "MARK") f.add("h");
     else if (t === "A" && e.getAttribute("href") && href == null) href = e.getAttribute("href");
+    else if ((t === "SUP" || t === "SUB") && !(e.classList && e.classList.contains("fnref"))) { if (!f.has("sup") && !f.has("sub")) f.add(t.toLowerCase()); }
+    lookOf(e, f);
     const st = e.style;
     if (st) {
       if (st.fontWeight === "bold" || +st.fontWeight >= 600) f.add("b");
@@ -213,6 +288,7 @@ function flagsOf(node, line, heading) {
     }
   }
   if (heading) f.delete("b");
+  if (!f.has("h")) for (const k of [...f]) if (k.startsWith("hc:")) f.delete(k);
   return { f, href };
 }
 
@@ -224,6 +300,9 @@ export function readLine(div) {
   if (div.dataset.raw != null) ln.raw = div.dataset.raw;
   if (div.dataset.code) ln.code = true;
   if (div.dataset.align && !ln.code && md.ALIGNS.includes(div.dataset.align)) ln.align = div.dataset.align;
+  if (div.dataset.ls && !ln.code) ln.ls = div.dataset.ls;
+  if (div.dataset.newpage) ln.newpage = true;
+  if (div.dataset.pagebreak) ln.brk = true;
   const heading = !!kind && kind[0] === "h";
   const walk = (n) => {
     for (const c of n.childNodes) {
