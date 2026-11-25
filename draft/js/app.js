@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.9.0";
-import * as ed from "./editor.js?v=1.9.22-d1.9.0";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.9.0";
-import * as spell from "./spell.js?v=1.9.22-d1.9.0";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.9.0";
+import * as md from "./md.js?v=1.9.22-d1.10.0";
+import * as ed from "./editor.js?v=1.9.22-d1.10.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.10.0";
+import * as spell from "./spell.js?v=1.9.22-d1.10.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.10.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.9.0";
+import { ED } from "./edition.js?v=1.9.22-d1.10.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.9.0")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.10.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.10.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.9.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.10.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1374,6 +1374,7 @@ function showJoined(pane) {
   loadPictures(page);
   page.dataset.loaded = "1";
   spellSoon(0);
+  paintBookSoon();
 }
 
 // the parts of a joined page: the lines of each note, in order
@@ -1644,7 +1645,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
+    const SV = await import("./scriv.js?v=1.9.22-d1.10.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1776,8 +1777,11 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.9.0");
-    return openProject(null, fh.name, new EP.EpubStore(fh), fh);
+    const EP = await import("./epub.js?v=1.9.22-d1.10.0");
+    const st = new EP.EpubStore(fh);
+    const r = await openProject(null, fh.name, st, fh);
+    if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
+    return r;
   }
   let ro = false;
   if (ask) {
@@ -1797,7 +1801,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.9.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.10.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1838,7 +1842,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2253,9 +2257,9 @@ function renderComments() {
         acts.appendChild(b);
       };
       // (Scrivener's comments have no replies or resolving)
-      if (!c.scriv) act("Reply", () => commentAction(p, c, "reply"));
+      if (!c.scriv && !c.book) act("Reply", () => commentAction(p, c, "reply"));
       act("Edit", () => commentAction(p, c, "edit"));
-      if (!reply && !c.scriv) act(c.done ? "Reopen" : "Resolve", () => commentAction(p, c, "resolve"));
+      if (!reply && !c.scriv && !c.book) act(c.done ? "Reopen" : "Resolve", () => commentAction(p, c, "resolve"));
       act("Delete", () => commentAction(p, c, "delete"));
       it.appendChild(acts);
       it.onclick = () => goToWords(p, c.words || (cs.find((o) => o.id === c.parent) || {}).words || "");
@@ -2437,6 +2441,7 @@ async function commentText(title, quoted, start = "", button = "OK", rich = null
 
 // Insert ▸ Comment (Ctrl+Alt+M): on the words selected (or the word at the caret)
 async function addComment() {
+  if (bookOn()) return bookComment();
   const p = A;
   const n = p.note;
   if (!n || !S.store || !S.store.isProject || !n.comments) {
@@ -2628,6 +2633,7 @@ function showText(text, pane = A) {
   pane.page.dataset.loaded = "1";
   spellSoon(0);
   showPdfIn(pane);
+  paintBookSoon();
 }
 
 // RossDraft 1.4: a PDF entry (research) shown in the page's place (research.js), read-only
@@ -2647,7 +2653,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.9.0"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.10.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2671,7 +2677,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.9.0");
+  const X = await import("./export.js?v=1.9.22-d1.10.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2699,7 +2705,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.9.0");
+  const X = await import("./export.js?v=1.9.22-d1.10.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3247,6 +3253,7 @@ function flagsAtCaret() {
 }
 
 function toggleHighlight() {
+  if (bookOn()) return bookHighlight("toggle");        // (1.10.0) a book: a highlight of yours
   page.focus();
   const on = flagsAtCaret().has("h");
   document.execCommand("styleWithCSS", false, true);
@@ -3511,6 +3518,7 @@ function supSub(kind) {
 }
 function textColour(hex) { setWordsLook("c:", hex); }
 function highlightColour(name) {
+  if (bookOn()) return bookHighlight(name);
   if (name == null) { setWordsLook("hc:", null); return; }
   setWordsLook("hc:", name);
 }
@@ -3562,9 +3570,9 @@ function lookItems() {
       ...TEXT_COLOURS.map(([l, h]) => ({ label: l, fn: () => textColour(h), off: ro })),
     ],
     hl: [
-      ...HL_COLOURS.map(([l, n]) => ({ label: l, fn: () => highlightColour(n), off: ro })),
+      ...HL_COLOURS.map(([l, n]) => ({ label: l, fn: () => highlightColour(n), off: ro && !bookOn() })),
       "-",
-      { label: "No Highlight", fn: () => highlightColour(null), off: ro },
+      { label: "No Highlight", fn: () => highlightColour(null), off: ro && !bookOn() },
     ],
     spacing: [
       ...[["Line Spacing 1.0", "1"], ["Line Spacing 1.15", "1.15"], ["Line Spacing 1.5", "1.5"], ["Line Spacing 2.0", "2"]].map(([l, v]) => ({ label: l, on: !!lineNow && lineNow.dataset.ls === v, fn: () => paraSpacing(v), off: ro })),
@@ -3572,6 +3580,272 @@ function lookItems() {
       { label: "As the Document", fn: () => paraSpacing(null), off: ro },
     ],
   };
+}
+
+
+// ------------------------------------------------------------------ RossDraft 1.10.0: e-books marked up
+// A book opened to read can be highlighted (five colours), commented on (the comments panel) and bookmarked, and it
+// remembers where you stopped. The marks are kept apart from the book (the .epub is never changed): in this
+// browser's own storage, and in "<book>.epub.notes" beside the book when its folder is known (so they go with it,
+// and Ross Writer can read the same). File ▸ Export Highlights and Comments… gives them all as a Word document,
+// each with its chapter. A mark: { id, kind: "hl" | "bm", entry (the chapter's id), title, line (its paragraph,
+// counting the title as 0), start, end (letters in), words, colour, text (a comment), name (a bookmark), date }.
+const BK = { st: null, key: null, dir: null, fh: null, marks: [], last: null, saving: null };
+const BK_COLOURS = { yellow: "#fff176", green: "#b9f6ca", cyan: "#b2ebf2", magenta: "#f8bbd0", lightGray: "#e0e0e0" };
+function bookOn() { return !!(S.store && S.store.isEpub && BK.st === S.store); }
+async function bookOpened(st, fh) {
+  BK.st = st;
+  BK.fh = fh;
+  BK.marks = [];
+  BK.last = null;
+  let size = 0;
+  try { size = (await fh.getFile()).size; } catch (e) { /* as it is */ }
+  BK.key = "booknotes:" + fh.name + ":" + size;
+  // its folder, when known: the marks beside the book too
+  BK.dir = null;
+  for (const d of [docDir, await kvGet("docDir").catch(() => null)]) {
+    try { if (d && d.kind === "directory" && await sameEntryIn(d, fh)) { BK.dir = d; break; } } catch (e) { /* not that one */ }
+  }
+  let saved = null, beside = null;
+  try { saved = await kvGet(BK.key); } catch (e) { saved = null; }
+  if (BK.dir) {
+    try { beside = JSON.parse(await (await (await BK.dir.getFileHandle(fh.name + ".notes")).getFile()).text()); } catch (e) { beside = null; }
+  }
+  const got = [saved, beside].filter((x) => x && Array.isArray(x.marks)).sort((a, b) => String(b.saved || "").localeCompare(String(a.saved || "")))[0];
+  if (got) { BK.marks = got.marks; BK.last = got.last || null; }
+  st.commentsFor = bookComments;
+  st.commentOp = bookCommentOp;
+  st.bookmarks = async (n) => BK.marks.filter((m) => m.kind === "bm" && m.entry === n.raw.id)
+    .map((m) => ({ id: m.id, name: m.name, para: m.line, off: m.start, words: m.words }));
+  st.bookmarkOp = bookBookmarkOp;
+  for (const n of st.all()) n.comments = bookComments(n);
+  // where you stopped
+  if (BK.last) {
+    const n = st.all().find((x) => x.raw.id === BK.last.entry);
+    if (n) {
+      await openNote(n);
+      setTimeout(() => {
+        const ln = A.page.children[BK.last.line];
+        if (ln) ln.scrollIntoView({ block: "start" });
+        toast("Where you stopped reading.", 2200);
+      }, 150);
+    }
+  }
+  paintBook();
+}
+function bookComments(n) {
+  return BK.marks.filter((m) => m.kind === "hl" && m.entry === n.raw.id && m.text)
+    .map((m) => ({ id: m.id, author: m.author || "", initials: m.initials || "", date: m.date || "", text: m.text,
+      words: m.words, parent: null, done: false, book: true }));
+}
+async function saveBook() {
+  if (!BK.key) return;
+  const data = { format: "ross-book-notes", version: 1, book: { file: BK.fh && BK.fh.name, title: BK.st && BK.st.label, author: BK.st && BK.st.author || "" },
+    saved: new Date().toISOString(), marks: BK.marks, last: BK.last };
+  try { await kvSet(BK.key, data); } catch (e) { /* this browser's storage refused */ }
+  if (BK.dir) {
+    try {
+      const h = await BK.dir.getFileHandle(BK.fh.name + ".notes", { create: true });
+      const w = await h.createWritable();
+      await w.write(JSON.stringify(data, null, 1));
+      await w.close();
+    } catch (e) { /* only kept here */ }
+  }
+}
+// the page's parts: each note shown and its lines (a joined page: each part)
+function bookParts(pane) {
+  if (!pane.note) return [];
+  if (pane.joined) { const parts = joinedPieces(pane.page); return pane.joined.map((n, k) => ({ n, lines: parts[k] || [] })); }
+  return [{ n: pane.note, lines: [...pane.page.children] }];
+}
+// a place in the page as a mark's: which note, which paragraph, how many letters in
+function bookWhere(pane, node, off) {
+  const line = ed.lineOf(node, pane.page);
+  if (!line) return null;
+  for (const part of bookParts(pane)) {
+    const k = part.lines.indexOf(line);
+    if (k >= 0) return { n: part.n, line: k, pos: ed.offsetIn(line, node, off) };
+  }
+  return null;
+}
+function bookSel() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed || !A.page.contains(sel.anchorNode)) return null;
+  const r = sel.getRangeAt(0);
+  const a = bookWhere(A, r.startContainer, r.startOffset), b = bookWhere(A, r.endContainer, r.endOffset);
+  if (!a || !b) return null;
+  if (a.n !== b.n || a.line !== b.line) {
+    toast("Choose words within one paragraph.", 2200);
+    return null;
+  }
+  if (a.line === 0) { toast("Choose words in the text, not its title."); return null; }
+  const part = bookParts(A).find((p) => p.n === a.n);
+  const t = ed.lineText(part.lines[a.line]);
+  // whole words (as e-book readers do): a word only partly chosen is taken whole
+  const isW = (c) => /[\p{L}\p{N}'’-]/u.test(c || "");
+  let s0 = a.pos, e0 = b.pos;
+  while (s0 > 0 && isW(t[s0 - 1]) && isW(t[s0])) s0--;
+  while (e0 < t.length && isW(t[e0 - 1]) && isW(t[e0])) e0++;
+  while (s0 < e0 && /\s/.test(t[s0])) s0++;
+  while (e0 > s0 && /\s/.test(t[e0 - 1])) e0--;
+  const words = t.slice(s0, e0);
+  if (!words.trim()) return null;
+  return { n: a.n, line: a.line, start: s0, end: e0, words };
+}
+const bkId = () => "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// the marks drawn on the page (CSS highlights: the page itself is never changed)
+function paintBook() {
+  if (!window.CSS || !CSS.highlights || typeof Highlight === "undefined") return;
+  const by = new Map();
+  for (const c of Object.keys(BK_COLOURS)) by.set(c, []);
+  by.set("note", []);
+  by.set("bm", []);
+  if (bookOn()) {
+    for (const pane of P) {
+      if (!pane.note || pane.page.hidden) continue;
+      for (const part of bookParts(pane)) {
+        for (const m of BK.marks) {
+          if (m.entry !== part.n.raw.id) continue;
+          const line = part.lines[m.line];
+          if (!line) continue;
+          // its words, where they are (else nearest the same place)
+          const t = ed.lineText(line);
+          let s0 = m.start, e0 = m.end;
+          if (t.slice(s0, e0) !== m.words) { const k = t.indexOf(m.words); if (k < 0) continue; s0 = k; e0 = k + m.words.length; }
+          const r = document.createRange();
+          try { r.setStart(...ed.pointAt(line, s0)); r.setEnd(...ed.pointAt(line, Math.max(s0 + 1, e0))); } catch (e) { continue; }
+          if (m.kind === "bm") by.get("bm").push(r);
+          else { if (m.colour && by.has(m.colour)) by.get(m.colour).push(r); if (m.text) by.get("note").push(r); }
+        }
+      }
+    }
+  }
+  for (const [c, ranges] of by) CSS.highlights.set("bk-" + c, new Highlight(...ranges));
+}
+function paintBookSoon() { if (BK.st) { setTimeout(paintBook, 0); noteBookPlace(); } }
+// Highlight (or a colour from Format ▸ Highlight Colour): the chosen words; null takes it off
+async function bookHighlight(colour) {
+  const w = bookSel();
+  if (!w) { if (!window.getSelection().isCollapsed) return; toast("Choose the words to highlight."); return; }
+  const over = BK.marks.filter((m) => m.kind === "hl" && m.entry === w.n.raw.id && m.line === w.line && m.start < w.end && m.end > w.start);
+  if (colour === "toggle") colour = over.some((m) => m.colour) ? null : "yellow";
+  if (colour == null) {
+    // off: the highlighting taken off (a comment on them stays, as a comment)
+    for (const m of over) m.colour = null;
+    BK.marks = BK.marks.filter((m) => !(m.kind === "hl" && !m.colour && !m.text));
+  } else {
+    const same = over.find((m) => m.start === w.start && m.end === w.end);
+    if (same) same.colour = colour;
+    else BK.marks.push({ id: bkId(), kind: "hl", entry: w.n.raw.id, title: w.n.title(), line: w.line, start: w.start, end: w.end,
+      words: w.words, colour, text: "", date: new Date().toISOString() });
+  }
+  window.getSelection().collapseToEnd();
+  paintBook();
+  await saveBook();
+  toast(colour ? "Highlighted." : "Highlight taken off.", 900);
+}
+async function bookComment() {
+  const w = bookSel();
+  if (!w) { toast("Choose the words the comment is on first."); return; }
+  const who = await askAuthor(false);
+  if (!who) return;
+  const got = await commentText("New Comment", w.words, "", "Add", null, true);
+  if (!got || !got.text.trim()) return;
+  const same = BK.marks.find((m) => m.kind === "hl" && m.entry === w.n.raw.id && m.line === w.line && m.start === w.start && m.end === w.end);
+  if (same && !same.text) Object.assign(same, { text: got.text, author: who.author || "", initials: who.initials || "" });
+  else BK.marks.push({ id: bkId(), kind: "hl", entry: w.n.raw.id, title: w.n.title(), line: w.line, start: w.start, end: w.end,
+    words: w.words, colour: null, text: got.text, author: who.author || "", initials: who.initials || "", date: new Date().toISOString() });
+  for (const n of S.store.all()) n.comments = bookComments(n);
+  S.settings.showComments = true;
+  saveSettings();
+  renderComments();
+  paintBook();
+  await saveBook();
+  toast("Comment added.", 900);
+}
+async function bookCommentOp(n, op) {
+  const m = BK.marks.find((x) => x.id === op.id);
+  if (op.kind === "edit" && m) m.text = op.text;
+  else if (op.kind === "delete" && m) {
+    if (m.colour) m.text = "";               // (its highlighting stays)
+    else BK.marks = BK.marks.filter((x) => x !== m);
+  } else if (op.kind !== "edit" && op.kind !== "delete") throw new Error("A book's comments have no replies or resolving: edit or delete them instead.");
+  for (const x of S.store.all()) x.comments = bookComments(x);
+  paintBook();
+  await saveBook();
+  return n.comments;
+}
+async function bookBookmarkOp(n, op) {
+  if (op.kind === "delete") BK.marks = BK.marks.filter((m) => !(m.kind === "bm" && m.entry === n.raw.id && m.name === op.name));
+  else {
+    // the caret's place (its paragraph in its chapter)
+    const sel = window.getSelection();
+    const at = sel.rangeCount ? bookWhere(A, sel.anchorNode, sel.anchorOffset) : null;
+    const where = at || { n, line: Math.max(1, op.line || 1), pos: op.pos || 0 };
+    const part = bookParts(A).find((p) => p.n === where.n);
+    const t = part && part.lines[where.line] ? ed.lineText(part.lines[where.line]) : "";
+    const start = Math.min(where.pos, Math.max(0, t.length - 1));
+    const words = t.slice(start).split(/\s+/).filter(Boolean).slice(0, 8).join(" ") || t.slice(0, 60);
+    BK.marks = BK.marks.filter((m) => !(m.kind === "bm" && m.name === op.name));
+    BK.marks.push({ id: bkId(), kind: "bm", entry: where.n.raw.id, title: where.n.title(), line: where.line, start,
+      end: start + Math.max(1, (words.split(/\s+/)[0] || "x").length), words, name: op.name, date: new Date().toISOString() });
+  }
+  paintBook();
+  await saveBook();
+}
+// where you are: kept as you read
+let bookPlaceTimer = 0;
+function noteBookPlace() {
+  if (!bookOn() || !A.note) return;
+  clearTimeout(bookPlaceTimer);
+  bookPlaceTimer = setTimeout(() => {
+    const top = A.page.getBoundingClientRect().top;
+    const sc = A.page.closest(".scroller") || A.page.parentElement;
+    const y = sc ? sc.getBoundingClientRect().top : top;
+    for (const part of bookParts(A)) {
+      const k = part.lines.findIndex((d) => d.getBoundingClientRect().bottom > y + 4);
+      if (k >= 0) {
+        const was = BK.last;
+        BK.last = { entry: part.n.raw.id, line: k };
+        if (!was || was.entry !== BK.last.entry || was.line !== BK.last.line) saveBook();
+        return;
+      }
+    }
+  }, 700);
+}
+document.addEventListener("scroll", noteBookPlace, true);
+// File ▸ Export Highlights and Comments…: a Word document, chapter by chapter
+async function exportBookMarks() {
+  if (!bookOn()) return;
+  if (!BK.marks.length) { dialog("Export Highlights and Comments", "There are no highlights, comments or bookmarks in this book yet."); return; }
+  const blob = await busy("Making the Word document…", bookMarksBlob, { after: 0 });
+  const name = md.safeName(S.store.label + " - highlights and comments") + ".docx";
+  const saved = await saveFile(blob, name, "Word document", ".docx", blob.type);
+  if (saved) toast("Saved: " + (typeof saved === "string" ? saved : name), 3000);
+}
+async function bookMarksBlob() {
+  const st = S.store;
+  const order = st.all();
+  const marks = BK.marks.slice().sort((a, b) => order.findIndex((n) => n.raw.id === a.entry) - order.findIndex((n) => n.raw.id === b.entry) ||
+    a.line - b.line || a.start - b.start);
+  const P_ = (t, f = [], extra = {}) => ({ kind: null, depth: 1, code: false, align: null, runs: [{ t, f: new Set(f) }], ...extra });
+  const lines = [{ kind: "h1", depth: 1, code: false, runs: [{ t: st.label, f: new Set() }] }];
+  if (st.author) lines.push(P_("by " + st.author, ["i"]));
+  lines.push(P_(`Highlights, comments and bookmarks, ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.`, ["i"]));
+  let entry = null;
+  for (const m of marks) {
+    if (m.entry !== entry) {
+      entry = m.entry;
+      const n = order.find((x) => x.raw.id === m.entry);
+      lines.push({ kind: "h2", depth: 1, code: false, runs: [{ t: n ? n.title() : m.title || "", f: new Set() }] });
+    }
+    if (m.kind === "bm") { lines.push(P_(`Bookmark “${m.name}”: ${m.words}…`, ["i"])); continue; }
+    const f = m.colour ? ["h", ...(m.colour !== "yellow" ? ["hc:" + m.colour] : [])] : [];
+    lines.push({ kind: "quote", depth: 1, code: false, runs: [{ t: "“" + m.words + "”", f: new Set(f) }] });
+    if (m.text) lines.push({ kind: null, depth: 1, code: false, runs: [{ t: "Comment" + (m.author ? " (" + m.author + ")" : "") + ": ", f: new Set(["b"]) }, { t: m.text.replace(/\n/g, " "), f: new Set() }] });
+  }
+  const W = await wordModule();
+  return W.writeDocx(lines, async () => null, st.label + " — highlights and comments");
 }
 
 const COMMANDS = {
@@ -4237,7 +4511,7 @@ const MENU_ORDER = {
   file: ["New Note", "New Ross Writer Project…", "New Scrivener Project…", "-",
     /^Open a Project/, /^Open a Document/, /^Reopen “/, "Choose Another Folder…", "Back to My Notes (RossNotes)", "-",
     "Save As…", "Save the Original RTF…", "-",
-    "Compile…", { sub: "Export", items: ["Export as Word…", "Export as PDF…", "Export as Markdown…", "Export Project…"] },
+    "Compile…", { sub: "Export", items: ["Export as Word…", "Export as PDF…", "Export as Markdown…", "Export Highlights and Comments…", "Export Project…"] },
     { sub: "Import", items: ["Import a Word Document…", /^Import a Notebook/, "Import a NobleNote Folder…", "Import a Ross Writer Project as Notes…"] }, "-",
     "Email or Share This Note…", "Copy This Note for Email", "Print This Note…", "-",
     { sub: "Word Copies of Notes", items: ["Update Word Copy", "Keep Word Copies Updated"] }, "-",
@@ -4312,6 +4586,7 @@ function menuItemsAll(name) {
       { label: "Export as Word…", fn: () => exportNotes("word"), off: !n },
       { label: "Export as PDF…", fn: () => exportNotes("pdf"), off: !n },
       { label: "Export as Markdown…", fn: () => exportNotes("md"), off: !n },
+      ...(bookOn() ? [{ label: "Export Highlights and Comments…", fn: exportBookMarks }] : []),
       ...(ED.project ? [{ label: "Save As RTF…", fn: () => exportNotes("rtf"), off: !n }] : []),
       ...(draftOn() ? [{ label: "Compile…", fn: compileDialog, keys: "Ctrl+Alt+E" }, { label: "Export Project…", fn: exportProject }] : []),
       ...(S.store && S.store.isRtf && S.store.keptWhere === "RossDraft" ? [{ label: "Save the Original RTF…", fn: () => saveOriginalRtf() }] : []),
@@ -4815,7 +5090,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.9.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.10.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -4963,7 +5238,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.9.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.10.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5035,7 +5310,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.9.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.10.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5239,7 +5514,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.10.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5276,7 +5551,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.9.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.10.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5315,7 +5590,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.9.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.10.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5607,7 +5882,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.9.0");
+  const R = await import("./rtf.js?v=1.9.22-d1.10.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -5699,7 +5974,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6260,7 +6535,13 @@ function pageMenu(e, p) {
   items.push("-");
   const canComment = !!(S.store && S.store.isProject && p.note && p.note.comments);
   items.push({ label: "Comment…", keys: "Ctrl+Alt+M", off: !canComment, fn: addComment });
-  items.push({ label: "Highlight", keys: "Ctrl+Shift+H", off: ro || !has, fn: COMMANDS.highlight });
+  items.push({ label: "Highlight", keys: "Ctrl+Shift+H", off: (ro && !bookOn()) || !has, fn: COMMANDS.highlight });
+  if (bookOn()) {
+    // (1.10.0) a book being read: its own highlights, comments and bookmarks
+    items.push({ label: "Highlight Colour", sub: [...HL_COLOURS.map(([l, c]) => ({ label: l, fn: () => bookHighlight(c), off: !has })), "-",
+      { label: "No Highlight", fn: () => bookHighlight(null), off: !has }] });
+    items.push({ label: "Bookmark…", keys: "Ctrl+Shift+F5", fn: insertBookmark });
+  }
   if (ED.project) items.push({ label: "Bullets and Numbering", off: ro || !!cellOfSel(), sub: listItems() });
   if (ED.project) items.push({ label: "Table", sub: tableItems() });
   // 1.9.1: the split, straight from here
@@ -7474,6 +7755,7 @@ const SAVE_TYPES = [
   [".rtf", "Rich Text Format (RTF)", "application/rtf"],
   [".md", "Markdown", "text/markdown"],
   [".txt", "Plain text", "text/plain"],
+  [".epub", "E-book (EPUB)", "application/epub+zip"],      // (1.10.0)
 ];
 async function saveAs() {
   const st = S.store, n = A.note;
@@ -7489,7 +7771,7 @@ async function saveAs() {
       h = await window.showSaveFilePicker({ suggestedName: name + first, id: "rossdraft-saveas",
         types: types.map(([x, d, m]) => ({ description: d, accept: { [m]: [x] } })) });
     } catch (e) { if (e && e.name === "AbortError") return; h = null; }
-    if (h) ext = ((h.name.match(/\.(docx|rtf|md|markdown|txt)$/i) || [first])[0]).toLowerCase().replace(".markdown", ".md");
+    if (h) ext = ((h.name.match(/\.(docx|rtf|md|markdown|txt|epub)$/i) || [first])[0]).toLowerCase().replace(".markdown", ".md");
   } else {
     const v = await ask("Save As", askText("Save “" + name + "” as:"), SAVE_TYPES.map(([x, d]) => [d + " (" + x + ")", x, x === first]));
     if (!v) return;
@@ -7506,8 +7788,8 @@ async function saveAs() {
   const w = await h.createWritable();
   await w.write(blob);
   await w.close();
-  if (st.isDoc && !st.isEpub) {
-    // as a word processor: the window goes on with the new file
+  if (st.isDoc && !st.isEpub && ext !== ".epub") {
+    // as a word processor: the window goes on with the new file (an e-book made of it: a copy, to read)
     await openDocFile(h);
     toast(`Saved as “${h.name}”: you're now working in it. (The first file is as it was when you last saved it.)`, 6000);
   } else toast(`Saved a copy: “${h.name}”. The ${st.isProject ? "scene stays in the project" : "note stays where it is"}.`, 5000);
@@ -7529,12 +7811,25 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.9.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
   }
   if (ext === ".rtf") return rtfBlob([n], false, name, parts);
+  if (ext === ".epub") {
+    // (1.10.0) an e-book of it, as Compile makes them: its headings (a chapter at each first-level one), italics,
+    // notes, tables and pictures; its title, and your name as the author
+    const C = await compileModule();
+    const { lines, notes: fnotes } = await exportLines([n], false, parts);
+    const bytes = async (img) => {
+      try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
+        try { return new Uint8Array(await (await S.store.pictureFile([PICTURES, img.target[img.target.length - 1]])).arrayBuffer()); } catch (e2) { return null; }
+      }
+    };
+    const author = (S.store && S.store.data && S.store.data.meta && S.store.data.meta.author) || S.settings.commentAuthor || "";
+    return C.epubBlob(lines, { notes: fnotes, title: n.title() || name, author, title_page: true }, bytes);
+  }
   const text = parts.map(([, t]) => t).join("\n");
   if (ext === ".md") return new Blob([text], { type: "text/markdown" });
   // plain text: the words, without Markdown's marks
@@ -7995,7 +8290,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.9.0"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.10.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -8142,7 +8437,7 @@ async function insertBookmark() {
 }
 
 // for the tests
-window.RN = { setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

@@ -8,9 +8,9 @@
 // chapter divided by second-level headings has them as its scenes. Notes linked from the text (epub:type
 // noteref/footnote/endnote, or the common "#fn1" patterns) become the page's footnote and endnote marks.
 
-import { ProjectStore, PNote } from "./project.js?v=1.9.22-d1.9.0";
-import * as md from "./md.js?v=1.9.22-d1.9.0";
-import * as wordio from "./wordio.js?v=1.9.22-d1.9.0";
+import { ProjectStore, PNote } from "./project.js?v=1.9.22-d1.10.0";
+import * as md from "./md.js?v=1.9.22-d1.10.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.10.0";
 
 const dec = new TextDecoder();
 const BLOCK = new Set(["p", "div", "section", "article", "header", "footer", "main", "figure", "figcaption", "aside", "nav",
@@ -293,7 +293,7 @@ export class EpubStore extends ProjectStore {
     super({ name: fileHandle.name }, fileHandle.name);
     this.fileHandle = fileHandle;
     this.isEpub = true;
-    this.readOnlyAll = ["an e-book: read-only here (File ▸ Export Project… makes a project of it to edit)"];
+    this.readOnlyAll = ["an e-book: read-only here (File ▸ Export Project… makes a project of it to edit; highlights, comments and bookmarks are yours to add)"];
     this.texts = new Map();
   }
   get label() { return this.bookTitle || this.fileName.replace(/\.epub$/i, ""); }
@@ -323,7 +323,8 @@ export class EpubStore extends ProjectStore {
   async load(n) {
     const t = this.texts.get(n.raw.id) || { lines: [], notes: new Map() };
     n.fnotes = new Map(t.notes);
-    n.comments = undefined;
+    // (1.10.0) its comments: the reader's own, kept beside the book (app.js: the book's marks)
+    n.comments = this.commentsFor ? this.commentsFor(n) : undefined;
     n.readOnly = this.readOnlyAll;
     n.modified = this.modifiedAt || 1;
     n.text = md.serialize([this.titleLine(n), ...wordio.toNoteLines(t.lines, (name) => ["media", "epub", name])], { dir: [] });

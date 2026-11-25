@@ -858,3 +858,11 @@ body.coldrag { user-select: none; -webkit-user-select: none; }
 .cform.wfont label { display: flex; flex-direction: column; gap: 4px; }
 .cform.wfont input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: inherit; }
 .cform .wf-sample { padding: 10px; border: 1px dashed var(--line); border-radius: 4px; min-height: 2.2em; }
+/* RossDraft 1.10.0: a book's own highlights, comments and bookmarks (CSS highlights: the page isn't changed) */
+::highlight(bk-yellow) { background-color: #fff176; color: #1d1d1d; }
+::highlight(bk-green) { background-color: #b9f6ca; color: #1d1d1d; }
+::highlight(bk-cyan) { background-color: #b2ebf2; color: #1d1d1d; }
+::highlight(bk-magenta) { background-color: #f8bbd0; color: #1d1d1d; }
+::highlight(bk-lightGray) { background-color: #e0e0e0; color: #1d1d1d; }
+::highlight(bk-note) { text-decoration: underline dotted #c77d00; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+::highlight(bk-bm) { text-decoration: underline solid #3b78b4; text-decoration-thickness: 2px; text-underline-offset: 3px; }
