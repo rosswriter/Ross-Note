@@ -127,6 +127,8 @@ const SPAN_RE = /<span style="(color:#[0-9A-Fa-f]{6}|font-family:[^";<>]{1,60}|f
 const MARKC_RE = /<mark class="hl-([A-Za-z]{2,12})">/y;
 // (1.12.0) tracked changes from Word: <ins data-tc="5">added</ins>, <del data-tc="6">taken out</del>,
 // <span data-tf="7">formatting changed</span>
+// (1.15.0) words in another language, or not to be checked (zxx): <span lang="fr-FR">
+const LANG_RE = /<span lang="([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)">/y;
 const TC_RE = /<(ins|del) data-tc="(-?\d+)">|<span data-tf="(-?\d+)">|<span data-fld="([A-Za-z0-9%._~!*'()-]+)">/y;
 function spanKey(st) {
   if (st.startsWith("color:#")) return "c:" + st.slice(7).toUpperCase();
@@ -138,6 +140,7 @@ function spanOpen(k) {
   if (k.startsWith("c:")) return `<span style="color:#${k.slice(2)}">`;
   if (k.startsWith("font:")) return `<span style="font-family:${k.slice(5)}">`;
   if (k.startsWith("sz:")) return `<span style="font-size:${+k.slice(3) / 2}pt">`;
+  if (k.startsWith("lang:")) return `<span lang="${k.slice(5)}">`;
   return "";
 }
 export const isLookFlag = (k) => /^(c|font|sz|hc):/.test(k) || k === "sup" || k === "sub";
@@ -195,6 +198,8 @@ export function inlineRuns(text) {
         const key = spanKey(sp[1]);
         if (key) { flush(); state.add(key); spans.push(key); i += sp[0].length; continue; }
       }
+      const lm = stickyMatch(LANG_RE, text, i);
+      if (lm && closes("</span>", i)) { const key = "lang:" + lm[1]; flush(); state.add(key); spans.push(key); i += lm[0].length; continue; }
       const tm = stickyMatch(TC_RE, text, i);
       if (tm) {
         const close = tm[1] ? "</" + tm[1] + ">" : "</span>";
@@ -439,7 +444,8 @@ function keysOf(f) {
   const hc = [...f].find((k) => k.startsWith("hc:"));
   // (1.12.0) a tracked change outermost: an insertion or deletion, then a formatting change
   const tc = [...f].filter((k) => /^t[idf]:/.test(k)).sort((a, b) => "idf".indexOf(a[1]) - "idf".indexOf(b[1]))
-    .concat([...f].filter((k) => k.startsWith("fld:")));            // (1.13.0) a field: its own span
+    .concat([...f].filter((k) => k.startsWith("fld:")))             // (1.13.0) a field: its own span
+    .concat([...f].filter((k) => k.startsWith("lang:")));           // (1.15.0) its language
   const look = [...f].filter((k) => /^(font|sz|c):/.test(k)).sort((a, b) => "fsc".indexOf(a[0]) - "fsc".indexOf(b[0]));
   const basic = ORDER.filter((k) => f.has(k)).map((k) => (k === "h" && hc ? "h:" + hc.slice(3) : k));
   return tc.concat(look, basic, ["sup", "sub"].filter((k) => f.has(k)));

@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.9.22-d1.14.0";
-import * as wordio from "./wordio.js?v=1.9.22-d1.14.0";
-import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp, readHF, writeHF, setChangeInfo, writePage } from "./wordpatch.js?v=1.9.22-d1.14.0";
-import * as rtf from "./rtf.js?v=1.9.22-d1.14.0";
+import * as md from "./md.js?v=1.9.22-d1.15.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.15.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp, readHF, writeHF, setChangeInfo, writePage } from "./wordpatch.js?v=1.9.22-d1.15.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.15.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -241,6 +241,9 @@ export class ProjectStore {
     n.pageInfo = sc.page || null;            // (1.14.0) its page: size and margins (twips)
     n.uline = sc.usual && (sc.usual.line || sc.usual.styleLine) ? +(sc.usual.line || sc.usual.styleLine) : 240;   // (1.14.0) its usual line spacing (240: single)
     n.uafter = sc.usual && sc.usual.after ? +sc.usual.after : 0;  // (1.14.0) and the space after its paragraphs (twips)
+    // (1.15.0) the language most of its words are in: not English's (Word's templates say en-US whatever you write in;
+    // Review ▸ Language… or English (UK) decides that)
+    { const lg = sc.usual ? sc.usual.lang || sc.usual.docLang || null : null; n.lang = lg && !/^en\b/i.test(lg) ? lg : null; }
     n.fnotes = new Map(sc.notes || []);     // RossDraft 1.2: the scene's footnotes and endnotes, "f17" -> words
     n.fnDirty = false;
     n.modified = file.lastModified;

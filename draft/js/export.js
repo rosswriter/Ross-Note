@@ -8,9 +8,9 @@
 //                labels; PDF entries as PDF documents in Research.
 // The project itself is never changed. Everything goes in a new folder named after it ("… (2)" if taken).
 
-import * as md from "./md.js?v=1.9.22-d1.14.0";
-import * as wordio from "./wordio.js?v=1.9.22-d1.14.0";
-import { NOTE_RE } from "./wordio.js?v=1.9.22-d1.14.0";
+import * as md from "./md.js?v=1.9.22-d1.15.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.15.0";
+import { NOTE_RE } from "./wordio.js?v=1.9.22-d1.15.0";
 
 export const KINDS = {
   copy: { label: "A Ross Writer project", scriv: "A Ross Writer project made from it: the same tree, each entry its own Word file, its notes as footnotes (the original is only read)",
@@ -196,7 +196,7 @@ function notesFor(n, wl) {
 }
 
 export async function exportScrivener(store, where, progress = () => {}) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.14.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.15.0");
   const [sdir, xname] = await SV.makeScrivener(where, store.label);
   const sc = new SV.ScrivStore(sdir, xname);
   sc.noBackup = true;

@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.14.0";
+import * as md from "./md.js?v=1.9.22-d1.15.0";
 
 const HL = "#ffd54f";
 
@@ -165,6 +165,9 @@ function lookWrap(f, wrap) {
   }
   for (const k of f) {
     if (k.startsWith("font:")) wrap("span", `font-family: "${k.slice(5).replace(/"/g, "")}", var(--page-font, serif);`, { rd: k });
+  }
+  for (const k of f) {
+    if (k.startsWith("lang:")) wrap("span", "", { rd: k, lang: k.slice(5) });     // (1.15.0) another language
   }
 }
 export function lineElement(ln) {

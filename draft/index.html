@@ -9,11 +9,11 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="css/app.css?v=1.9.22-d1.14.0">
-<link rel="modulepreload" href="js/app.js?v=1.9.22-d1.14.0">
-<link rel="modulepreload" href="js/md.js?v=1.9.22-d1.14.0">
-<link rel="modulepreload" href="js/editor.js?v=1.9.22-d1.14.0">
-<link rel="modulepreload" href="js/store.js?v=1.9.22-d1.14.0">
+<link rel="stylesheet" href="css/app.css?v=1.9.22-d1.15.0">
+<link rel="modulepreload" href="js/app.js?v=1.9.22-d1.15.0">
+<link rel="modulepreload" href="js/md.js?v=1.9.22-d1.15.0">
+<link rel="modulepreload" href="js/editor.js?v=1.9.22-d1.15.0">
+<link rel="modulepreload" href="js/store.js?v=1.9.22-d1.15.0">
 <style>
 /* shown before anything else has loaded */
 #busy.boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #FBF8F1; color: #24211C;
@@ -122,6 +122,7 @@
   </div>
   <footer id="status">
     <span id="saved" aria-live="polite"></span>
+    <button id="langbtn" type="button" hidden title="Review ▸ Language…: the language the words are checked in">English (UK)</button>
     <button id="tracking" type="button" hidden title="Review ▸ Track Changes (Ctrl+Shift+E): what you type and delete is marked">Tracking changes</button>
     <span id="modes"></span>
     <span id="goal" hidden title="Today's words (click to change the target)"><svg width="22" height="22" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke-width="5" class="track"/><circle cx="20" cy="20" r="15" fill="none" stroke-width="5" stroke-linecap="round" class="done" stroke-dasharray="94.25" stroke-dashoffset="94.25" transform="rotate(-90 20 20)"/></svg><span class="txt"></span></span>
@@ -163,6 +164,6 @@
 <input id="file-book" type="file" accept=".ncdb,.fnx" hidden>
 <input id="file-docx" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
 <div id="printdoc" class="page"></div>
-<script type="module" src="js/app.js?v=1.9.22-d1.14.0"></script>
+<script type="module" src="js/app.js?v=1.9.22-d1.15.0"></script>
 </body>
 </html>

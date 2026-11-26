@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.14.0";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.15.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -146,7 +146,7 @@ const RPR_ORDER = ["rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCap
   "lang", "eastAsianLayout", "specVanish", "oMath"];
 // (1.9.0: colour, font, size and superscript/subscript are the words' own now, each run's, or the usual)
 const OURS = new Set(["rStyle", "b", "bCs", "i", "iCs", "strike", "dstrike", "highlight", "u", "shd", "vanish",
-  "color", "rFonts", "sz", "szCs", "vertAlign",
+  "color", "rFonts", "sz", "szCs", "vertAlign", "lang", "noProof",
   "specVanish", "webHidden", "rPrChange"]);
 
 function sortRpr(rpr) {
@@ -672,6 +672,8 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     if (!usualEl.rFonts && rf && usual.font && (wval(rf, "ascii") || wval(rf, "hAnsi")) === usual.font) usualEl.rFonts = rf;
     if (!usualEl.sz && sz && usual.sz && wval(sz) === usual.sz) { usualEl.sz = sz; usualEl.szCs = szc || null; }
     if (!usualEl.color && col && usual.color && (wval(col) || "").toUpperCase() === usual.color) usualEl.color = col;
+    const lg = wkid(rp, "lang");
+    if (!usualEl.lang && lg && usual.lang && wval(lg) === usual.lang) usualEl.lang = lg;
   }
 
   // ordered lists: each run of them its own numbering (as wordio writes)
@@ -713,7 +715,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.14.0");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.15.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -891,6 +893,11 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       if (f.has("h")) add("highlight", hc || "yellow");
       if (f.has("u") && !r.href) add("u", "single");
       if (f.has("sup")) add("vertAlign", "superscript"); else if (f.has("sub")) add("vertAlign", "subscript");
+      // (1.15.0) its language (or not checked); else the usual
+      const lg = look("lang:");
+      if (lg === "zxx") add("noProof");
+      else if (lg) add("lang", lg);
+      else if (base && usualEl.lang) rp.appendChild(usualEl.lang.cloneNode(true));
       sortRpr(rp);
       // (1.12.0) a tracked change: its formatting change kept (the old look, last in rPr); added or taken out
       const tf = [...f].find((k) => k.startsWith("tf:"));
@@ -950,7 +957,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.14.0");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.15.0");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }

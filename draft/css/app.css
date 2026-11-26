@@ -922,6 +922,9 @@ table.rtable td.covered { display: none; }
 .hfwarn { background: #fff4c2; color: #4a3b00; padding: 6px 8px; border-radius: 4px; margin-bottom: 8px; font-size: 0.9em; }
 /* RossDraft 1.13.0: Track Changes */
 .page .ln[data-tcp*="d"]::after { text-decoration: line-through; }
+#langbtn { font: inherit; font-size: 0.85em; border: 0; background: transparent; color: inherit; opacity: .75; padding: 0 6px; margin-left: 8px; cursor: pointer; }
+#langbtn:hover { opacity: 1; text-decoration: underline; }
+#langbtn[hidden] { display: none; }
 #tracking { font: inherit; font-size: 0.85em; border: 1px solid #c0392b; color: #c0392b; background: transparent; border-radius: 10px; padding: 0 8px; margin-left: 8px; cursor: pointer; }
 /* RossDraft 1.14.0: where each page ends (Page View), as Ross Writer's Option C */
 .scroller { position: relative; }
@@ -981,3 +984,26 @@ table.rtable td.covered { display: none; }
   body.previewing #pview .sheet { box-shadow: none; break-after: page; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body.previewing #pview .sheetwrap:last-child .sheet { break-after: auto; }
 }
+
+/* (1.15.0) the thesaurus; Language… */
+.thform { display: flex; flex-direction: column; gap: 10px; width: min(560px, 80vw); max-width: 100%; box-sizing: border-box; }
+.thform .throw input { min-width: 0; }
+.thform .throw { display: flex; gap: 6px; }
+.thform .throw input { flex: 1; font: inherit; padding: 6px 8px; border: 1px solid var(--line, #bbb); border-radius: 6px; background: var(--paper, #fff); color: inherit; }
+.thform .throw button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line, #bbb); background: var(--paper, #fff); color: inherit; cursor: pointer; }
+.thform .th-list { max-height: 52vh; overflow: auto; outline: none; padding-right: 4px; }
+.thform .thm { padding: 6px 0 8px; border-bottom: 1px solid var(--line, #ddd); }
+.thform .thpos { font-size: .82em; font-weight: 600; opacity: .7; margin-bottom: 4px; }
+.thform .thws { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; margin: 2px 0; }
+.thform .thlab { font-size: .78em; opacity: .6; min-width: 4.5em; }
+.thform .thw { font: inherit; padding: 1px 9px; border-radius: 12px; border: 1px solid var(--line, #ccc); background: transparent; color: inherit; cursor: pointer; }
+.thform .thw:hover { border-color: #2F6296; }
+.thform .thw.on { background: #2F6296; border-color: #2F6296; color: #fff; }
+.thform .thnone, .thform .thform-of, .thform .thhint { font-size: .88em; opacity: .75; margin: 0; }
+.langform select { font: inherit; padding: 5px 8px; min-width: 16em; }
+.langform .lghint { font-size: .88em; opacity: .75; }
+
+/* (1.15.0) menus see-through, so the words chosen under them still show (Jacob, 26 Nov) */
+#menu, #submenu { background: color-mix(in srgb, var(--bar) var(--menu-a, 70%), transparent); box-shadow: 0 6px 22px rgba(0, 0, 0, .22); }
+#menu button, #submenu button { text-shadow: 0 0 6px var(--bar), 0 0 2px var(--bar); }
+#menu button:hover, #submenu button:hover { background: color-mix(in srgb, var(--ui2) 85%, transparent); }

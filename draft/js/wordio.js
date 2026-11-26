@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.14.0";
+import * as md from "./md.js?v=1.9.22-d1.15.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -198,7 +198,7 @@ const xml = (text) => new DOMParser().parseFromString(text, "application/xml");
 // the line spacing most of its paragraphs have of their own (null: none of their own). Words that differ carry it
 // (font:, sz:, c:); paragraphs that differ carry ls. wordpatch has the same reckoning.
 export function usualLook(body) {
-  const tally = { font: new Map(), sz: new Map(), color: new Map(), line: new Map() };
+  const tally = { font: new Map(), sz: new Map(), color: new Map(), line: new Map(), lang: new Map() };
   const add = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
   const val = (el, a = "val") => (el ? el.getAttributeNS(W, a) || el.getAttribute("w:" + a) : null);
   for (const p of body.getElementsByTagNameNS(W, "p")) {
@@ -218,9 +218,11 @@ export function usualLook(body) {
     add(tally.sz, k("sz") ? val(k("sz")) : null, n);
     const c = k("color") && val(k("color"));
     add(tally.color, c && c !== "auto" ? c.toUpperCase() : null, n);
+    const lg = k("lang") && val(k("lang"));             // (RossDraft 1.15.0) the language most words are marked in
+    add(tally.lang, lg || null, n);
   }
   const top = (m) => { let best = null, bn = -1; for (const [k, n] of m) if (n > bn) { best = k; bn = n; } return best; };
-  return { font: top(tally.font), sz: top(tally.sz), color: top(tally.color), line: top(tally.line) };
+  return { font: top(tally.font), sz: top(tally.sz), color: top(tally.color), line: top(tally.line), lang: top(tally.lang) };
 }
 
 async function relsOf(files, path) {
@@ -265,6 +267,7 @@ export async function readDocx(buf, opts = {}) {
   const pending = [];
   const bodyEl = doc.getElementsByTagNameNS(W, "body")[0];
   const usual = bodyEl ? usualLook(bodyEl) : { font: null, sz: null, color: null, line: null };
+  let docLang = null;
   // (RossDraft 1.14.0) the usual paragraph's spacing from the styles too (Normal, or the document's defaults): the
   // line (240: single) and the space after it (twips), for where pages end
   {
@@ -279,6 +282,12 @@ export async function readDocx(buf, opts = {}) {
     const pick = (a) => { for (const e of [normal, defs]) { const v = e && wv(e, a); if (v != null && /^\d+$/.test(v)) return +v; } return null; };
     const rule = (normal && wv(normal, "lineRule")) || (defs && wv(defs, "lineRule")) || "auto";
     usual.styleLine = rule === "auto" ? pick("line") : null;
+    // (1.15.0) the document's language: its defaults' (or Normal's)
+    if (sd) {
+      const lgOf = (el) => { const l = el && [...el.getElementsByTagNameNS(W, "lang")][0]; return l && wv(l, "val"); };
+      docLang = lgOf([...sd.getElementsByTagNameNS(W, "rPrDefault")][0]) || null;
+    }
+    usual.docLang = docLang;
     // the space after most paragraphs: their own, or the style's
     const tally = new Map();
     for (const p of bodyEl ? kids(bodyEl, "p") : []) {
@@ -348,6 +357,11 @@ export async function readDocx(buf, opts = {}) {
         if (fn && fn !== usual.font && !/["<>]/.test(fn)) f.add("font:" + fn);
         const sz = kid(rpr, "sz") && wv(kid(rpr, "sz"));
         if (sz && /^\d+$/.test(sz) && sz !== usual.sz) f.add("sz:" + sz);
+        // (RossDraft 1.15.0) words in another language than most ("lang:fr-FR"), or not checked ("lang:zxx")
+        const np = kid(rpr, "noProof");
+        const lg = kid(rpr, "lang") && wv(kid(rpr, "lang"));
+        if (np && !["0", "false"].includes(wv(np) || "true")) f.add("lang:zxx");
+        else if (lg && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lg) && lg.toLowerCase() !== (usual.lang || docLang || "").toLowerCase()) f.add("lang:" + lg);
     return true;
   };
   // (RossDraft 1.13.0) a field (page number, date, a cross-reference...): one run showing its result, flagged
@@ -895,6 +909,9 @@ export function rpr(f, link) {
   if (f.has("h")) p += `<w:highlight w:val="${hc || "yellow"}"/>`;   // highlight before u: Word's order
   if (f.has("u") && !link) p += '<w:u w:val="single"/>';
   if (f.has("sup")) p += '<w:vertAlign w:val="superscript"/>'; else if (f.has("sub")) p += '<w:vertAlign w:val="subscript"/>';
+  const lg = v("lang:");                                            // (1.15.0) lang last (CT_RPr's order); noProof after strike
+  if (lg === "zxx") p = p.includes("<w:strike/>") ? p.replace("<w:strike/>", "<w:strike/><w:noProof/>") : p.replace(/^(<w:rFonts[^>]*\/>)?((?:<w:b\/><w:bCs\/>)?(?:<w:i\/><w:iCs\/>)?)/, (m) => m + "<w:noProof/>");
+  else if (lg) p += `<w:lang w:val="${xa(lg)}"/>`;
   return p ? `<w:rPr>${p}</w:rPr>` : "";
 }
 
