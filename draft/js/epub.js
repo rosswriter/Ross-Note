@@ -8,9 +8,9 @@
 // chapter divided by second-level headings has them as its scenes. Notes linked from the text (epub:type
 // noteref/footnote/endnote, or the common "#fn1" patterns) become the page's footnote and endnote marks.
 
-import { ProjectStore, PNote } from "./project.js?v=1.9.22-d1.10.2";
-import * as md from "./md.js?v=1.9.22-d1.10.2";
-import * as wordio from "./wordio.js?v=1.9.22-d1.10.2";
+import { ProjectStore, PNote } from "./project.js?v=1.9.22-d1.12.0";
+import * as md from "./md.js?v=1.9.22-d1.12.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.12.0";
 
 const dec = new TextDecoder();
 const BLOCK = new Set(["p", "div", "section", "article", "header", "footer", "main", "figure", "figcaption", "aside", "nav",

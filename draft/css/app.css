@@ -607,7 +607,7 @@ body.classic .stchip.st-own { color: #7A6A3A; border-color: #7A6A3A; }
 .targets fieldset { border: 1px solid var(--line, #d4cfbd); border-radius: 10px; padding: 8px 12px 10px; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .targets legend { font-weight: 600; padding: 0 4px; }
 .targets label { display: flex; gap: 6px; align-items: center; }
-.targets input[type=number], .targets input[type=date], .targets input[list] { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line, #ccc); }
+.targets input[type=number], .targets input[type=date], .targets input[list] { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dim, #ccc); }
 .targets .tg-days { width: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .targets .tg-sum { width: 100%; padding: 6px 8px; border-radius: 6px; background: rgba(59,120,180,.10); }
 .targets .tg-sum:empty { display: none; }
@@ -866,3 +866,40 @@ body.coldrag { user-select: none; -webkit-user-select: none; }
 ::highlight(bk-lightGray) { background-color: #e0e0e0; color: #1d1d1d; }
 ::highlight(bk-note) { text-decoration: underline dotted #c77d00; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 ::highlight(bk-bm) { text-decoration: underline solid #3b78b4; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+/* RossDraft 1.11.0: Insert ▸ Special Character */
+.schars { max-height: 60vh; overflow-y: auto; min-width: min(520px, 80vw); }
+.schars .schead { font-size: 0.8em; font-weight: 600; opacity: 0.7; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+.schars .schead:first-child { margin-top: 0; }
+.scgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+.scgrid .sc { min-height: 44px; font-size: 1.35em; padding: 0; border-radius: 6px; border: 1px solid var(--dim, #ccc);
+  background: var(--paper, #fff); color: inherit; cursor: pointer; font-family: var(--page-font, serif); }
+.scgrid .sc.scw { font-size: 0.75em; font-family: inherit; }
+.scgrid .sc:hover, .scgrid .sc:focus-visible { border-color: var(--accent, #2a6fd6); outline: none; background: var(--rowsel, #e8f0fd); }
+
+/* RossDraft 1.12.0: tracked changes from Word */
+.page ins.tc { text-decoration: underline; text-decoration-color: var(--tcc, #1b6fb3); text-decoration-thickness: 2px;
+  color: var(--tcc, #1b6fb3); background: color-mix(in srgb, var(--tcc, #1b6fb3) 8%, transparent); }
+.page del.tc { text-decoration: line-through; text-decoration-color: var(--tcc, #b3261e); text-decoration-thickness: 2px;
+  color: var(--tcc, #b3261e); opacity: 0.85; cursor: pointer; }
+.page span.tcf { text-decoration: underline dotted; text-decoration-color: var(--tcc, #8e24aa); text-underline-offset: 3px; }
+.page .ln[data-tcp]::after { content: "¶"; color: var(--tcc, #1b6fb3); font-weight: 600; margin-left: 2px; }
+.page .ln[data-tcp*="f"] { box-shadow: -14px 0 0 -12px var(--tcc, #8e24aa); }
+body.nomarkup .page del.tc { display: none; }
+body.nomarkup .page ins.tc { text-decoration: none; color: inherit; background: none; }
+body.nomarkup .page span.tcf { text-decoration: none; }
+body.nomarkup .page .ln[data-tcp]::after { content: none; }
+body.nomarkup .page .ln[data-tcp*="f"] { box-shadow: none; }
+#chip .chiplab { font-size: 0.85em; opacity: 0.85; padding: 0 8px; align-self: center; max-width: 340px; white-space: normal; }
+.tclist { max-height: 55vh; overflow-y: auto; width: 100%; }
+.tclist .tcrow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.tclist .tctext { flex: 1 1 260px; min-width: 0; font-size: 0.92em; }
+.tclist .tcbtns { display: flex; gap: 4px; flex-shrink: 0; }
+.tclist .tcbtns button { min-height: 36px; padding: 0 10px; }
+.tcfinal { max-height: 60vh; overflow-y: auto; min-width: min(620px, 84vw); padding: 8px 4px; }
+/* (1.12.0) Review ▸ Original: the text as it was before the changes (added words hidden, taken-out ones plain) */
+body.origview .page ins.tc { display: none; }
+body.origview .page del.tc { text-decoration: none; color: inherit; opacity: 1; cursor: text; }
+body.origview .page span.tcf { text-decoration: none; }
+body.origview .page .ln[data-tcp]::after { content: none; }
+body.origview .page .ln[data-tcp*="f"] { box-shadow: none; }

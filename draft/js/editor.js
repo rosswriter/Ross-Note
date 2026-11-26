@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.10.2";
+import * as md from "./md.js?v=1.9.22-d1.12.0";
 
 const HL = "#ffd54f";
 
@@ -154,6 +154,7 @@ export function lineElement(ln) {
   if (ln.ls && !ln.code) { div.dataset.ls = String(ln.ls); div.style.setProperty("--ls", String(ln.ls)); }
   if (ln.newpage) div.dataset.newpage = "1";
   if (ln.brk) div.dataset.pagebreak = "1";
+  if (ln.tcp) div.dataset.tcp = ln.tcp;         // (RossDraft 1.12.0) its end or settings changed (tracked)
   for (const r of ln.runs) {
     if (r.img) { div.appendChild(pictureElement(r.img)); continue; }
     if (!r.t) continue;
@@ -185,6 +186,15 @@ export function lineElement(ln) {
     }
     if (r.f.has("u")) wrap("u");
     lookWrap(r.f, (tag, style, data) => { wrap(tag, style); Object.assign(node.dataset, data); });
+    // (RossDraft 1.12.0) a tracked change: added words underlined, taken-out ones struck through (and not typed
+    // into: a box of their own), a formatting change marked
+    for (const k of r.f) {
+      if (k.startsWith("tf:")) { wrap("span"); node.className = "tcf"; node.dataset.tf = k.slice(3); }
+    }
+    for (const k of r.f) {
+      if (k.startsWith("ti:")) { wrap("ins"); node.className = "tc"; node.dataset.tc = k.slice(3); }
+      else if (k.startsWith("td:")) { wrap("del"); node.className = "tc"; node.dataset.tc = k.slice(3); node.contentEditable = "false"; }
+    }
     if (r.href) {
       const a = document.createElement("a");
       a.href = r.href;
@@ -264,11 +274,14 @@ function lookOf(e, f) {
     }
   }
 }
-function flagsOf(node, line, heading) {
+export function flagsOf(node, line, heading) {
   const f = new Set();
   let href = null;
   for (let e = node.parentNode; e && e !== line; e = e.parentNode) {
     const t = e.tagName;
+    // (RossDraft 1.12.0) a tracked change's mark (not underlining or striking through)
+    if ((t === "INS" || t === "DEL") && e.dataset && e.dataset.tc != null) { if (!has(f, "ti:") && !has(f, "td:")) f.add((t === "INS" ? "ti:" : "td:") + e.dataset.tc); continue; }
+    if (t === "SPAN" && e.dataset && e.dataset.tf != null) { if (!has(f, "tf:")) f.add("tf:" + e.dataset.tf); continue; }
     if (t === "B" || t === "STRONG") f.add("b");
     else if (t === "I" || t === "EM") f.add("i");
     else if (t === "U" || t === "INS") f.add("u");
@@ -303,6 +316,7 @@ export function readLine(div) {
   if (div.dataset.ls && !ln.code) ln.ls = div.dataset.ls;
   if (div.dataset.newpage) ln.newpage = true;
   if (div.dataset.pagebreak) ln.brk = true;
+  if (div.dataset.tcp) ln.tcp = div.dataset.tcp;
   const heading = !!kind && kind[0] === "h";
   const walk = (n) => {
     for (const c of n.childNodes) {
@@ -533,9 +547,32 @@ export function relayout(page) {
 }
 
 // ------------------------------------------------------------------ text pasted or dropped in
+// Keep Source Formatting: a pasted element's colour, font, size and highlight colour as the words' own
+// (black, and the usual web fonts, are left as the document's)
+const GENERIC_FONTS = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit|initial|-apple-system|blinkmacsystemfont|segoe ui|roboto|helvetica neue|arial|times new roman|calibri)$/i;
+function keepLook(c, st, f) {
+  const drop = (p) => { for (const k of [...f]) if (k.startsWith(p)) f.delete(k); };
+  const col = (/(?:^|;)\s*color\s*:\s*([^;]+)/i.exec(st) || [])[1] || (c.tagName === "FONT" && c.getAttribute("color"));
+  const hx = col && hexOf(col.trim());
+  if (hx) { drop("c:"); if (hx !== "000000") f.add("c:" + hx); }
+  const fam = (/font-family\s*:\s*([^;]+)/i.exec(st) || [])[1] || (c.tagName === "FONT" && c.getAttribute("face"));
+  if (fam) {
+    const name = fam.split(",")[0].replace(/["']/g, "").replace(/&quot;/g, "").trim();
+    if (name && !GENERIC_FONTS.test(name)) { drop("font:"); f.add("font:" + name.slice(0, 60)); }
+  }
+  const fs = /font-size\s*:\s*([\d.]+)\s*(pt|px)/i.exec(st);
+  if (fs) {
+    const pt = fs[2].toLowerCase() === "px" ? +fs[1] * 0.75 : +fs[1];
+    if (pt >= 4 && pt <= 200) { drop("sz:"); f.add("sz:" + Math.round(pt * 2)); }
+  }
+  const bg = (/background(?:-color)?\s*:\s*([^;]+)/i.exec(st) || [])[1];
+  if (bg && f.has("h")) { const n = nearestHl(bg.trim()); if (n && n !== "yellow") { drop("hc:"); f.add("hc:" + n); } }
+}
+
 // HTML from another program or a web page: lines, keeping bold, italic,
 // underline, strikethrough, highlight, links, headings, lists and quotes
-export function linesFromHtml(html) {
+// (RossDraft 1.11.0) keep: Paste Special ▸ Keep Source Formatting: its colours, fonts and sizes too
+export function linesFromHtml(html, keep) {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const out = [];
   let cur = null;
@@ -563,7 +600,11 @@ export function linesFromHtml(html) {
       if (t === "U") f2.add("u");
       if (t === "S" || t === "STRIKE" || t === "DEL") f2.add("s");
       if (t === "MARK") f2.add("h");
+      if ((t === "SUP" || t === "SUB") && !f2.has("sup") && !f2.has("sub")) f2.add(t.toLowerCase());
       const st = c.getAttribute("style") || "";
+      if (/vertical-align\s*:\s*super/i.test(st) && !f2.has("sub")) f2.add("sup");
+      if (/vertical-align\s*:\s*sub/i.test(st) && !f2.has("sup")) f2.add("sub");
+      if (keep) keepLook(c, st, f2);
       if (/font-weight\s*:\s*(bold|[6-9]00)/i.test(st)) f2.add("b");
       if (/font-style\s*:\s*italic/i.test(st)) f2.add("i");
       if (/text-decoration[^;]*underline/i.test(st)) f2.add("u");

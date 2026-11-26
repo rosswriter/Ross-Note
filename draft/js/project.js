@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.9.22-d1.10.2";
-import * as wordio from "./wordio.js?v=1.9.22-d1.10.2";
-import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit } from "./wordpatch.js?v=1.9.22-d1.10.2";
-import * as rtf from "./rtf.js?v=1.9.22-d1.10.2";
+import * as md from "./md.js?v=1.9.22-d1.12.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.12.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp } from "./wordpatch.js?v=1.9.22-d1.12.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.12.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -236,6 +236,7 @@ export class ProjectStore {
     this.scenes.set(raw.id, sc);
     n.readOnly = sc.readOnly;
     n.comments = sc.comments || [];
+    n.changes = sc.changes || [];            // (RossDraft 1.12.0) its tracked changes [{id, kind, author, date, words}]
     n.usz = sc.usual && sc.usual.sz ? +sc.usual.sz : 24;      // (1.9.0) the words' usual size, for those of their own
     n.fnotes = new Map(sc.notes || []);     // RossDraft 1.2: the scene's footnotes and endnotes, "f17" -> words
     n.fnDirty = false;
@@ -273,7 +274,7 @@ export class ProjectStore {
     let comments = [];
     try { comments = await readComments(got.files); } catch (e) { comments = []; }
     return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments,
-      notes: got.notes || new Map(), usual: got.usual || null };
+      notes: got.notes || new Map(), usual: got.usual || null, changes: got.changes || [] };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are
@@ -432,6 +433,39 @@ export class ProjectStore {
     n.text = keep;
     const now = this.scenes.get(n.raw.id);
     if (now) { now.shown = keep; now.shownTitle = n.title(); }
+  }
+
+  // RossDraft 1.12.0: tracked changes accepted or rejected in this entry's Word file (op: { ids | null, accept })
+  // -> how many; the scene read again (a read-only one too: only the changes are touched)
+  async changeOp(n, op) {
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc && n.raw && !n.raw.pdf) { try { await this.load(n); } catch (e) { return 0; } sc = this.scenes.get(n.raw.id); }
+    if (!sc || !sc.files) return 0;
+    if (this.canWrite === false) throw new Error("There's no permission to save into this file.");
+    const got = await changeOp(sc.files, op);
+    if (!got.count) return 0;
+    const [d, name] = await this.sceneFile(n.raw, true);
+    // (the file as it was, for Undo)
+    try { this.lastChange = { id: n.raw.id, bytes: new Uint8Array(await (await (await d.getFileHandle(name)).getFile()).arrayBuffer()) }; }
+    catch (e) { this.lastChange = null; }
+    await writeFile(d, name, got.blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    await this.load(n, true);
+    return got.count;
+  }
+
+  // the last accept or reject taken back: the file as it was before it
+  async undoChange(n) {
+    const u = this.lastChange;
+    if (!u || u.id !== n.raw.id) return false;
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, new Blob([u.bytes]));
+    this.lastChange = null;
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    await this.load(n, true);
+    return true;
   }
 
   // RossDraft 1.7.0: Remove Text Colours from this entry's Word file (-> how many places)

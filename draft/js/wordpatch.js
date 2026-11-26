@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.10.2";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.12.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -29,7 +29,7 @@ const TEXT_WIDTH_EMU = 5760720;
 // ------------------------------------------------------------------ what the tablet can't keep
 const BLOCKERS = [
   // (RossDraft 1.2: footnotes and endnotes are kept and edited: their marks are in the page's words)
-  [/<w:(ins|del|moveFrom|moveTo)\b|<w:(rPr|pPr|sectPr|tblPr|tcPr|trPr)Change\b/, "tracked changes"],
+  // (RossDraft 1.12.0: tracked changes are shown, kept when the scene is saved, and accepted or rejected: changeOp)
   // (RossDraft 1.8.0: tables are shown and edited; merged cells, a table in a table: readDocx's trouble says so)
   [/<w:txbxContent\b|<mc:AlternateContent\b|<w:object\b/, "a text box or shape"],
   [/<m:oMath/, "an equation"],
@@ -72,6 +72,7 @@ function sigOf(ln) {
   const sig = [k, k === "ul" || k === "ol" ? ln.depth || 1 : 0, ln.code ? 1 : 0, runs];
   if (ln.align && !ln.code) sig.push(ln.align);       // (unaligned lines' signatures as before 1.8.3)
   if ((ln.ls || ln.pageBreak || ln.brk) && !ln.code) sig.push("ls" + (ln.ls || "") + (ln.pageBreak ? "np" : "") + (ln.brk ? "pb" : ""));
+  if (ln.tcp) sig.push("tc" + ln.tcp);                  // (1.12.0)
   return JSON.stringify(sig);
 }
 
@@ -661,18 +662,42 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
   // ordered lists: each run of them its own numbering (as wordio writes)
   const numFor = new Map();   // line index -> numId for new lists with nothing to follow
 
+  // (1.12.0: a paragraph that's still the one it was keeps its tracked changes: its settings', its end's)
   const cleanPpr = (el, keepSect) => {
     const o = el && wkid(el, "pPr");
     if (!o) return null;
     const c = o.cloneNode(true);
-    for (const x of wkids(c)) if (x.localName === "pPrChange" || (x.localName === "sectPr" && !keepSect)) c.removeChild(x);
+    for (const x of wkids(c)) if ((x.localName === "pPrChange" || x.localName === "sectPr") && !keepSect) c.removeChild(x);
+    const mrp = wkid(c, "rPr");
+    if (mrp && !keepSect) for (const x of wkids(mrp)) if (["ins", "del", "moveFrom", "moveTo"].includes(x.localName)) mrp.removeChild(x);
     return c;
+  };
+  // (1.12.0) the tracked changes the scene had, by id (a rebuilt paragraph's added and taken-out words keep theirs)
+  const oldChange = new Map();
+  let maxChangeId = 0;
+  for (const e of body.getElementsByTagNameNS(W, "*")) {
+    if (!["ins", "del", "moveFrom", "moveTo", "rPrChange", "pPrChange"].includes(e.localName)) continue;
+    const id = wval(e, "id");
+    if (id == null) continue;
+    if (!oldChange.has(id)) oldChange.set(id, e);
+    if (/^\d+$/.test(id)) maxChangeId = Math.max(maxChangeId, +id);
+  }
+  const usedChangeIds = new Set();
+  const tcWrap = (key, inner) => {
+    const id = key.slice(3);
+    const old = oldChange.get(id);
+    const tag = old && ["ins", "del", "moveFrom", "moveTo"].includes(old.localName) ? old.localName : key[1] === "i" ? "ins" : "del";
+    let nid = id;
+    if (usedChangeIds.has(nid) || !/^-?\d+$/.test(nid)) nid = String(++maxChangeId);
+    usedChangeIds.add(nid);
+    const au = old ? wval(old, "author") : null, dt = old ? wval(old, "date") : null;
+    return `<w:${tag} w:id="${nid}"${au != null ? ` w:author="${xa(au)}"` : ""}${dt ? ` w:date="${xa(dt)}"` : ""}>${inner}</w:${tag}>`;
   };
   const kindKey = (ln) => (ln.code ? "code" : ln.kind || "p");
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.10.2");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.12.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -771,8 +796,21 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     // take their style's own (no run look), plain text the scene's usual
     const base = same ? baseRpr(tmpl.el) : likeEl ? baseRpr(likeEl) : !kind && !ln.code ? baseRpr(null) : null;
     let xml = "";
+    // (1.12.0) the runs of one tracked insertion or deletion together in one w:ins / w:del
+    const pieces = [];
+    const flushTc = () => {
+      let k = 0;
+      while (k < pieces.length) {
+        const key = pieces[k].key;
+        if (!key || pieces[k].link) { xml += pieces[k].link ? pieces[k].xml : pieces[k].xml; k++; continue; }
+        let inner = "";
+        while (k < pieces.length && pieces[k].key === key && !pieces[k].link) inner += pieces[k++].xml;
+        xml += tcWrap(key, inner);
+      }
+      pieces.length = 0;
+    };
     for (const r of ln.runs || []) {
-      if (r.img) { xml += await pictureXml(r.img); continue; }
+      if (r.img) { flushTc(); xml += await pictureXml(r.img); continue; }
       const t = (r.t || "").split(OBJ).join("");
       if (!t) continue;
       const f = ln.code ? new Set() : r.f || new Set();
@@ -802,19 +840,28 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       if (f.has("u") && !r.href) add("u", "single");
       if (f.has("sup")) add("vertAlign", "superscript"); else if (f.has("sub")) add("vertAlign", "subscript");
       sortRpr(rp);
-      const pieces = t.includes(NOTE_A) && !ln.code ? splitNotes(t) : [{ t }];
-      for (const piece of pieces) {
+      // (1.12.0) a tracked change: its formatting change kept (the old look, last in rPr); added or taken out
+      const tf = [...f].find((k) => k.startsWith("tf:"));
+      const was = tf && oldChange.get(tf.slice(3));
+      if (was && was.localName === "rPrChange") rp.appendChild(was.cloneNode(true));
+      const tcKey = ln.code ? null : [...f].find((k) => k.startsWith("ti:") || k.startsWith("td:")) || null;
+      const tTag = tcKey && tcKey[1] === "d" ? "delText" : "t";
+      const bits = t.includes(NOTE_A) && !ln.code ? splitNotes(t) : [{ t }];
+      for (const piece of bits) {
         if (piece.note) {
           const k = piece.note[0] === "e" ? "endnote" : "footnote";
           const sid = styleFor([k + " reference"], k === "footnote" ? "FootnoteReference" : "EndnoteReference");
-          xml += `<w:r><w:rPr><w:rStyle w:val="${sid}"/></w:rPr><w:${k}Reference w:id="${piece.note[1]}"/></w:r>`;
+          pieces.push({ key: tcKey, xml: `<w:r><w:rPr><w:rStyle w:val="${sid}"/></w:rPr><w:${k}Reference w:id="${piece.note[1]}"/></w:r>` });
           continue;
         }
-        const rx = (rp.children.length ? ser(rp) : "") + `<w:t xml:space="preserve">${xt(piece.t)}</w:t>`;
-        if (r.href && !ln.code) xml += `<w:hyperlink r:id="${linkRel(r.href)}"><w:r>${rx}</w:r></w:hyperlink>`;
-        else xml += `<w:r>${rx}</w:r>`;
+        const rx = (rp.children.length ? ser(rp) : "") + `<w:${tTag} xml:space="preserve">${xt(piece.t)}</w:${tTag}>`;
+        if (r.href && !ln.code) {
+          const inner = tcKey ? tcWrap(tcKey, `<w:r>${rx}</w:r>`) : `<w:r>${rx}</w:r>`;
+          pieces.push({ key: tcKey, link: true, xml: `<w:hyperlink r:id="${linkRel(r.href)}">${inner}</w:hyperlink>` });
+        } else pieces.push({ key: tcKey, xml: `<w:r>${rx}</w:r>` });
       }
     }
+    flushTc();
     if (ln.brk && !ln.code) xml = '<w:r><w:br w:type="page"/></w:r>' + xml;      // (1.9.0) a page break before it
     if (xml) {
       const frag = parse(`<w:x xmlns:w="${W}" xmlns:r="${R}" xmlns:wp="${WP}" xmlns:a="${A_}" xmlns:pic="${PIC}">${xml}</w:x>`);
@@ -834,7 +881,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.10.2");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.12.0");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }
@@ -1627,3 +1674,108 @@ export async function exportComments(buf, groups) {
 }
 
 export { unzip, sigOf };
+
+
+// ------------------------------------------------------------------ RossDraft 1.12.0: accepting and rejecting tracked changes
+// op: { ids: the changes' ids (null: all of them, in the notes too), accept: true / false } -> { blob, count }
+// As Word does it: an addition accepted stays (unmarked), rejected goes; a deletion accepted goes, rejected stays;
+// a formatting change accepted keeps the new look, rejected puts back the old; a paragraph's end added and
+// rejected (or taken out and accepted) joins it to the next paragraph; a row added and rejected (or taken out and
+// accepted) goes.
+const PROP_CHANGES = ["rPrChange", "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange", "tblGridChange", "numberingChange", "tblPrExChange"];
+function unwrapW(e) {
+  const up = e.parentNode;
+  while (e.firstChild) up.insertBefore(e.firstChild, e);
+  up.removeChild(e);
+}
+function joinNext(p) {
+  let next = p.nextSibling;
+  while (next && !(next.nodeType === 1 && isW(next, "p"))) {
+    if (next.nodeType === 1 && (isW(next, "tbl") || isW(next, "sectPr"))) { next = null; break; }
+    next = next.nextSibling;
+  }
+  if (!next) return false;
+  const at = [...next.childNodes].find((c) => !(c.nodeType === 1 && isW(c, "pPr"))) || null;
+  for (const c of [...p.childNodes]) if (!(c.nodeType === 1 && isW(c, "pPr"))) next.insertBefore(c, at);
+  p.parentNode.removeChild(p);
+  return true;
+}
+function decideChanges(d, pick, accept) {
+  const root = d.documentElement;
+  const NAMES = new Set(["ins", "del", "moveFrom", "moveTo", ...PROP_CHANGES]);
+  const els = [...root.getElementsByTagNameNS(W, "*")].filter((e) => NAMES.has(e.localName) && pick(e));
+  let n = 0;
+  for (const e of els) {
+    if (!root.contains(e)) continue;
+    const l = e.localName, up = e.parentNode;
+    n++;
+    if (PROP_CHANGES.includes(l)) {
+      if (!accept) {
+        const oldProps = [...e.children].find((c) => c.namespaceURI === W);
+        const keep = new Set(l === "pPrChange" ? ["rPr", "sectPr", "pPrChange"] : [l]);
+        for (const c of [...up.children]) if (c.namespaceURI === W && !keep.has(c.localName)) up.removeChild(c);
+        if (oldProps) for (const c of [...oldProps.children]) up.insertBefore(c, e);
+      }
+      up.removeChild(e);
+      continue;
+    }
+    const added = l === "ins" || l === "moveTo";
+    if (isW(up, "rPr") && up.parentNode && isW(up.parentNode, "pPr")) {
+      // a paragraph's end
+      const p = up.parentNode.parentNode;
+      up.removeChild(e);
+      if (added !== accept && p && isW(p, "p")) joinNext(p);
+      continue;
+    }
+    if (isW(up, "rPr")) { up.removeChild(e); continue; }
+    if (isW(up, "trPr")) {
+      // a table's row
+      const tr = up.parentNode;
+      up.removeChild(e);
+      if (added !== accept && tr && tr.parentNode) tr.parentNode.removeChild(tr);
+      continue;
+    }
+    if (added === accept) {
+      // stays, unmarked (taken-out words back as words)
+      if (!added) {
+        for (const t of [...e.getElementsByTagNameNS(W, "delText")]) {
+          const nt = d.createElementNS(W, "w:t");
+          nt.setAttribute("xml:space", "preserve");
+          nt.textContent = t.textContent;
+          t.parentNode.replaceChild(nt, t);
+        }
+        for (const t of [...e.getElementsByTagNameNS(W, "delInstrText")]) {
+          const nt = d.createElementNS(W, "w:instrText");
+          nt.textContent = t.textContent;
+          t.parentNode.replaceChild(nt, t);
+        }
+      }
+      unwrapW(e);
+    } else up.removeChild(e);
+  }
+  if (n) {
+    // markers left with nothing to mark
+    for (const e of [...root.getElementsByTagNameNS(W, "*")]) {
+      if (/^(moveFrom|moveTo)Range(Start|End)$/.test(e.localName) && !pickAnyMove(root)) e.parentNode.removeChild(e);
+    }
+  }
+  return n;
+}
+function pickAnyMove(root) {
+  for (const e of root.getElementsByTagNameNS(W, "moveFrom")) return true;
+  for (const e of root.getElementsByTagNameNS(W, "moveTo")) return true;
+  return false;
+}
+export async function changeOp(files, op) {
+  const pkg = await openPackage(files);
+  const want = op.ids ? new Set(op.ids.map(String)) : null;
+  const pick = (e) => !want || want.has(String(wval(e, "id")));
+  let n = decideChanges(pkg.doc, pick, !!op.accept);
+  if (!want) {
+    for (const t of ["footnotes", "endnotes"]) {
+      const d = pkg.part(t, null);
+      if (d) n += decideChanges(d, pick, !!op.accept);
+    }
+  }
+  return n ? { blob: await pkg.save(), count: n } : { blob: null, count: 0 };
+}

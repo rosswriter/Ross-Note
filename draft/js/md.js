@@ -87,7 +87,8 @@ const RULE_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 export const ALIGNS = ["center", "right", "justify"];
 const ALIGN_RE = /^<(p|h([1-6])) align="(center|right|justify)">(.*)<\/\1>$/s;
 // (RossDraft 1.9.0) and its own line spacing, Start on New Page, a page break before it
-const PARA_RE = /^<(p|h([1-6]))((?: align="(?:center|right|justify)")?(?: ls="\d+(?:\.\d+)?")?(?: newpage)?(?: pagebreak)?)>(.*)<\/\1>$/s;
+// (1.12.0) and a tracked change to its end or its settings: tc="i5 f7" (i: its end added, d: taken out, f: settings)
+const PARA_RE = /^<(p|h([1-6]))((?: align="(?:center|right|justify)")?(?: ls="\d+(?:\.\d+)?")?(?: newpage)?(?: pagebreak)?(?: tc="[idf]-?\d+(?: [idf]-?\d+)*")?)>(.*)<\/\1>$/s;
 const ALNUM = /[\p{L}\p{N}_]/u;     // Python's isalnum() (and "_" never matters here)
 
 function isalnum(c) { return !!c && /[\p{L}\p{N}]/u.test(c); }
@@ -114,6 +115,9 @@ export function hrefOf(url) { return url.startsWith("www.") ? "http://" + url : 
 // hc:name (a highlight's colour, with h), sup, sub
 const SPAN_RE = /<span style="(color:#[0-9A-Fa-f]{6}|font-family:[^";<>]{1,60}|font-size:\d{1,3}(?:\.5)?pt)">/y;
 const MARKC_RE = /<mark class="hl-([A-Za-z]{2,12})">/y;
+// (1.12.0) tracked changes from Word: <ins data-tc="5">added</ins>, <del data-tc="6">taken out</del>,
+// <span data-tf="7">formatting changed</span>
+const TC_RE = /<(ins|del) data-tc="(-?\d+)">|<span data-tf="(-?\d+)">/y;
 function spanKey(st) {
   if (st.startsWith("color:#")) return "c:" + st.slice(7).toUpperCase();
   if (st.startsWith("font-family:")) return "font:" + st.slice(12).trim();
@@ -180,6 +184,17 @@ export function inlineRuns(text) {
       if (sp && closes("</span>", i + sp[0].length)) {
         const key = spanKey(sp[1]);
         if (key) { flush(); state.add(key); spans.push(key); i += sp[0].length; continue; }
+      }
+      const tm = stickyMatch(TC_RE, text, i);
+      if (tm) {
+        const close = tm[1] ? "</" + tm[1] + ">" : "</span>";
+        if (closes(close, i + tm[0].length)) {
+          const key = tm[1] === "ins" ? "ti:" + tm[2] : tm[1] === "del" ? "td:" + tm[2] : "tf:" + tm[3];
+          flush(); state.add(key); spans.push(key); i += tm[0].length; continue;
+        }
+      }
+      if ((text.startsWith("</ins>", i) || text.startsWith("</del>", i)) && spans.length && /^t[id]:/.test(spans[spans.length - 1])) {
+        flush(); state.delete(spans.pop()); i += 6; continue;
       }
       if (text.startsWith("</span>", i) && spans.length) { flush(); state.delete(spans.pop()); i += 7; continue; }
       const mk = stickyMatch(MARKC_RE, text, i);
@@ -315,6 +330,8 @@ export function parse(text) {
       if (l) ln.ls = l[1];
       if (/ newpage/.test(am[3])) ln.newpage = true;
       if (/ pagebreak/.test(am[3])) ln.brk = true;
+      const tc = / tc="([^"]+)"/.exec(am[3]);
+      if (tc) ln.tcp = tc[1];
     }
     if (ln.kind === "ol" && ln.num === 1) ln.restart = true;
     const { number, restarted } = lists.step(ln);
@@ -408,12 +425,15 @@ const ORDER = ["u", "h", "s", "b", "i"];
 // (1.9.0) a run's keys to open, outermost first: font, size, colour; then u, h (with its colour), s, b, i; sup/sub
 function keysOf(f) {
   const hc = [...f].find((k) => k.startsWith("hc:"));
+  // (1.12.0) a tracked change outermost: an insertion or deletion, then a formatting change
+  const tc = [...f].filter((k) => /^t[idf]:/.test(k)).sort((a, b) => "idf".indexOf(a[1]) - "idf".indexOf(b[1]));
   const look = [...f].filter((k) => /^(font|sz|c):/.test(k)).sort((a, b) => "fsc".indexOf(a[0]) - "fsc".indexOf(b[0]));
   const basic = ORDER.filter((k) => f.has(k)).map((k) => (k === "h" && hc ? "h:" + hc.slice(3) : k));
-  return look.concat(basic, ["sup", "sub"].filter((k) => f.has(k)));
+  return tc.concat(look, basic, ["sup", "sub"].filter((k) => f.has(k)));
 }
-const openOf = (k) => OPEN[k] || (k.startsWith("h:") ? `<mark class="hl-${k.slice(2)}">` : spanOpen(k));
-const closeOf = (k) => CLOSE[k] || (k.startsWith("h:") ? "</mark>" : "</span>");
+const tcOpen = (k) => (k[1] === "i" ? `<ins data-tc="${k.slice(3)}">` : k[1] === "d" ? `<del data-tc="${k.slice(3)}">` : `<span data-tf="${k.slice(3)}">`);
+const openOf = (k) => OPEN[k] || (k.startsWith("h:") ? `<mark class="hl-${k.slice(2)}">` : /^t[idf]:/.test(k) ? tcOpen(k) : spanOpen(k));
+const closeOf = (k) => CLOSE[k] || (k.startsWith("h:") ? "</mark>" : k.startsWith("ti:") ? "</ins>" : k.startsWith("td:") ? "</del>" : "</span>");
 
 function escape(t, atStart) {
   let s = "";
@@ -421,7 +441,7 @@ function escape(t, atStart) {
     const c = t[k];
     if (c === "[" && stickyMatch(LINK_AT, t, k)) s += "\\";
     if ("\\*_~=<`".includes(c)) {
-      if ("*_~=".includes(c) || c === "\\" || (c === "<" && /^<\/?(u|mark|span|sup|sub)\b/i.test(t.slice(k, k + 7))) || c === "`") s += "\\";
+      if ("*_~=".includes(c) || c === "\\" || (c === "<" && /^<\/?(u|mark|span|sup|sub|ins|del)\b/i.test(t.slice(k, k + 7))) || c === "`") s += "\\";
     }
     s += c;
   }
@@ -494,10 +514,12 @@ export function lineMarkdown(ln, number, opts = {}) {
   const body = out.join("");
   const al = ALIGNS.includes(ln.align) ? ln.align : null;
   const ls = ln.ls && /^\d+(\.\d+)?$/.test(String(ln.ls)) ? String(ln.ls) : null;
-  const attrs = (al ? ` align="${al}"` : "") + (ls ? ` ls="${ls}"` : "") + (ln.newpage ? " newpage" : "") + (ln.brk ? " pagebreak" : "");
+  const tcp = ln.tcp && /^[idf]-?\d+( [idf]-?\d+)*$/.test(ln.tcp) ? ln.tcp : null;
+  const attrs = (al ? ` align="${al}"` : "") + (ls ? ` ls="${ls}"` : "") + (ln.newpage ? " newpage" : "") + (ln.brk ? " pagebreak" : "") +
+    (tcp ? ` tc="${tcp}"` : "");
   if (attrs && heading) return `<${kind}${attrs}>${body}</${kind}>`;
   const whole = lineOut(ln, kind, heading, body, number);
-  return attrs && (body.trim() || ln.newpage || ln.brk) ? `<p${attrs}>${whole}</p>` : whole;
+  return attrs && (body.trim() || ln.newpage || ln.brk || tcp) ? `<p${attrs}>${whole}</p>` : whole;
 }
 
 function lineOut(ln, kind, heading, body, number) {
@@ -621,4 +643,74 @@ export function numberLabel(n, depth) {
     return s;
   }
   return String(n);
+}
+
+// ------------------------------------------------------------------ (RossDraft 1.12.0) tracked changes
+export const isChangeFlag = (k) => /^t[idf]:/.test(k);
+export function hasChanges(lines) {
+  return (lines || []).some((ln) => ln.tcp || (ln.runs || []).some((r) => r.f && [...r.f].some(isChangeFlag)) ||
+    (ln.cells || []).some((row) => row.some((c) => hasChanges(c))));
+}
+// the lines as they'd read with every change accepted (for Compile, exports, word counts, Preview Final):
+// taken-out words gone, added ones plain, a paragraph whose end was taken out joined to the next
+export function finalLines(lines) {
+  if (!hasChanges(lines)) return lines;
+  const out = [];
+  let join = false;
+  for (const ln0 of lines) {
+    const ln = { ...ln0 };
+    if (ln.cells) ln.cells = ln.cells.map((row) => row.map((c) => finalLines(c)));
+    if (ln.runs) ln.runs = ln.runs.filter((r) => !(r.f && [...r.f].some((k) => k.startsWith("td:"))))
+      .map((r) => (r.f && [...r.f].some(isChangeFlag) ? { ...r, f: new Set([...r.f].filter((k) => !isChangeFlag(k))) } : r));
+    const gone = !!(ln.tcp && /(^| )d/.test(ln.tcp));
+    delete ln.tcp;
+    if (join && out.length && !ln.cells && !out[out.length - 1].cells) {
+      const prev = out[out.length - 1];
+      // (a line's own last space isn't kept in the note: one between the words, as the Word file has)
+      const pt = prev.runs.map((r) => r.t || "").join(""), nt = (ln.runs || []).map((r) => r.t || "").join("");
+      const gap = pt && nt && !/\s$/.test(pt) && !/^[\s.,;:!?)\]’”]/.test(nt) ? [{ t: " ", f: new Set() }] : [];
+      prev.runs = prev.runs.concat(gap, ln.runs || []);
+    } else out.push(ln);
+    join = gone;
+  }
+  return out;
+}
+// (1.12.0) the lines as they were before the changes (Review ▸ Original): added words gone, taken-out ones plain,
+// changed formatting as it was (changes[].old: the run's flags; .oldAlign: the paragraph's alignment), a paragraph
+// end that was added joined to the next
+const LOOK_KEYS = (k) => ["b", "i", "u", "s", "h", "sup", "sub"].includes(k) || /^(hc|c|font|sz):/.test(k);
+export function originalLines(lines, changes) {
+  if (!hasChanges(lines)) return lines;
+  const byId = new Map((changes || []).map((c) => [String(c.id), c]));
+  const out = [];
+  let join = false;
+  for (const ln0 of lines) {
+    const ln = { ...ln0 };
+    if (ln.cells) ln.cells = ln.cells.map((row) => row.map((c) => originalLines(c, changes)));
+    if (ln.runs) {
+      ln.runs = ln.runs.filter((r) => !(r.f && [...r.f].some((k) => k.startsWith("ti:")))).map((r) => {
+        if (!r.f || ![...r.f].some(isChangeFlag)) return r;
+        const tf = [...r.f].find((k) => k.startsWith("tf:"));
+        const was = tf && byId.get(tf.slice(3));
+        let f = [...r.f].filter((k) => !isChangeFlag(k));
+        if (was && was.old) f = f.filter((k) => !LOOK_KEYS(k)).concat(was.old.filter(LOOK_KEYS));
+        return { ...r, f: new Set(f) };
+      });
+    }
+    const toks = (ln.tcp || "").split(" ").filter(Boolean);
+    for (const t of toks) {
+      const c = t[0] === "f" ? byId.get(t.slice(1)) : null;
+      if (c && "oldAlign" in c) { if (c.oldAlign) ln.align = c.oldAlign; else delete ln.align; }
+    }
+    const added = toks.some((t) => t[0] === "i");
+    delete ln.tcp;
+    if (join && out.length && !ln.cells && !out[out.length - 1].cells) {
+      const prev = out[out.length - 1];
+      const pt = prev.runs.map((r) => r.t || "").join(""), nt = (ln.runs || []).map((r) => r.t || "").join("");
+      const gap = pt && nt && !/\s$/.test(pt) && !/^[\s.,;:!?)\]’”]/.test(nt) ? [{ t: " ", f: new Set() }] : [];
+      prev.runs = prev.runs.concat(gap, ln.runs || []);
+    } else out.push(ln);
+    join = added;
+  }
+  return out;
 }

@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.10.2";
-import * as ed from "./editor.js?v=1.9.22-d1.10.2";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.10.2";
-import * as spell from "./spell.js?v=1.9.22-d1.10.2";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.10.2";
+import * as md from "./md.js?v=1.9.22-d1.12.0";
+import * as ed from "./editor.js?v=1.9.22-d1.12.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.12.0";
+import * as spell from "./spell.js?v=1.9.22-d1.12.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.12.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.10.2";
+import { ED } from "./edition.js?v=1.9.22-d1.12.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.10.2")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.12.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -777,7 +777,7 @@ async function compileLines(chosen, o) {
     if (n.raw.pdf) continue;
     const text = await queue(() => S.store.read(n));
     if (n.readOnly && n.readOnly.some((w) => /not on this device|couldn't read/.test(w))) { missing.push(n.title()); continue; }
-    const nl = md.parse(text).slice(1);
+    const nl = md.finalLines(md.parse(text)).slice(1);
     entries.push({ title: n.title(), depth: n.ancestors().length, hasChildren: n.children.length > 0, lines: W.fromNoteLines(nl),
       comments: n.comments || [], notes: n.fnotes || null });
     words += wordsOfNote(n);
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.10.2");
+    const R = await import("./rtf.js?v=1.9.22-d1.12.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1645,7 +1645,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
+    const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1777,7 +1777,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.10.2");
+    const EP = await import("./epub.js?v=1.9.22-d1.12.0");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1801,7 +1801,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.10.2");
+    const R = await import("./rtf.js?v=1.9.22-d1.12.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1842,7 +1842,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2581,7 +2581,7 @@ async function countBranch() {
     await S.store.readAll([n, ...n.walk()]);
     for (const x of [n, ...n.walk()]) {
       const text = x.text;
-      const t = md.parse(text || "").map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n");
+      const t = md.finalLines(md.parse(text || "")).map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n");
       total += wordsIn(t.split(md.OBJ).join(""));
       k++;
     }
@@ -2646,6 +2646,20 @@ function showText(text, pane = A) {
   spellSoon(0);
   showPdfIn(pane);
   paintBookSoon();
+  if (ED.project && pane.note && pane.note.changes && pane.note.changes.length) paintAuthors(pane.page, pane.note);   // (1.12.0)
+  // (Review ▸ Original: the scene drawn as it was before its changes, to read)
+  delete pane.page.dataset.orig;
+  if (ED.project && markupView() === "original") {
+    pane.page.contentEditable = "false";
+    if (pane.note.changes && pane.note.changes.length && !pane.joined) {
+      const orig = md.originalLines(md.parse(text), pane.note.changes);
+      for (const ln of orig) for (const r of ln.runs || []) if (r.img) r.img.target = md.resolvePicture(r.img.src, dir);
+      ed.renderLines(pane.page, orig);
+      ed.relayout(pane.page);
+      loadPictures(pane.page);
+      pane.page.dataset.orig = "1";
+    }
+  }
 }
 
 // RossDraft 1.4: a PDF entry (research) shown in the page's place (research.js), read-only
@@ -2665,7 +2679,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.10.2"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.12.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2689,7 +2703,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.10.2");
+  const X = await import("./export.js?v=1.9.22-d1.12.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2717,7 +2731,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.10.2");
+  const X = await import("./export.js?v=1.9.22-d1.12.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -3507,10 +3521,12 @@ async function fontWordsDialog() {
   page.focus();
   sel.removeAllRanges();
   sel.addRange(keep);
-  if (v === "clear") { setWordsLook("font:", null); setWordsLook("sz:", null); return; }
+  const spot = ed.caret(page);               // (1.11.0: the words chosen again for the second change)
+  const again = () => { ed.setCaret(page, spot); page.focus(); };
+  if (v === "clear") { setWordsLook("font:", null); again(); setWordsLook("sz:", null); return; }
   const name = nameI.value.trim().replace(/["<>;]/g, "").slice(0, 60);
   const z = parseFloat(sizeI.value);
-  if (name !== (curF || "")) setWordsLook("font:", name || null);
+  if (name !== (curF || "")) { setWordsLook("font:", name || null); again(); }
   if (!(z > 0)) { if (curS) setWordsLook("sz:", null); }
   else { const hp = Math.round(Math.min(400, Math.max(2, z)) * 2); if (String(hp) !== curS) setWordsLook("sz:", hp === usz ? null : String(hp)); }
 }
@@ -3904,7 +3920,7 @@ const COMMANDS = {
   date: () => insertText(md.longDate()),
   datetime: () => insertText(md.longDate(true)),
   picture: () => { rememberCaret(); $("file-pic").click(); },
-  undo: () => { if (!undoReplaceAll() && !(typeof undoOutline === "function" && undoOutline())) { exec("undo"); afterEdit(); } },
+  undo: () => { if (!undoReplaceAll() && !(typeof undoOutline === "function" && undoOutline()) && !(typeof undoDecision === "function" && undoDecision())) { exec("undo"); afterEdit(); } },
   find: () => openFind(true),
   headings: () => showHeadings(),
   redo: () => { exec("redo"); afterEdit(); },
@@ -4079,6 +4095,7 @@ const INLINE = [
 ];
 
 onPages("input", (e) => {
+  decisionUndo = null;                // (1.12.0: Ctrl+Z after typing undoes the typing, not an accept or reject)
   if (cellAt(e.target) || cellOfSel()) { tidyCell(cellAt(e.target) || cellOfSel()); changed(); return; }
   if (ed.tidy(page)) { /* put right */ }
   if (e.inputType === "insertText" && e.data) {
@@ -4282,11 +4299,10 @@ onPages("paste", async (e) => {
   if (files.length) { await addPictures(files); return; }
   const html = dt.getData("text/html");
   const text = dt.getData("text/plain");
-  let lines;
-  if (html && /<[a-z]/i.test(html)) lines = ed.linesFromHtml(html);
-  else lines = md.parse(text || "");
+  // (RossDraft 1.11.0) as Edit ▸ Paste Special ▸ Ctrl+V Pastes says (Ross Note: as before)
+  const { lines, plain } = pastedLines(ED.project ? pasteMode() : "match", html, text);
   if (!lines.length) return;
-  pasteLines(lines, !html && !/\n/.test((text || "").trim()) && !/[*_~=<#>[`]/.test(text || ""));
+  pasteLines(lines, plain);
 });
 
 function pasteLines(lines, plain) {
@@ -4424,6 +4440,7 @@ function showChip(el, buttons) {
   const chip = $("chip");
   chip.textContent = "";
   for (const [label, fn, on] of buttons) {
+    if (fn == null) { const l = document.createElement("span"); l.className = "chiplab"; l.textContent = label; chip.appendChild(l); continue; }
     const b = document.createElement("button");
     b.textContent = label;
     if (on) b.classList.add("on");
@@ -4475,7 +4492,7 @@ document.addEventListener("selectionchange", () => {
       if (!local) window.open(href, "_blank", "noopener");
       hideChip();
     }]]);
-  } else hideChip();
+  } else if (!(tcChipId != null && ED.project && (changeAtCaret() || {}).id === tcChipId)) { tcChipId = null; hideChip(); }   // (1.12.0: a change's chip stays while on it)
 });
 
 // ------------------------------------------------------------------ the menus (as on the laptop)
@@ -4562,14 +4579,17 @@ const MENU_ORDER = {
     { sub: "Word Copies of Notes", items: ["Update Word Copy", "Keep Word Copies Updated"] }, "-",
     /^Read the (Project|Folder) Again$/, "Scrivener Backups…"],
   fileDrop: ["New Note Under This One", "Save As RTF…", "Delete Note…"],
-  edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Paste as Plain Text", "Select All", "-",
-    "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", /^List All/, "Search the Notes (the list)", "-", "Go To…"],
-  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
+  editDrop: ["Paste as Plain Text"],
+  edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Select All",
+    "Paste Special", "-", "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", "Next Result (or Page)", "Previous Result (or Page)",
+    /^List All/, "Search the Notes (the list)", "-", "Go To…", "-", "Search the Web"],
+  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Special Character…", "Link…", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
     "Bookmark…", "-", "Date", "Date and Time"],
   format: ["Font", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Highlight Colour", "Text Colour",
-    "Superscript", "Subscript", "Change Case", "-",
+    "Superscript", "Subscript", "Change Case", "-", "Copy Formatting", "Paste Formatting", "-",
     "Heading 1", "Heading 2", "Heading 3", "Normal Text", "-", "Bullets and Numbering", "Indent (as a Quote)", "-",
-    "Align Left", "Centre", "Align Right", "Justify", "Line Spacing", "Start on New Page", "-", "Clear Formatting", "Remove Text Colours…"],
+    "Align Left", "Centre", "Align Right", "Justify", "Line Spacing", "Start on New Page", "-", "Make Quotes Curly", "Make Quotes Straight", "-",
+    "Clear Formatting", "Remove Text Colours…"],
   notes: ["New Note Under This One", "-", "Move Up", "Move Down", "Move Out a Level", "Move Under the Note Above", "-",
     "Select Everything in the List (as one page)", "Count Words (with the notes under it)…", "Notebook Colour…", "-",
     "Synopsis and Notes", "Status", "Include in Compile", "Targets and Status…", "Daily Word Target…", "Add a PDF…", "-", "Delete Note…"],
@@ -4668,6 +4688,12 @@ function menuItemsAll(name) {
       { label: "Find Previous", fn: () => findGo(true), keys: "Ctrl+Shift+G" },
       { label: S.store && S.store.isProject && !S.store.isDoc ? "List All (Whole Project)" : "List All Matches", fn: () => { if ($("findbar").hidden) openFind(false); listAll(); }, keys: "Ctrl+Shift+F" },
       { label: "Go To…", fn: goTo, keys: "Ctrl+G" },
+      ...(ED.project ? [
+        { label: "Next Result (or Page)", fn: () => browse(1), keys: "Ctrl+Page Down" },
+        { label: "Previous Result (or Page)", fn: () => browse(-1), keys: "Ctrl+Page Up" },
+        { label: "Paste Special", sub: pasteSpecialItems(!!(A.note && A.note.readOnly)) },
+        { label: "Search the Web", sub: searchWebItems() },
+      ] : []),
       "-",
       { label: "Search the Notes (the list)", fn: focusSearch, keys: "Ctrl+Alt+F" },
       { label: "Paste as Plain Text", fn: () => pasteFromClipboard(true), keys: "Ctrl+Alt+Shift+V" },
@@ -4677,7 +4703,8 @@ function menuItemsAll(name) {
       { label: "Date and Time", fn: COMMANDS.datetime, keys: "Ctrl+Shift+;" },
       "-",
       { label: "Picture…", fn: COMMANDS.picture },
-      ...(ED.project ? [{ label: "Table", sub: tableItems() }, { label: "Page Break", fn: pageBreak, keys: "Ctrl+Enter" }] : []),
+      ...(ED.project ? [{ label: "Table", sub: tableItems() }, { label: "Page Break", fn: pageBreak, keys: "Ctrl+Enter" },
+        { label: "Special Character…", fn: specialCharDialog }, { label: "Link…", fn: linkDialog, keys: "Ctrl+Alt+K" }] : []),
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
       ...(ED.project ? [{ label: "Bookmark…", fn: insertBookmark, keys: "Ctrl+Shift+F5", off: !A.note }] : []),
@@ -4724,6 +4751,10 @@ function menuItemsAll(name) {
       { label: "Justify", fn: COMMANDS.justify, keys: "Ctrl+J" },
       "-",
       { label: "Clear Formatting", fn: COMMANDS.clear, keys: "Ctrl+Space" },
+      ...(ED.project ? [{ label: "Copy Formatting", fn: copyFormat, keys: "Ctrl+Shift+C" },
+        { label: "Paste Formatting", fn: pasteFormat, keys: "Ctrl+Shift+V", off: !copiedFormat },
+        { label: "Make Quotes Curly", fn: () => convertQuotes(true) },
+        { label: "Make Quotes Straight", fn: () => convertQuotes(false) }] : []),
       ...(ED.project ? [{ label: "Change Case", sub: [
         { label: "Next in Turn (lower → UPPER → Title)", fn: () => changeCase(), keys: "Shift+F3" },
         "-",
@@ -4755,6 +4786,7 @@ function menuItemsAll(name) {
         { label: "Add a PDF…", fn: addPdfEntry },
       ] : []),
     ];
+    case "review": return ED.project ? reviewItems() : [];
     case "view": return [
       // 1.9.4: shorter, the settings in submenus
       ...(bookOn() ? [{ label: "Whole Book as One Page", on: !!(s.bookWhole && A.joined), fn: () => bookWhole(!(s.bookWhole && A.joined)) }] : []),
@@ -4927,7 +4959,7 @@ for (const b of document.querySelectorAll("#menubar [data-menu]")) {
 // Alt shows the menus' letters; Alt+F, Alt+E ... open them
 document.addEventListener("keydown", (e) => {
   if (e.key === "Alt") $("menubar").classList.add("keys");
-  const letters = { f: "file", e: "edit", i: "insert", o: "format", n: "notes", v: "view", h: "help" };
+  const letters = { f: "file", e: "edit", i: "insert", o: "format", r: "review", n: "notes", v: "view", h: "help" };
   if (e.altKey && !e.ctrlKey && !e.shiftKey && letters[e.key.toLowerCase()]) {
     e.preventDefault();
     showMenuNamed(letters[e.key.toLowerCase()]);
@@ -4944,6 +4976,7 @@ async function pasteFromMenu() {
       const img = it.types.find((t) => t.startsWith("image/"));
       if (img) { const b = await it.getType(img); return addPictures([new File([b], "image.png", { type: img })]); }
     }
+    if (ED.project) return pasteFromClipboard(false);
     for (const it of items) {
       if (it.types.includes("text/html")) return pasteLines(ed.linesFromHtml(await (await it.getType("text/html")).text()), false);
     }
@@ -5136,7 +5169,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.10.2")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.12.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5284,7 +5317,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.10.2");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.12.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5356,7 +5389,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.10.2");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.12.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5560,7 +5593,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
+  const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5597,7 +5630,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.10.2");
+  const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5636,7 +5669,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.10.2"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.12.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5861,7 +5894,7 @@ async function joinedParts(notes, dir) {
     await S.store.readAll(notes);
     for (const n of notes) {
       const text = n.text;
-      const lines = md.parse(text || "");
+      const lines = md.finalLines(md.parse(text || ""));
       for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, n.folderParts());
       out.push([n, md.titleAsHeading(md.serialize(lines, { dir }), n.ancestors().length - top + 1)]);
     }
@@ -5896,7 +5929,7 @@ async function saveFile(blob, name, desc, ext, mime) {
 async function exportLines(notes, pages, parts) {
   const W = await wordModule();
   const per = parts.map(([, text]) => {
-    const nl = md.parse(text);
+    const nl = md.finalLines(md.parse(text));
     for (const ln of nl) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
     const part = W.fromNoteLines(nl);
     while (part.length && !part[part.length - 1].runs.length && !part[part.length - 1].kind) part.pop();
@@ -5928,7 +5961,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.10.2");
+  const R = await import("./rtf.js?v=1.9.22-d1.12.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6020,7 +6053,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6035,7 +6068,7 @@ async function exportNotes(kind) {
   parts.forEach(([, text], k) => {
     const part = document.createElement("div");
     part.className = "part" + (k && pages ? " newpage" : k ? " gap" : "");
-    const lines = md.parse(text);
+    const lines = md.finalLines(md.parse(text));
     for (const ln of lines) for (const r of ln.runs) if (r.img) r.img.target = md.resolvePicture(r.img.src, []);
     ed.renderLines(part, lines);
     ed.relayout(part);
@@ -6457,7 +6490,7 @@ function wordsOfNote(n) {
   const t = n.text || "";
   const had = wcCache.get(n);
   if (had && had[0] === t) return had[1];
-  const plain = md.parse(t).map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n").split(md.OBJ).join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
+  const plain = md.finalLines(md.parse(t)).map((ln) => ln.runs.map((r) => (r.img ? "" : r.t)).join("")).join("\n").split(md.OBJ).join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
   const w = wordsIn(plain);
   wcCache.set(n, [t, w]);
   return w;
@@ -6528,6 +6561,9 @@ function caretAtPoint(x, y) {
 }
 
 async function pasteFromClipboard(plain) {
+  // (RossDraft 1.11.0) plain: true (Plain Text), false (as Ctrl+V does), or a mode ("keep", "match", "plain")
+  const mode = plain === true ? "plain" : typeof plain === "string" ? plain : ED.project ? pasteMode() : "match";
+  plain = mode === "plain";
   let html = "", text = "";
   try {
     if (!plain && navigator.clipboard.read) {
@@ -6538,11 +6574,10 @@ async function pasteFromClipboard(plain) {
     } else text = await navigator.clipboard.readText();
   } catch (e) { toast("The browser didn't allow pasting from here: use Ctrl+V" + (plain ? " (or Ctrl+Alt+Shift+V)" : "") + "."); return; }
   if (readOnlyHere()) return;
-  if (plain) { if (text) { insertText(text.replace(/\r?\n/g, " ")); afterEdit(); } return; }
-  let lines;
-  if (html && /<[a-z]/i.test(html)) lines = ed.linesFromHtml(html);
-  else lines = md.parse(text || "");
-  if (lines.length) { pasteLines(lines, !html && !/\n/.test((text || "").trim()) && !/[*_~=<#>[`]/.test(text || "")); }
+  if (plain && !ED.project) { if (text) { insertText(text.replace(/\r?\n/g, " ")); afterEdit(); } return; }
+  if (plain && cellOfSel()) { if (text) { insertText(text.replace(/\r?\n/g, " ")); afterEdit(); } return; }
+  const got = pastedLines(mode, html, text);
+  if (got.lines.length) pasteLines(got.lines, got.plain);
 }
 
 function pageMenu(e, p) {
@@ -6577,7 +6612,14 @@ function pageMenu(e, p) {
   items.push({ label: "Cut", keys: "Ctrl+X", off: !has || ro, fn: () => { document.execCommand("cut"); afterEdit(); } });
   items.push({ label: "Copy", keys: "Ctrl+C", off: !has, fn: () => document.execCommand("copy") });
   items.push({ label: "Paste", keys: "Ctrl+V", off: ro, fn: () => pasteFromClipboard(false) });
-  items.push({ label: "Paste as Plain Text", keys: "Ctrl+Alt+Shift+V", off: ro, fn: () => pasteFromClipboard(true) });
+  if (ED.project) {
+    items.push({ label: "Paste Special", sub: pasteSpecialItems(ro) });
+    items.push({ label: "Copy Formatting", keys: "Ctrl+Shift+C", fn: copyFormat });
+    items.push({ label: "Paste Formatting", keys: "Ctrl+Shift+V", off: ro || !copiedFormat, fn: pasteFormat });
+    items.push({ label: "Link…", keys: "Ctrl+Alt+K", off: ro, fn: linkDialog });
+    const w = wordsToSearch();
+    if (w) items.push({ label: `Search Google for “${w.length > 24 ? w.slice(0, 23) + "…" : w}”`, fn: () => searchWeb("web") });
+  } else items.push({ label: "Paste as Plain Text", keys: "Ctrl+Alt+Shift+V", off: ro, fn: () => pasteFromClipboard(true) });
   items.push("-");
   const canComment = !!(S.store && S.store.isProject && p.note && p.note.comments);
   items.push({ label: "Comment…", keys: "Ctrl+Alt+M", off: !canComment, fn: addComment });
@@ -7223,7 +7265,7 @@ function commandPalette() {
   list.className = "golist";
   list.setAttribute("role", "listbox");
   box.append(inp, list);
-  const NAMES = { file: "File", edit: "Edit", insert: "Insert", format: "Format", notes: "Notes", view: "View", help: "Help" };
+  const NAMES = { file: "File", edit: "Edit", insert: "Insert", format: "Format", review: "Review", notes: "Notes", view: "View", help: "Help" };
   const cmds = [];
   for (const m of MENUS_HERE) {
     let section = "";
@@ -7304,7 +7346,7 @@ function commandPalette() {
   ask("Find or Do Anything", box, []);
   inp.focus();
 }
-const MENUS_HERE = ["file", "edit", "insert", "format", "notes", "view", "help"];
+const MENUS_HERE = ["file", "edit", "insert", "format", "review", "notes", "view", "help"];
 
 // ------------------------------------------------------------------ 1.6.8: focus (Ctrl+Shift+Enter)
 function toggleFocus() {
@@ -7857,7 +7899,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.10.2");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -7879,7 +7921,7 @@ async function saveAsBlob(st, n, name, ext) {
   const text = parts.map(([, t]) => t).join("\n");
   if (ext === ".md") return new Blob([text], { type: "text/markdown" });
   // plain text: the words, without Markdown's marks
-  const plain = md.parse(text).map((ln) => {
+  const plain = md.finalLines(md.parse(text)).map((ln) => {
     const t = ln.raw != null ? ln.raw : ln.runs.map((r) => (r.img ? "" : r.t || "")).join("");
     return t.split(md.OBJ).join("");
   }).join("\n");
@@ -8336,7 +8378,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.10.2"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.12.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -8500,8 +8542,760 @@ async function insertBookmark() {
   toast(`Bookmark “${name}” added. Ctrl+G lists it, to go back to.`, 4000);
 }
 
+// ------------------------------------------------------------------ RossDraft 1.11.0: stage 1 (as Ross Writer's)
+// Insert ▸ Special Character…, Format ▸ Make Quotes Curly / Straight, Insert ▸ Link… (Ctrl+Alt+K), Format ▸ Copy /
+// Paste Formatting (Ctrl+Shift+C / V), Edit ▸ Paste Special (Keep Source Formatting, Match This Document, Plain Text;
+// and which of them Ctrl+V does), Edit ▸ Next / Previous Result (or Page) (Ctrl+Page Down / Up), Edit ▸ Search the
+// Web (Ctrl+Alt+G).
+
+// a place in the page kept while a dialog is open, and put back after
+function keepPlace() {
+  const sel = window.getSelection();
+  const p = A;
+  const r = sel.rangeCount && p.page.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+  return () => {
+    if (A !== p) setActive(p);
+    p.page.focus();
+    if (r) { sel.removeAllRanges(); sel.addRange(r); }
+    return !!r;
+  };
+}
+function editableHere() {
+  if (!A.note) { toast("Open a scene or note first."); return false; }
+  if (readOnlyHere()) return false;
+  if (A.page.contentEditable === "false") { toast("This can't be changed here."); return false; }
+  return true;
+}
+
+// ---- Special Character
+const SPECIAL_CHARS = [
+  ["Dashes and punctuation", [["—", "Em dash"], ["–", "En dash"], ["…", "Ellipsis"], ["“", "Opening double quote"],
+    ["”", "Closing double quote"], ["‘", "Opening single quote"], ["’", "Apostrophe or closing single quote"],
+    ["«", "Opening guillemet"], ["»", "Closing guillemet"], ["•", "Bullet"], ["·", "Middle dot"], ["†", "Dagger"],
+    ["‡", "Double dagger"], ["§", "Section"], ["¶", "Paragraph mark"], ["⁂", "Asterism (a scene break)"],
+    [" ", "Non-breaking space"], ["­", "Optional hyphen"], ["‑", "Non-breaking hyphen"]]],
+  ["Accented letters", [..."éèêëàâäáãåçñôöóòõøîïíìûüúùÿýæœß"].map((c) => [c, c]).concat(
+    [..."ÉÈÊÀÂÇÑÔÖÎÏÛÜÆŒ"].map((c) => [c, c]))],
+  ["Symbols", [["£", "Pound"], ["€", "Euro"], ["$", "Dollar"], ["¢", "Cent"], ["©", "Copyright"], ["®", "Registered"],
+    ["™", "Trade mark"], ["°", "Degree"], ["′", "Prime (feet, minutes)"], ["″", "Double prime (inches, seconds)"],
+    ["½", "One half"], ["¼", "One quarter"], ["¾", "Three quarters"], ["×", "Times"], ["÷", "Divided by"], ["±", "Plus or minus"],
+    ["≈", "About"], ["≠", "Not equal"], ["≤", "Less or equal"], ["≥", "More or equal"], ["→", "Arrow right"], ["←", "Arrow left"],
+    ["✓", "Tick"], ["★", "Star"], ["♪", "Music note"], ["♥", "Heart"]]],
+];
+const SC_NAMES = {};
+for (const [, list] of SPECIAL_CHARS) for (const [c, n] of list) SC_NAMES[c] = n;
+function scLabel(c) { return c === " " ? "nbsp" : c === "­" ? "opt -" : c === "‑" ? "nb -" : c; }
+async function specialCharDialog() {
+  if (!editableHere()) return;
+  const back = keepPlace();
+  const box = document.createElement("div");
+  box.className = "schars";
+  let chosen = null;
+  const grid = (title, chars) => {
+    const h = document.createElement("div");
+    h.className = "schead";
+    h.textContent = title;
+    const g = document.createElement("div");
+    g.className = "scgrid";
+    for (const c of chars) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "sc" + (c.length > 1 || scLabel(c) !== c ? " scw" : "");
+      b.textContent = scLabel(c);
+      b.title = SC_NAMES[c] || c;
+      b.setAttribute("aria-label", SC_NAMES[c] || c);
+      b.onclick = () => { chosen = c; $("dialog").querySelector(".extra.main").click(); };
+      g.appendChild(b);
+    }
+    box.append(h, g);
+  };
+  const recent = (S.settings.recentChars || []).filter((c) => SC_NAMES[c]);
+  if (recent.length) grid("Used lately", recent);
+  for (const [title, list] of SPECIAL_CHARS) grid(title, list.map(([c]) => c));
+  const v0 = ask("Special Character", box, [["Insert", "ok", true]]);
+  $("dialog").querySelector(".extra.main").hidden = true;      // (a tap on a character inserts it)
+  const v = await v0;
+  if (v !== "ok" || !chosen) { back(); return; }
+  if (!back()) { toast("Put the caret where it goes first."); return; }
+  insertText(chosen);
+  afterEdit();
+  S.settings.recentChars = [chosen, ...(S.settings.recentChars || []).filter((c) => c !== chosen)].slice(0, 12);
+  saveSettings();
+}
+
+// ---- Make Quotes Curly / Straight (the selection, or the whole page)
+const Q_OPENERS = new Set([..." \t\n ([{“‘—–-/ ​"]);
+const Q_ELISIONS = ["tis", "twas", "em", "cause", "til", "n'", "n’", "bout", "nuff", "round"];
+function curlyFor(ch, before, after) {
+  const opening = before === "" || Q_OPENERS.has(before);
+  if (ch === '"') return opening ? "“" : "”";
+  if (opening) {
+    const low = (after || "").toLowerCase();
+    if (/^\d/.test(low) || Q_ELISIONS.some((e) => low.startsWith(e) && !/\p{L}/u.test(low.slice(e.length, e.length + 1)))) return "’";
+    return "‘";
+  }
+  return "’";
+}
+// the page's words as text nodes in order, with where each sits in one flat text (a line's end as "\n")
+function pageBits(pg, r) {
+  const bits = [];
+  let text = "", lastLine = null;
+  const lineOf = (n) => { while (n && n.parentNode !== pg) n = n.parentNode; return n; };
+  const walker = document.createTreeWalker(pg, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => {
+      const el = n.parentElement;
+      if (!el || el.closest(".fnref") || (el.closest('[contenteditable="false"]') && !el.closest("td.rcell"))) return 2;
+      return 1;
+    } });
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const ln = lineOf(n);
+    if (lastLine && ln !== lastLine) text += "\n";
+    lastLine = ln;
+    let s0 = 0, e0 = n.nodeValue.length;
+    if (r) {
+      if (!r.intersectsNode(n)) { text += n.nodeValue; continue; }
+      if (n === r.startContainer) s0 = r.startOffset;
+      if (n === r.endContainer) e0 = r.endOffset;
+    }
+    bits.push([n, s0, e0, text.length, !!(ln && ln.dataset && ln.dataset.code)]);
+    text += n.nodeValue;
+  }
+  return { bits, text };
+}
+function convertQuotes(curly) {
+  if (!editableHere()) return 0;
+  const p = A, pg = p.page;
+  const sel = window.getSelection();
+  const r = sel.rangeCount && !sel.isCollapsed && pg.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+  const { bits, text } = pageBits(pg, r);
+  const before = pg.innerHTML;
+  const ends = r ? [r.startContainer, r.startOffset, r.endContainer, r.endOffset] : null;
+  let done = 0;
+  for (const [n, s0, e0, at, code] of bits) {
+    if (code) continue;
+    const v = n.nodeValue;
+    let out = "";
+    for (let k = 0; k < v.length; k++) {
+      let ch = v[k];
+      if (k >= s0 && k < e0) {
+        const i = at + k;
+        let nu = null;
+        if (curly && (ch === '"' || ch === "'")) nu = curlyFor(ch, i > 0 ? text[i - 1] : "", text.slice(i + 1, i + 6));
+        else if (!curly && "“”„".includes(ch)) nu = '"';
+        else if (!curly && "‘’‚".includes(ch)) nu = "'";
+        if (nu && nu !== ch) { ch = nu; done++; }
+      }
+      out += ch;
+    }
+    if (out !== v) n.nodeValue = out;
+  }
+  if (ends) { const r2 = document.createRange(); r2.setStart(ends[0], ends[1]); r2.setEnd(ends[2], ends[3]); sel.removeAllRanges(); sel.addRange(r2); }
+  if (done) { changed(p); OL.undo = { page: pg, before, after: pg.innerHTML }; }
+  toast(`${done ? done.toLocaleString("en") : "No"} quote${done === 1 ? "" : "s"} made ${curly ? "curly" : "straight"} in ${r ? "the selection" : "this " + (S.store && S.store.isProject && !S.store.isDoc ? "scene" : "document")}${done ? " (Ctrl+Z puts them back)" : ""}`, 3000);
+  return done;
+}
+
+// ---- Link… (Ctrl+Alt+K)
+function linkAtSel() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const n = sel.getRangeAt(0).startContainer;
+  const el = n.nodeType === 1 ? n : n.parentElement;
+  const a = el && el.closest("a[href]");
+  return a && A.page.contains(a) ? a : null;
+}
+function cleanAddress(t) {
+  t = (t || "").trim();
+  if (!t) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return t;
+  if (/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(t)) return "mailto:" + t;
+  return "https://" + t.replace(/^\/+/, "");
+}
+async function linkDialog() {
+  if (!editableHere()) return;
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !A.page.contains(sel.anchorNode)) { toast("Put the caret where the link goes first."); return; }
+  const a = linkAtSel();
+  if (a) { const r = document.createRange(); r.selectNodeContents(a); sel.removeAllRanges(); sel.addRange(r); }
+  const words = sel.toString();
+  const back = keepPlace();
+  const box = document.createElement("div");
+  box.className = "cform";
+  box.innerHTML = '<label>Words to show<input type="text" class="lk-text"></label>' +
+    '<label>Address (a web page, or an email address)<input type="url" class="lk-url" placeholder="www.example.com" inputmode="url"></label>';
+  const ti = box.querySelector(".lk-text"), ui = box.querySelector(".lk-url");
+  ti.value = words.replace(/\n/g, " ");
+  ui.value = a ? a.getAttribute("href").replace(/^mailto:/, "") : (md.urlSpan(words.trim(), 0) === words.trim().length && words.trim() ? words.trim() : "");
+  if (words.includes("\n")) { ti.disabled = true; ti.value = "(the chosen words)"; }
+  setTimeout(() => (ti.value && !ui.value ? ui : ti.value ? ui : ti).focus(), 50);
+  for (const i of [ti, ui]) i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("dialog").querySelector(".extra.main").click(); } });
+  const v = await ask(a ? "Change the Link" : "Link", box, a ? [["Remove Link", "remove"], ["OK", "ok", true]] : [["OK", "ok", true]]);
+  if (!back() || !v) return;
+  const before = A.page.innerHTML;
+  if (v === "remove") {
+    document.execCommand("unlink");
+  } else {
+    const href = cleanAddress(ui.value);
+    if (!href) { toast("A link needs an address."); return; }
+    const show = ti.disabled ? null : ti.value.trim() || ui.value.trim();
+    if (show != null && show !== words) {
+      // new words (or none chosen): typed in, then made the link
+      insertText(show);
+      const s2 = window.getSelection();
+      const r = s2.getRangeAt(0);
+      const n = r.startContainer;
+      if (n.nodeType === 3 && r.startOffset >= show.length) {
+        const rr = document.createRange();
+        rr.setStart(n, r.startOffset - show.length);
+        rr.setEnd(n, r.startOffset);
+        s2.removeAllRanges();
+        s2.addRange(rr);
+      }
+    }
+    document.execCommand("unlink");
+    document.execCommand("createLink", false, href);
+    const s3 = window.getSelection();
+    if (s3.rangeCount) s3.collapseToEnd();
+  }
+  afterEdit();
+  OL.undo = { page: A.page, before, after: A.page.innerHTML };
+  toast(v === "remove" ? "Link removed" : "Link made (tap it to open it)", 1500);
+}
+
+// ---- Copy Formatting / Paste Formatting (Ctrl+Shift+C / V)
+let copiedFormat = null;
+const FMT_TOGGLES = [["b", "bold"], ["i", "italic"], ["u", "underline"], ["s", "strikeThrough"], ["sup", "superscript"], ["sub", "subscript"]];
+function textNodeAt(r) {
+  let n = r.startContainer, o = r.startOffset;
+  if (n.nodeType === 3) {
+    if (r.collapsed && o > 0) return n;                          // (the caret: the look of the letter before it)
+    if (o < n.data.length) return n;
+  } else if (n.childNodes[o]) n = n.childNodes[o];
+  const tw = document.createTreeWalker(A.page, NodeFilter.SHOW_TEXT);
+  tw.currentNode = n;
+  for (let t = n.nodeType === 3 ? tw.nextNode() : tw.nextNode(); t; t = tw.nextNode()) if (t.data.trim()) return t;
+  return r.startContainer.nodeType === 3 ? r.startContainer : null;
+}
+function copyFormat() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !A.page.contains(sel.anchorNode)) { toast("Put the caret in the words whose look you want."); return false; }
+  const r = sel.getRangeAt(0);
+  const t = textNodeAt(r);
+  const line = t && ed.lineOf(t, A.page);
+  if (!line) return false;
+  const f = ed.flagsOf(t, line, /^h[1-6]$/.test(line.dataset.kind || "")).f;
+  const look = [...f].filter((k) => k !== "h" && !k.startsWith("hc:"));
+  if (f.has("h")) look.push("hc:" + ([...f].find((k) => k.startsWith("hc:")) || "hc:yellow").slice(3));
+  // whole paragraphs chosen: their kind, alignment and spacing too
+  let para = null;
+  if (!r.collapsed) {
+    const lines = ed.selectedLines(A.page);
+    const a = ed.offsetIn(lines[0], r.startContainer, r.startOffset);
+    const last = lines[lines.length - 1];
+    const z = ed.offsetIn(last, r.endContainer, r.endOffset);
+    if (a === 0 && z >= ed.lineText(last).length && !lines[0].dataset.code && lines[0].dataset.kind !== "table") {
+      const k = lines[0].dataset.kind || null;
+      para = { kind: /^(h[1-3]|quote)$/.test(k || "") ? k : null, align: lines[0].dataset.align || null, ls: lines[0].dataset.ls || null };
+    }
+  }
+  copiedFormat = { look, para };
+  const names = look.map((k) => ({ b: "bold", i: "italic", u: "underlined", s: "struck through", sup: "superscript", sub: "subscript" }[k] ||
+    (k.startsWith("font:") ? k.slice(5) : k.startsWith("sz:") ? +k.slice(3) / 2 + " point" : k.startsWith("c:") ? "coloured" : k.startsWith("hc:") ? "highlighted" : ""))).filter(Boolean);
+  toast(`Copied ${para ? "paragraph and text formatting" : "formatting"}${names.length ? " (" + names.join(", ") + ")" : " (plain)"}. Choose words and press Ctrl+Shift+V to give them this look.`, 3500);
+  return true;
+}
+function pasteFormat() {
+  if (!copiedFormat) { toast("Copy some formatting first (Ctrl+Shift+C)."); return false; }
+  if (!editableHere() || lookRO()) return false;
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !A.page.contains(sel.anchorNode)) return false;
+  const pg = A.page;
+  if (sel.isCollapsed) {
+    // the word at the caret
+    const r = sel.getRangeAt(0), nd = r.startContainer;
+    if (nd.nodeType !== 3) { toast("Choose the words first."); return false; }
+    let a = r.startOffset, b = a;
+    while (a > 0 && /[\p{L}\p{N}'’-]/u.test(nd.data[a - 1])) a--;
+    while (b < nd.data.length && /[\p{L}\p{N}'’-]/u.test(nd.data[b])) b++;
+    if (a === b) { toast("Choose the words first."); return false; }
+    const rr = document.createRange();
+    rr.setStart(nd, a);
+    rr.setEnd(nd, b);
+    sel.removeAllRanges();
+    sel.addRange(rr);
+  }
+  const before = pg.innerHTML;
+  const spot = ed.caret(pg);                 // (each step tidies the line: the words chosen again by place)
+  const again = () => { ed.setCaret(pg, spot); pg.focus(); };
+  const want = new Set(copiedFormat.look);
+  const para = copiedFormat.para;
+  const lines = ed.selectedLines(pg).filter((d) => d.dataset.kind !== "table" && !d.dataset.code);
+  if (para) {
+    for (const d of lines) {
+      if (/^(h[1-3]|quote)?$/.test(d.dataset.kind || "")) {
+        delete d.dataset.raw;
+        if (para.kind) d.dataset.kind = para.kind; else delete d.dataset.kind;
+      }
+      if (para.align) d.dataset.align = para.align; else delete d.dataset.align;
+      if (para.ls) { d.dataset.ls = para.ls; d.style.setProperty("--ls", para.ls); } else { delete d.dataset.ls; d.style.removeProperty("--ls"); }
+    }
+  }
+  const heading = lines.some((d) => /^h[1-6]$/.test(d.dataset.kind || ""));
+  pg.focus();
+  document.execCommand("styleWithCSS", false, false);
+  for (const [k, cmd] of FMT_TOGGLES) {
+    if (k === "b" && heading) continue;
+    const on = want.has(k);
+    again();
+    for (let tries = 0; tries < 2 && document.queryCommandState(cmd) !== on; tries++) document.execCommand(cmd);
+  }
+  for (const pre of ["font:", "sz:", "c:", "hc:"]) {
+    const k = [...want].find((x) => x.startsWith(pre));
+    again();
+    setWordsLook(pre, k ? k.slice(pre.length) : null);
+  }
+  again();
+  afterEdit();
+  OL.undo = { page: pg, before, after: pg.innerHTML };
+  return true;
+}
+
+// ---- Paste Special
+const PASTE_MODES = [["keep", "Keep Source Formatting", "its fonts, sizes and colours, as in the other program"],
+  ["match", "Match This Document", "bold, italic, underline and links; the rest as this document"],
+  ["plain", "Plain Text", "the words only, in their paragraphs"]];
+function pasteMode() { const m = S.settings.pasteMode; return ["keep", "match", "plain"].includes(m) ? m : "match"; }
+function setPasteMode(m) {
+  S.settings.pasteMode = m;
+  saveSettings();
+  toast("Ctrl+V now pastes: " + PASTE_MODES.find((x) => x[0] === m)[1], 2500);
+}
+// what's on the clipboard (as HTML and text) made into lines, as this mode keeps them
+function pastedLines(mode, html, text) {
+  text = (text || "").replace(/\r\n?/g, "\n");
+  if (mode === "plain") {
+    const parts = text.split("\n");
+    while (parts.length > 1 && !parts[parts.length - 1].trim()) parts.pop();
+    return { lines: parts.map((t) => ({ kind: null, runs: t ? [{ t, f: new Set(), href: null }] : [] })), plain: parts.length === 1 };
+  }
+  if (html && /<[a-z]/i.test(html)) return { lines: ed.linesFromHtml(html, mode === "keep"), plain: false };
+  return { lines: md.parse(text), plain: !/\n/.test(text.trim()) && !/[*_~=<#>[`]/.test(text) };
+}
+function pasteSpecialItems(ro) {
+  return [
+    ...PASTE_MODES.map(([k, l, d]) => ({ label: l, keys: k === "plain" ? "Ctrl+Alt+Shift+V" : undefined, off: ro, title: d, fn: () => pasteFromClipboard(k) })),
+    "-",
+    { label: "Ctrl+V Pastes:", off: true, fn: () => {} },
+    ...PASTE_MODES.map(([k, l]) => ({ label: "   " + l, on: pasteMode() === k, fn: () => setPasteMode(k) })),
+  ];
+}
+
+// ---- Next / Previous Result (or Page): a search's next match; with nothing searched for, the next page
+// (a page: what fits on a printed page at the width the text is shown, about; a page break starts a new one)
+function pageStarts(pg) {
+  const lines = [...pg.children];
+  if (!lines.length) return [];
+  const cs = getComputedStyle(pg);
+  const w = pg.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const pageH = Math.max(200, w * 1.55);                // (the words' part of an A4 page, with the usual margins)
+  const out = [lines[0]];
+  let top = lines[0].offsetTop;
+  for (const d of lines.slice(1)) {
+    if (d.dataset.pagebreak || d.dataset.newpage || d.offsetTop + d.offsetHeight - top > pageH) { out.push(d); top = d.offsetTop; }
+  }
+  return out;
+}
+function browse(step) {
+  if (!$("findbar").hidden && FB.text.value) { findGo(step < 0); return; }
+  const pg = A.page;
+  if (document.body.classList.contains("spread")) {
+    const sc = pg.closest(".scroller");
+    if (sc) sc.scrollBy({ left: step * (sc.clientWidth - 24), behavior: "smooth" });
+    return;
+  }
+  const starts = pageStarts(pg);
+  if (!starts.length) return;
+  const c = ed.caret(pg);
+  const here = c ? pg.children[c.a.line] : starts[0];
+  let k = 0;
+  for (let i = 0; i < starts.length; i++) if (starts[i].offsetTop <= here.offsetTop) k = i;
+  const n = Math.max(0, Math.min(starts.length - 1, k + step));
+  const d = starts[n];
+  pg.focus();
+  ed.placeCaret(d, 0);
+  const sc = pg.closest(".scroller");
+  if (sc) sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
+  toast(`Page ${n + 1} of ${starts.length}`, 1200);
+}
+
+// ---- Search the Web (Google; Google Books, Google Images)
+function wordsToSearch() {
+  const sel = window.getSelection();
+  let t = sel.rangeCount && A.page.contains(sel.anchorNode) ? sel.toString() : "";
+  if (!t.trim() && sel.rangeCount) {
+    const r = sel.getRangeAt(0), nd = r.startContainer;
+    if (nd.nodeType === 3) {
+      let a = r.startOffset, b = a;
+      while (a > 0 && /[\p{L}\p{N}'’-]/u.test(nd.data[a - 1])) a--;
+      while (b < nd.data.length && /[\p{L}\p{N}'’-]/u.test(nd.data[b])) b++;
+      t = nd.data.slice(a, b);
+    }
+  }
+  return t.replace(/[￼-]/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+}
+function searchWeb(kind) {
+  const t = wordsToSearch();
+  if (!t) { toast("Choose some words to search for first."); return null; }
+  const url = "https://www.google.com/search?q=" + encodeURIComponent(t) + ({ books: "&tbm=bks", images: "&tbm=isch" }[kind] || "");
+  window.open(url, "_blank", "noopener");
+  return url;
+}
+function searchWebItems() {
+  return [{ label: "Search Google", fn: () => searchWeb("web"), keys: "Ctrl+Alt+G" },
+    { label: "Search Google Books", fn: () => searchWeb("books") },
+    { label: "Search Google Images", fn: () => searchWeb("images") }];
+}
+
+// the keys
+document.addEventListener("keydown", (e) => {
+  if (!ED.project) return;
+  const c = e.ctrlKey || e.metaKey, k = (e.key || "").toLowerCase();
+  const inBox = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && !$("dialog").hidden;
+  let fn = null;
+  if (c && e.altKey && !e.shiftKey && (e.code === "KeyK" || k === "k")) fn = linkDialog;
+  else if (c && e.altKey && !e.shiftKey && (e.code === "KeyG" || k === "g")) fn = () => searchWeb("web");
+  else if (c && !e.altKey && e.shiftKey && (e.code === "KeyC" || k === "c") && P.some((p) => p.page.contains(document.activeElement) || p.page === document.activeElement)) fn = copyFormat;
+  else if (c && !e.altKey && e.shiftKey && (e.code === "KeyV" || k === "v") && P.some((p) => p.page === document.activeElement)) fn = pasteFormat;
+  else if (c && !e.altKey && !e.shiftKey && (e.key === "PageDown" || e.key === "PageUp")) fn = () => browse(e.key === "PageDown" ? 1 : -1);
+  if (!fn || inBox) return;
+  e.preventDefault();
+  e.stopPropagation();
+  fn();
+}, true);
+
+// ------------------------------------------------------------------ RossDraft 1.12.0: tracked changes (Review)
+// A Word scene or document with tracked changes is shown and edited like any other: words added underlined,
+// words taken out struck through (each in the colour of who made it), formatting changes marked, a paragraph's
+// end added or taken out shown with ¶. Review ▸ Next / Previous Change (Alt+Page Down / Up), Accept / Reject
+// Change (Alt+Shift+A / R: then the next), Accept / Reject All, Changes… (the list), Show Changes in the Text,
+// Preview Final…. Accepting and rejecting is done in the Word file itself (project.changeOp), as Word does it;
+// Ctrl+Z just after takes it back. Typing isn't tracked (yet): what you type goes in as ordinary words.
+const TC_KINDS = { ins: "Added", del: "Taken out", fmt: "Formatting changed", pins: "New paragraph", pdel: "Paragraphs joined",
+  pfmt: "Paragraph settings changed", rowins: "Table row added", rowdel: "Table row taken out", tfmt: "Table settings changed" };
+const TC_COLOURS = ["#1b6fb3", "#b3261e", "#2e7d32", "#8e24aa", "#e65100", "#00838f"];
+let decisionUndo = null;
+let tcChipId = null;
+function tcNote() { return A.note && !A.joined ? A.note : null; }
+function tcInfo(id, n = A.note) { return n && n.changes ? n.changes.find((c) => String(c.id) === String(id)) || null : null; }
+function tcDate(d) {
+  if (!d) return "";
+  const t = new Date(d);
+  return isNaN(t) ? "" : t.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: t.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+}
+function tcLabel(c) {
+  if (!c) return "A change";
+  const w = (c.words || "").replace(/\s+/g, " ").trim();
+  return `${TC_KINDS[c.kind] || "Changed"}${c.author ? " by " + c.author : ""}${c.date ? ", " + tcDate(c.date) : ""}` +
+    (w && (c.kind === "ins" || c.kind === "del" || c.kind === "fmt") ? `: “${w.length > 50 ? w.slice(0, 49) + "…" : w}”` : "");
+}
+// each author's colour (as Word gives each reviewer one)
+function paintAuthors(pg = A.page, n = A.note) {
+  if (!n || !n.changes || !n.changes.length) return;
+  const authors = [...new Set(n.changes.map((c) => c.author || ""))];
+  for (const e of pg.querySelectorAll("ins.tc[data-tc], del.tc[data-tc], span.tcf[data-tf], .ln[data-tcp]")) {
+    const id = e.dataset.tc || e.dataset.tf || (e.dataset.tcp || "").split(" ")[0].slice(1);
+    const c = tcInfo(id, n);
+    const k = authors.indexOf(c ? c.author || "" : "");
+    e.style.setProperty("--tcc", TC_COLOURS[Math.max(0, k) % TC_COLOURS.length]);
+    e.title = tcLabel(c);
+  }
+}
+// the changes in the page, in order: [{ id, el }] (one per id: its first place)
+function changesInPage(pg = A.page) {
+  const out = [], seen = new Set();
+  for (const e of pg.querySelectorAll("ins.tc[data-tc], del.tc[data-tc], span.tcf[data-tf], .ln[data-tcp]")) {
+    const ids = e.dataset.tcp ? e.dataset.tcp.split(" ").map((x) => x.slice(1)) : [e.dataset.tc || e.dataset.tf];
+    for (const id of ids) if (!seen.has(id)) { seen.add(id); out.push({ id, el: e }); }
+  }
+  return out;
+}
+function tcRangeOf(el) {
+  const r = document.createRange();
+  if (el.classList.contains("ln")) {
+    // a paragraph's end: the end of its words
+    r.selectNodeContents(el);
+    r.collapse(false);
+  } else if (el.tagName === "DEL") r.selectNode(el);
+  else r.selectNodeContents(el);
+  return r;
+}
+// the change the caret is in or beside (null: none)
+function changeAtCaret() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !A.page.contains(sel.anchorNode)) return null;
+  const r = sel.getRangeAt(0);
+  const start = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const inEl = start && start.closest("ins.tc[data-tc], del.tc[data-tc], span.tcf[data-tf]");
+  if (inEl && A.page.contains(inEl)) return { id: inEl.dataset.tc || inEl.dataset.tf, el: inEl };
+  // beside one (a taken-out word can't hold the caret), or one in the selection
+  const line = ed.lineOf(r.startContainer, A.page);
+  if (!line) return null;
+  const near = r.cloneRange();
+  try {
+    if (r.collapsed) {
+      const c = ed.caret(A.page);
+      const len = ed.lineText(line).length;
+      near.setStart(...ed.pointAt(line, Math.max(0, c.a.pos - 1)));
+      near.setEnd(...ed.pointAt(line, Math.min(len, c.a.pos + 1)));
+    }
+  } catch (e) { /* as it is */ }
+  for (const e of line.querySelectorAll("ins.tc[data-tc], del.tc[data-tc], span.tcf[data-tf]")) {
+    if (near.intersectsNode(e)) return { id: e.dataset.tc || e.dataset.tf, el: e };
+  }
+  if (line.dataset.tcp && r.collapsed && ed.caret(A.page).a.pos >= ed.lineText(line).length) return { id: line.dataset.tcp.split(" ")[0].slice(1), el: line };
+  return null;
+}
+function showChange(ch) {
+  const r = tcRangeOf(ch.el);
+  const sel = window.getSelection();
+  A.page.focus();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  const sc = A.page.closest(".scroller");
+  const box = (ch.el.classList.contains("ln") ? ch.el : ch.el).getBoundingClientRect();
+  if (sc) {
+    const top = box.top - sc.getBoundingClientRect().top;
+    if (top < 40 || top > sc.clientHeight - 80) sc.scrollTop += top - sc.clientHeight / 3;
+  }
+  changeChip(ch);
+}
+function changeChip(ch) {
+  const c = tcInfo(ch.id);
+  tcChipId = ch.id;
+  const anchor = ch.el.classList.contains("ln") ? { getBoundingClientRect: () => tcRangeOf(ch.el).getBoundingClientRect() } : ch.el;
+  showChip(anchor, [[tcLabel(c), null], ["Accept", () => { hideChip(); decideHere(true, ch.id); }], ["Reject", () => { hideChip(); decideHere(false, ch.id); }]]);
+}
+function stepChange(d) {
+  const list = changesInPage();
+  if (!list.length) { toast(A.note && A.note.changes && A.note.changes.length ? "No changes shown in the page (Review ▸ Changes… lists them)." : "No tracked changes here."); return null; }
+  const sel = window.getSelection();
+  let here = null;
+  if (sel.rangeCount && A.page.contains(sel.anchorNode)) here = sel.getRangeAt(0);
+  const after = (ch) => {
+    if (!here) return true;
+    const r = tcRangeOf(ch.el);
+    return d > 0 ? r.compareBoundaryPoints(Range.START_TO_END, here) > 0 && r.compareBoundaryPoints(Range.START_TO_START, here) > 0
+      : r.compareBoundaryPoints(Range.START_TO_START, here) < 0;
+  };
+  let ch = d > 0 ? list.find(after) : [...list].reverse().find(after);
+  if (!ch) { ch = d > 0 ? list[0] : list[list.length - 1]; toast(d > 0 ? "Back to the first change" : "On to the last change", 1200); }
+  showChange(ch);
+  return ch;
+}
+async function decideIds(n, ids, accept) {
+  const st = S.store;
+  if (!st || typeof st.changeOp !== "function") return 0;
+  const p = P.find((q) => q.note === n && !q.joined) || A;
+  const c = p.page === A.page ? ed.caret(A.page) : null;
+  await flushSave();
+  let k = 0;
+  try { k = await queue(() => st.changeOp(n, { ids, accept })); }
+  catch (e) { dialog("Review", (e && e.message) || String(e)); return 0; }
+  for (const q of P) if (q.note === n && !q.joined && q.page.dataset.loaded) { showText(n.text, q); }
+  if (c && p === A) {
+    const lines = [...A.page.children];
+    const ln = lines[Math.min(c.a.line, lines.length - 1)];
+    if (ln) { A.page.focus(); ed.placeCaret(...ed.pointAt(ln, Math.min(c.a.pos, ed.lineText(ln).length))); }
+  }
+  decisionUndo = k ? { n } : null;
+  return k;
+}
+async function decideHere(accept, id) {
+  const n = tcNote();
+  if (!n) { toast(A.joined ? "Open the scene on its own to accept or reject its changes." : "Open a scene first."); return; }
+  const ch = id != null ? { id } : changeAtCaret();
+  if (!ch) { toast("Put the caret in a change first (or use Next Change, Alt+Page Down)."); return; }
+  const k = await decideIds(n, [ch.id], accept);
+  if (!k) return;
+  toast(`${accept ? "Accepted" : "Rejected"} (Ctrl+Z takes it back)`, 1500);
+  const next = changesInPage();
+  if (next.length) stepChange(1);
+}
+async function decideAll(accept) {
+  const st = S.store;
+  if (!st || typeof st.changeOp !== "function") { toast("Tracked changes are in Word files: open a Ross Writer project or a Word document."); return; }
+  const n = tcNote();
+  const here = n && n.changes ? n.changes.length : 0;
+  const every = st.isDoc ? [] : st.all().filter((x) => !(x.raw && x.raw.pdf) && !x.raw.trash);
+  const btns = [];
+  if (n && here) btns.push([`${st.isDoc ? "This Document" : "This Scene"} (${here})`, "one", true]);
+  if (every.length > 1) btns.push(["Every Scene in the Project", "all", !btns.length]);
+  if (!btns.length) { toast("No tracked changes here."); return; }
+  const v = await ask(accept ? "Accept All Changes" : "Reject All Changes",
+    askText(accept ? "Every tracked change is made part of the text: added words stay, taken-out words go, new formatting stays."
+      : "Every tracked change is undone: added words go, taken-out words come back, the old formatting comes back."), btns);
+  if (!v) return;
+  let total = 0, scenes = 0;
+  if (v === "one") { total = await decideIds(n, null, accept); scenes = total ? 1 : 0; }
+  else {
+    await flushSave();
+    await busy(accept ? "Accepting every change…" : "Rejecting every change…", async () => {
+      for (const x of every) {
+        let k = 0;
+        try { k = await queue(() => st.changeOp(x, { ids: null, accept })); } catch (e) { k = 0; }
+        if (k) { total += k; scenes++; }
+      }
+    }, { after: 0 });
+    for (const q of P) if (q.note && !q.joined && q.page.dataset.loaded) { showText(q.note.text, q); }
+    decisionUndo = null;
+  }
+  toast(total ? `${total} change${total === 1 ? "" : "s"} ${accept ? "accepted" : "rejected"}${scenes > 1 ? ` in ${scenes} scenes` : ""}${v === "one" ? " (Ctrl+Z takes it back)" : ""}.`
+    : "No tracked changes found.", 4000);
+}
+function undoDecision() {
+  const u = decisionUndo;
+  if (!u || A.note !== u.n) { decisionUndo = null; return false; }
+  decisionUndo = null;
+  (async () => {
+    const c = ed.caret(A.page);
+    const ok = await queue(() => S.store.undoChange(u.n));
+    if (!ok) return;
+    for (const q of P) if (q.note === u.n && !q.joined && q.page.dataset.loaded) { showText(u.n.text, q); }
+    if (c) ed.setCaret(A.page, c);
+    toast("Put back as it was.");
+  })();
+  return true;
+}
+// Review ▸ Changes…: every change in the scene, to go to, accept or reject
+async function changesDialog() {
+  const n = tcNote();
+  if (!n) { toast(A.joined ? "Open the scene on its own to see its changes." : "Open a scene first."); return; }
+  const box = document.createElement("div");
+  box.className = "tclist";
+  const fill = () => {
+    box.textContent = "";
+    const list = n.changes || [];
+    if (!list.length) { box.textContent = "No tracked changes in this " + (S.store.isDoc ? "document." : "scene."); return; }
+    const inPage = new Map(changesInPage().map((c) => [String(c.id), c]));
+    for (const c of list) {
+      const row = document.createElement("div");
+      row.className = "tcrow";
+      const t = document.createElement("div");
+      t.className = "tctext";
+      t.textContent = tcLabel(c);
+      const b = document.createElement("span");
+      b.className = "tcbtns";
+      const mk = (label, fn, off) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; x.disabled = !!off; x.onclick = fn; b.appendChild(x); };
+      const here = inPage.get(String(c.id));
+      mk("Go", () => { $("dialog-close").click(); setTimeout(() => showChange(here), 50); }, !here);
+      mk("Accept", async () => { await decideIds(n, [c.id], true); fill(); });
+      mk("Reject", async () => { await decideIds(n, [c.id], false); fill(); });
+      row.append(t, b);
+      box.appendChild(row);
+    }
+  };
+  fill();
+  const v = await ask("Tracked Changes", box, [["Accept All", "acc"], ["Reject All", "rej"]]);
+  if (v === "acc" || v === "rej") {
+    const k = await decideIds(n, null, v === "acc");
+    toast(k ? `${k} change${k === 1 ? "" : "s"} ${v === "acc" ? "accepted" : "rejected"} (Ctrl+Z takes it back).` : "No tracked changes found.", 3000);
+  }
+}
+// how the changes are shown: "all" (All Markup), "final" (No Markup: as if accepted), "original" (as before them;
+// to read, not to type in). Ctrl+Alt+R: the next of the three.
+const MARKUPS = [["all", "All Markup", "Changes shown in the text"], ["final", "No Markup (as if accepted)", "No markup: the text as it would read with every change accepted"],
+  ["original", "Original (as before the changes)", "The original: the text as it was before the changes (to read: typing is off)"]];
+function markupView() { const m = S.settings.markup || (S.settings.markupOff ? "final" : "all"); return MARKUPS.some((x) => x[0] === m) ? m : "all"; }
+function applyMarkup() {
+  const m = markupView();
+  document.body.classList.toggle("nomarkup", m === "final");
+  document.body.classList.toggle("origview", m === "original");
+  for (const q of P) {
+    if (!q.note || !q.page.dataset.loaded) continue;
+    const ro = !!q.note.readOnly || (bookOn && bookOn());
+    q.page.contentEditable = m === "original" || ro ? "false" : "true";
+  }
+}
+async function setMarkup(m) {
+  const was = markupView();
+  if ((was === "original") !== (m === "original")) await flushSave();
+  S.settings.markup = m;
+  delete S.settings.markupOff;
+  saveSettings();
+  // into or out of Original: the scenes with changes drawn again (as they were, or as they are)
+  if ((was === "original") !== (m === "original")) {
+    for (const q of P) if (q.note && !q.joined && q.page.dataset.loaded && q.note.changes && q.note.changes.length) showText(q.note.text, q);
+  }
+  applyMarkup();
+  toast(MARKUPS.find((x) => x[0] === m)[2], 2500);
+}
+function nextMarkup() { const k = MARKUPS.findIndex((x) => x[0] === markupView()); setMarkup(MARKUPS[(k + 1) % MARKUPS.length][0]); }
+function toggleMarkup() { setMarkup(markupView() === "all" ? "final" : "all"); }
+setTimeout(applyMarkup, 0);
+{ const rb = document.querySelector('#menubar [data-menu="review"]'); if (rb) rb.hidden = !ED.project; }
+function previewFinal() {
+  const n = A.note;
+  if (!n) return;
+  const lines = md.finalLines(ed.readLines(A.page));
+  const box = document.createElement("div");
+  box.className = "tcfinal page";
+  for (const ln of lines) box.appendChild(ed.lineElement(ln));
+  for (const img of box.querySelectorAll("img.pic")) img.remove();
+  box.style.setProperty("--usz", String(n.usz || 24));
+  ask("Preview Final (every change accepted)", box, []).then(() => {});
+  $("dialog-close").textContent = "Close";
+}
+function reviewItems() {
+  const n = tcNote();
+  const has = !!(A.note && A.note.changes && A.note.changes.length);
+  return [
+    { label: "Changes…", fn: changesDialog, off: !n },
+    "-",
+    { label: "Next Change", fn: () => stepChange(1), keys: "Alt+Page Down", off: !has },
+    { label: "Previous Change", fn: () => stepChange(-1), keys: "Alt+Page Up", off: !has },
+    "-",
+    { label: "Accept Change", fn: () => decideHere(true), keys: "Alt+Shift+A", off: !has || !n },
+    { label: "Reject Change", fn: () => decideHere(false), keys: "Alt+Shift+R", off: !has || !n },
+    "-",
+    { label: "Accept All Changes…", fn: () => decideAll(true) },
+    { label: "Reject All Changes…", fn: () => decideAll(false) },
+    "-",
+    ...MARKUPS.map(([k, l]) => ({ label: l, on: markupView() === k, fn: () => setMarkup(k) })),
+    { label: "Next Markup View", fn: nextMarkup, keys: "Ctrl+Alt+R" },
+    { label: "Preview Final…", fn: previewFinal, off: !A.note },
+    "-",
+    { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
+  ];
+}
+// Ctrl+Z straight after an accept or reject: taken back (in the Word file)
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z") && decisionUndo && $("dialog").hidden && undoDecision()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+}, true);
+// a tap on a change: who made it, Accept, Reject
+onPages("click", (e) => {
+  const el = e.target.closest && e.target.closest("ins.tc[data-tc], del.tc[data-tc], span.tcf[data-tf]");
+  if (!el || !A.page.contains(el)) return;
+  setTimeout(() => changeChip({ id: el.dataset.tc || el.dataset.tf, el }), 0);
+});
+document.addEventListener("keydown", (e) => {
+  if (!ED.project || !$("dialog").hidden) return;
+  const k = (e.key || "").toLowerCase();
+  let fn = null;
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "PageDown" || e.key === "PageUp")) fn = () => stepChange(e.key === "PageDown" ? 1 : -1);
+  else if (e.altKey && (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.code === "KeyR" || k === "r")) fn = nextMarkup;
+  else if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyA" || k === "a")) fn = () => decideHere(true);
+  else if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === "KeyR" || k === "r")) fn = () => decideHere(false);
+  if (!fn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  fn();
+}, true);
+
 // for the tests
-window.RN = { bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

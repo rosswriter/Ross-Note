@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.10.2";
+import * as md from "./md.js?v=1.9.22-d1.12.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -265,6 +265,18 @@ export async function readDocx(buf, opts = {}) {
   const pending = [];
   const bodyEl = doc.getElementsByTagNameNS(W, "body")[0];
   const usual = bodyEl ? usualLook(bodyEl) : { font: null, sz: null, color: null, line: null };
+  // (RossDraft 1.12.0) tracked changes, in the order they come: id -> { id, kind, author, date, words }
+  // kinds: ins, del (and moves), fmt (the words' formatting), pins / pdel (a paragraph's end added / taken out),
+  // pfmt (a paragraph's settings), rowins / rowdel, tfmt (a table's, a row's or a cell's settings)
+  const changes = new Map();
+  const noteChange = (el, kind, words) => {
+    const id = wv(el, "id");
+    if (id == null) return null;
+    let c = changes.get(id);
+    if (!c) { c = { id, kind, author: wv(el, "author") || "", date: wv(el, "date") || "", words: "" }; changes.set(id, c); }
+    if (words) c.words += words;
+    return id;
+  };
 
   const picture = (rid) => {
     const rel = rels.get(rid);
@@ -277,11 +289,8 @@ export async function readDocx(buf, opts = {}) {
     return base;
   };
 
-  const runsOf = (p, paraFlags, heading, out) => {
-    const run = (r, href) => {
-      const rpr = kid(r, "rPr");
-      const f = new Set(paraFlags);
-      if (rpr) {
+  // a run's look (bold, italic... its own colour, font, size) from its rPr into f; false: hidden text
+  const lookOf = (rpr, f, href) => {
         const rs = kid(rpr, "rStyle");
         if (rs) {
           const cs = wv(rs) || "";
@@ -301,7 +310,7 @@ export async function readDocx(buf, opts = {}) {
         const shd = kid(rpr, "shd");
         if (shd && !["auto", "ffffff", "none", ""].includes((wv(shd, "fill") || "auto").toLowerCase())) f.add("h");
         const va = kid(rpr, "vanish");
-        if (va && !["0", "false"].includes(wv(va) || "true")) return;
+        if (va && !["0", "false"].includes(wv(va) || "true")) return false;
         // (1.9.0) its own look where it differs from the document's usual
         if (hl && f.has("h") && !["yellow", "none", "white"].includes(wv(hl) || "yellow")) f.add("hc:" + wv(hl));
         const col = kid(rpr, "color") && wv(kid(rpr, "color"));
@@ -313,12 +322,33 @@ export async function readDocx(buf, opts = {}) {
         if (fn && fn !== usual.font && !/["<>]/.test(fn)) f.add("font:" + fn);
         const sz = kid(rpr, "sz") && wv(kid(rpr, "sz"));
         if (sz && /^\d+$/.test(sz) && sz !== usual.sz) f.add("sz:" + sz);
+    return true;
+  };
+  const runsOf = (p, paraFlags, heading, out) => {
+    const run = (r, href, tc) => {
+      const rpr = kid(r, "rPr");
+      const f = new Set(paraFlags);
+      if (tc) f.add(tc.key);
+      if (rpr) {
+        if (lookOf(rpr, f, href) === false) return;
+        // (1.12.0) its formatting changed, with changes tracked
+        const rc = kid(rpr, "rPrChange");
+        if (rc) {
+          const id = noteChange(rc, "fmt", [...r.getElementsByTagNameNS(W, "t")].map((x) => x.textContent).join(""));
+          if (id != null) {
+            f.add("tf:" + id);
+            // (its look before: for Review ▸ Original)
+            const c = changes.get(id);
+            if (c && !c.old) { const of = new Set(paraFlags); lookOf(kid(rc, "rPr"), of, href); if (heading) of.delete("b"); c.old = [...of]; }
+          }
+        }
       }
+      if (tc) noteChange(tc.el, tc.kind, [...r.getElementsByTagNameNS(W, tc.kind === "del" ? "delText" : "t")].map((x) => x.textContent).join(""));
       if (heading) f.delete("b");
       for (const c of r.children) {
         if (c.namespaceURI === W) {
           const t = c.localName;
-          if (t === "t") { if (c.textContent) out.push({ t: c.textContent, f: new Set(f), href }); }
+          if (t === "t" || (t === "delText" && tc && tc.kind === "del")) { if (c.textContent) out.push({ t: c.textContent, f: new Set(f), href }); }
           else if (t === "footnoteReference" || t === "endnoteReference") out.push({ t: noteToken(t[0], wv(c, "id")), f: new Set(f), href });
           else if (t === "tab" || t === "ptab") out.push({ t: " ", f: new Set(f), href });
           else if (t === "br" || t === "cr") { if (wv(c, "type") !== "page") out.push(null); }
@@ -337,20 +367,23 @@ export async function readDocx(buf, opts = {}) {
         }
       }
     };
-    const walk = (el, href) => {
+    // (1.12.0) tc: the tracked change the runs are in ({ key: "ti:5" / "td:5", kind, el })
+    const walk = (el, href, tc) => {
       for (const c of el.children) {
         if (c.namespaceURI !== W) continue;
         const t = c.localName;
-        if (t === "r") run(c, href);
+        if (t === "r") run(c, href, tc);
         else if (t === "hyperlink") {
           const rid = c.getAttributeNS(R, "id");
           const h = rid && rels.get(rid) ? rels.get(rid)[0] : null;
-          walk(c, h || href);
-        } else if (["ins", "smartTag", "fldSimple", "customXml"].includes(t)) walk(c, href);
-        else if (t === "sdt") { const sc = kid(c, "sdtContent"); if (sc) walk(sc, href); }
+          walk(c, h || href, tc);
+        } else if (t === "ins" || t === "moveTo") walk(c, href, wv(c, "id") != null ? { key: "ti:" + wv(c, "id"), kind: "ins", el: c } : tc);
+        else if (t === "del" || t === "moveFrom") walk(c, href, wv(c, "id") != null ? { key: "td:" + wv(c, "id"), kind: "del", el: c } : tc);
+        else if (["smartTag", "fldSimple", "customXml"].includes(t)) walk(c, href, tc);
+        else if (t === "sdt") { const sc = kid(c, "sdtContent"); if (sc) walk(sc, href, tc); }
       }
     };
-    walk(p, null);
+    walk(p, null, null);
   };
 
   const olAt = new Map();      // (1.7.0) the Word list each level's numbered items were last in
@@ -395,6 +428,25 @@ export async function readDocx(buf, opts = {}) {
     const heading = !!kind && kind[0] === "h";
     const code = kind === "code";
     if (code) kind = null;
+    // (1.12.0) its end added or taken out, its settings changed, with changes tracked
+    const tcp = [];
+    if (ppr) {
+      const mrp = kid(ppr, "rPr");
+      for (const [tag, k, c] of [["ins", "pins", "i"], ["moveTo", "pins", "i"], ["del", "pdel", "d"], ["moveFrom", "pdel", "d"]]) {
+        const e = mrp && kid(mrp, tag);
+        if (e) { const id = noteChange(e, k, ""); if (id != null) tcp.push(c + id); }
+      }
+      const pc = kid(ppr, "pPrChange");
+      if (pc) {
+        const id = noteChange(pc, "pfmt", "");
+        if (id != null) {
+          tcp.push("f" + id);
+          // (its alignment before: for Review ▸ Original)
+          const c = changes.get(id), jc = kid(kid(pc, "pPr"), "jc");
+          if (c && !("oldAlign" in c)) c.oldAlign = jc ? { center: "center", right: "right", end: "right", both: "justify", distribute: "justify" }[wv(jc)] || null : null;
+        }
+      }
+    }
     const out = [];
     runsOf(p, sid && !heading && kind !== "quote" ? styles.flags(sid) : new Set(), heading, out);
     const parts = [[]];
@@ -413,13 +465,22 @@ export async function readDocx(buf, opts = {}) {
       restart: k === 0 && restart,
       depth, runs: tidyRuns(runs), code, title: isTitle && k === 0, align: code ? null : align,
       ls: code ? null : ls, pageBreak: k === 0 && newPage, brk: k === 0 && brk,
+      tcp: k === parts.length - 1 && tcp.length ? tcp.join(" ") : null,
     }));
   };
 
   // RossDraft 1.8.0: a table as one line, its cells' paragraphs with their formatting, as Ross Writer shows it;
   // one RossDraft can't write back (merged cells, a table in a table) as before: rows of words, and said so
   const trouble = new Set();
+  const tableChanges = (tb) => {
+    for (const e of tb.getElementsByTagNameNS(W, "*")) {
+      const l = e.localName, up = e.parentNode && e.parentNode.localName;
+      if ((l === "ins" || l === "del") && up === "trPr") noteChange(e, l === "ins" ? "rowins" : "rowdel", "");
+      else if (l === "tblPrChange" || l === "trPrChange" || l === "tcPrChange" || l === "tblGridChange") noteChange(e, "tfmt", "");
+    }
+  };
   const table = (tb, idx) => {
+    tableChanges(tb);
     const merged = [...tb.getElementsByTagNameNS(W, "gridSpan")].some((g) => +(g.getAttributeNS(W, "val") || g.getAttribute("w:val") || 1) > 1) ||
       tb.getElementsByTagNameNS(W, "vMerge").length || tb.getElementsByTagNameNS(W, "hMerge").length;
     const nested = [...tb.getElementsByTagNameNS(W, "tc")].some((tc) => tc.getElementsByTagNameNS(W, "tbl").length);
@@ -514,7 +575,7 @@ export async function readDocx(buf, opts = {}) {
       notes.set(kind + (n.getAttributeNS(W, "id") || n.getAttribute("w:id")), paras.join("\n").replace(/^\s+/, ""));
     }
   }
-  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble], usual };
+  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble], usual, changes: [...changes.values()] };
   const tidy = [];
   for (const ln of lines) {
     const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind && !ln.cells;
@@ -558,6 +619,7 @@ export function toNoteLines(lines, picture) {
     if (ln.ls) out.ls = ln.ls;                 // (1.9.0)
     if (ln.pageBreak) out.newpage = true;
     if (ln.brk) out.brk = true;
+    if (ln.tcp) out.tcp = ln.tcp;              // (1.12.0)
     if ((ln.kind === "ul" || ln.kind === "ol") && ln.depth > 1) {
       const lead = "  ".repeat(ln.depth - 1);
       out.mark = ln.kind === "ul" ? "ul:" + lead + "- " : "ol:" + lead + "\u0000. ";
@@ -589,7 +651,7 @@ export function fromNoteLines(lines) {
     const heading = !!ln.kind && ln.kind[0] === "h";
     return {
       kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null, restart: !!restarts[k],
-      ls: ln.ls || null, pageBreak: !!ln.newpage || !!ln.pageBreak, brk: !!ln.brk,
+      ls: ln.ls || null, pageBreak: !!ln.newpage || !!ln.pageBreak, brk: !!ln.brk, tcp: ln.tcp || null,
       runs: ln.runs.map((r) => (r.img ? { t: OBJ, f: new Set(), img: r.img }
         : { t: r.t.split(OBJ).join(""), f: heading ? new Set([...r.f].filter((x) => x !== "b")) : r.f, href: r.href || null })),
     };
