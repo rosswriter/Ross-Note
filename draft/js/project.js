@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.9.22-d1.12.0";
-import * as wordio from "./wordio.js?v=1.9.22-d1.12.0";
-import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp } from "./wordpatch.js?v=1.9.22-d1.12.0";
-import * as rtf from "./rtf.js?v=1.9.22-d1.12.0";
+import * as md from "./md.js?v=1.9.22-d1.13.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.13.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp, readHF, writeHF, setChangeInfo } from "./wordpatch.js?v=1.9.22-d1.13.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.13.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -348,6 +348,7 @@ export class ProjectStore {
     const bytes = (img) => this.pictureBytes(img);
     let blob;
     const notes = n.fnotes || new Map();
+    setChangeInfo(n.changes);              // (1.13.0) the changes made here: their author and time
     if (sc && sc.files) blob = await patchDocx(sc.files, sc.lines, sc.sigs, wl, bytes, notes);
     else {
       const tpl = await this.findTemplate();
@@ -453,6 +454,26 @@ export class ProjectStore {
     await this.saveProject();
     await this.load(n, true);
     return got.count;
+  }
+
+  // RossDraft 1.13.0: this Word file's header and footer ({ hf, props, elaborate, has }), and new ones written into it
+  async headerFooter(n) {
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc && n.raw && !n.raw.pdf) { try { await this.load(n); } catch (e) { return null; } sc = this.scenes.get(n.raw.id); }
+    if (!sc || !sc.files) return null;
+    return readHF(sc.files);
+  }
+  async setHeaderFooter(n, hf, props) {
+    const sc = this.scenes.get(n.raw.id);
+    if (!sc || !sc.files) return false;
+    if (this.canWrite === false) throw new Error("There's no permission to save into this file.");
+    const blob = await writeHF(sc.files, hf, props);
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    await this.load(n, true);
+    return true;
   }
 
   // the last accept or reject taken back: the file as it was before it

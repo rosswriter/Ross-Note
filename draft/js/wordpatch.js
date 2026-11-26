@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.12.0";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.13.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -34,10 +34,14 @@ const BLOCKERS = [
   [/<w:txbxContent\b|<mc:AlternateContent\b|<w:object\b/, "a text box or shape"],
   [/<m:oMath/, "an equation"],
   [/<w:sdt\b/, "a content control"],
-  [/<w:fldChar\b|<w:fldSimple\b|<w:instrText\b/, "a field"],
+  // (RossDraft 1.13.0: fields are shown and kept; a form field, a field in a field, one across paragraphs: readDocx's trouble)
   [/<w:vanish\b(?![^>]*w:val="(0|false)")/, "hidden text"],
   [/<w:altChunk\b/, "embedded content"],
 ];
+
+// (RossDraft 1.13.0) the changes made here (Track Changes): id -> { author, date } for the ones the file hasn't yet
+let CHANGE_INFO = new Map();
+export function setChangeInfo(list) { CHANGE_INFO = new Map((list || []).map((c) => [String(c.id), c])); }
 
 export function blockers(docText) {
   const out = [];
@@ -49,7 +53,8 @@ export function blockers(docText) {
 const FLAGS = "bisuh";
 function sigOf(ln) {
   if (ln.kind === "table" && ln.cells) {
-    return JSON.stringify(["table", ln.noLines ? 1 : 0, ln.equal ? 1 : 0, (ln.widths || []).map((x) => Math.round(x)).join(","), ln.cells.map((r) => r.map((c) => c.map((p) => sigOf({ runs: p.runs })))) ]);
+    const cv = ln.cover ? Object.keys(ln.cover).sort().map((k) => k + ln.cover[k]).join(",") : "";
+    return JSON.stringify(["table", ln.noLines ? 1 : 0, ln.equal ? 1 : 0, (ln.widths || []).map((x) => Math.round(x)).join(","), ln.cells.map((r) => r.map((c) => c.map((p) => sigOf({ runs: p.runs })))), cv]);
   }
   const runs = [];
   for (const r of ln.runs || []) {
@@ -690,14 +695,15 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     let nid = id;
     if (usedChangeIds.has(nid) || !/^-?\d+$/.test(nid)) nid = String(++maxChangeId);
     usedChangeIds.add(nid);
-    const au = old ? wval(old, "author") : null, dt = old ? wval(old, "date") : null;
+    const mine = !old && CHANGE_INFO.get(id);
+    const au = old ? wval(old, "author") : mine ? mine.author || "" : null, dt = old ? wval(old, "date") : mine ? mine.date || null : null;
     return `<w:${tag} w:id="${nid}"${au != null ? ` w:author="${xa(au)}"` : ""}${dt ? ` w:date="${xa(dt)}"` : ""}>${inner}</w:${tag}>`;
   };
   const kindKey = (ln) => (ln.code ? "code" : ln.kind || "p");
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.12.0");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.13.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -791,6 +797,26 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         }
       }
     }
+    // (1.13.0) its end added or taken out with changes tracked (made here, or kept from the old paragraph)
+    if (ln.tcp && !ln.code) {
+      for (const tok of ln.tcp.split(" ")) {
+        if (tok[0] !== "i" && tok[0] !== "d") continue;
+        const id = tok.slice(1);
+        const mrp0 = ppr && wkid(ppr, "rPr");
+        if (mrp0 && wkids(mrp0).some((x) => ["ins", "del", "moveFrom", "moveTo"].includes(x.localName) && wval(x, "id") === id)) continue;
+        const info = CHANGE_INFO.get(id) || {};
+        const old = oldChange.get(id);
+        let mrp = mrp0;
+        if (!mrp) { mrp = doc.createElementNS(W, "w:rPr"); ensurePpr().appendChild(mrp); }
+        const m = doc.createElementNS(W, "w:" + (tok[0] === "i" ? "ins" : "del"));
+        m.setAttributeNS(W, "w:id", usedChangeIds.has(id) ? String(++maxChangeId) : id);
+        usedChangeIds.add(id);
+        const au = old ? wval(old, "author") : info.author, dt = old ? wval(old, "date") : info.date;
+        if (au != null) m.setAttributeNS(W, "w:author", au);
+        if (dt) m.setAttributeNS(W, "w:date", dt);
+        mrp.insertBefore(m, mrp.firstChild);
+      }
+    }
     if (ppr) { sortPpr(ppr); if (ppr.children.length) p.appendChild(ppr); }
     // the look of the words: the old paragraph's, or one like it; headings and the like without one
     // take their style's own (no run look), plain text the scene's usual
@@ -855,6 +881,15 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
           continue;
         }
         const rx = (rp.children.length ? ser(rp) : "") + `<w:${tTag} xml:space="preserve">${xt(piece.t)}</w:${tTag}>`;
+        const fld = ln.code ? null : [...f].find((k) => k.startsWith("fld:"));
+        if (fld) {
+          // (1.13.0) a field: written as Word's simple field, its result as it shows
+          let ins = "PAGE";
+          try { ins = decodeURIComponent(fld.slice(4)); } catch (e) { /* as it is */ }
+          const fx = `<w:fldSimple w:instr=" ${xa(ins)} "><w:r>${rx.replace(/<w:delText /, "<w:t ").replace(/<\/w:delText>/, "</w:t>")}</w:r></w:fldSimple>`;
+          pieces.push({ key: null, xml: r.href ? `<w:hyperlink r:id="${linkRel(r.href)}">${fx}</w:hyperlink>` : fx, link: true });
+          continue;
+        }
         if (r.href && !ln.code) {
           const inner = tcKey ? tcWrap(tcKey, `<w:r>${rx}</w:r>`) : `<w:r>${rx}</w:r>`;
           pieces.push({ key: tcKey, link: true, xml: `<w:hyperlink r:id="${linkRel(r.href)}">${inner}</w:hyperlink>` });
@@ -881,7 +916,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.12.0");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.13.0");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }
@@ -926,6 +961,20 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     t.appendChild(grid);
     const oldRows = wkids(oldT, "tr");
     const neutral = doc.createElementNS(W, "w:p");
+    // (1.13.0) the old cells by where they sit on the grid (a merged cell spans several columns)
+    const oldAt = oldRows.map((otr) => {
+      const at = [];
+      const trPr = wkid(otr, "trPr"), gb = trPr && wkid(trPr, "gridBefore");
+      for (let k = 0; k < (gb ? +wval(gb) || 0 : 0); k++) at.push(null);
+      for (const otc of wkids(otr, "tc")) {
+        const gs = Math.max(1, +(wkid(wkid(otc, "tcPr"), "gridSpan") && wval(wkid(wkid(otc, "tcPr"), "gridSpan"))) || 1);
+        at.push(otc);
+        for (let k = 1; k < gs; k++) at.push(null);
+      }
+      return at;
+    });
+    const cv = ln.cover || {};
+    const oldCv = old[oi].cover || {};
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
       const otr = oldRows[Math.min(r, oldRows.length - 1)] || null;
@@ -937,24 +986,35 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         for (const x of wkids(c)) if (x.localName === "tblHeader" || x.localName === "trPrChange") c.removeChild(x);
         if (c.children.length) tr.appendChild(c);
       }
-      const otcs = otr ? wkids(otr, "tc") : [];
+      const rowAt = r < oldAt.length ? oldAt[r] : oldAt[oldAt.length - 1] || [];
+      const nearTc = (c) => { for (let k = Math.min(c, rowAt.length - 1); k >= 0; k--) if (rowAt[k]) return rowAt[k]; return rowAt.find(Boolean) || null; };
       for (let c = 0; c < n; c++) {
-        const otc = otcs[Math.min(c, otcs.length - 1)] || null;
+        if (cv[r + "." + c] === "l") continue;               // (written with the cell it's merged into)
+        let span = 1;
+        while (c + span < n && cv[r + "." + (c + span)] === "l") span++;
+        const otc = nearTc(c);
         const tc = doc.createElementNS(W, "w:tc");
         const tcPr = otc && wkid(otc, "tcPr") ? wkid(otc, "tcPr").cloneNode(true) : doc.createElementNS(W, "w:tcPr");
         for (const x of wkids(tcPr)) if (["gridSpan", "vMerge", "hMerge", "tcPrChange"].includes(x.localName)) tcPr.removeChild(x);
-        if (!sameGrid || !wkid(tcPr, "tcW")) {
+        const spanW = cols.slice(c, c + span).reduce((a, b) => a + b, 0);
+        if (!sameGrid || !wkid(tcPr, "tcW") || span > 1 || (otc && wkid(wkid(otc, "tcPr"), "gridSpan"))) {
           let w = wkid(tcPr, "tcW");
           if (!w) { w = doc.createElementNS(W, "w:tcW"); tcPr.insertBefore(w, tcPr.firstChild); }
-          w.setAttributeNS(W, "w:w", String(cols[c]));
+          w.setAttributeNS(W, "w:w", String(spanW));
           w.setAttributeNS(W, "w:type", "dxa");
         }
+        // CT_TcPr's order: cnfStyle, tcW, gridSpan, hMerge, vMerge, tcBorders...
+        const afterW = (el) => { const tw = wkid(tcPr, "tcW"); tcPr.insertBefore(el, tw ? tw.nextSibling : tcPr.firstChild); };
+        const vmode = cv[r + "." + c] === "u" ? "continue" : cv[(r + 1) + "." + c] === "u" ? "restart" : null;
+        if (vmode) { const vm = doc.createElementNS(W, "w:vMerge"); if (vmode === "restart") vm.setAttributeNS(W, "w:val", "restart"); afterW(vm); }
+        if (span > 1) { const gs = doc.createElementNS(W, "w:gridSpan"); gs.setAttributeNS(W, "w:val", String(span)); afterW(gs); }
         if (ln.noLines) for (const x of wkids(tcPr, "tcBorders")) tcPr.removeChild(x);
         tc.appendChild(tcPr);
-        const ops = otc ? wkids(otc, "p") : [];
-        const same = r < oldRows.length && c < otcs.length;
+        const own = r < oldAt.length && rowAt[c] ? rowAt[c] : null;
+        const ops = (own || otc) ? wkids(own || otc, "p") : [];
+        const same = !!own && (oldCv[r + "." + c] || "") === (cv[r + "." + c] || "");
         const was = same ? ((oldCells[r] || [])[c] || []) : [];
-        const paras = row[c] && row[c].length ? row[c] : [{ kind: null, runs: [] }];
+        const paras = vmode !== "continue" && row[c] && row[c].length ? row[c] : [{ kind: null, runs: [] }];
         for (let k = 0; k < paras.length; k++) {
           const p = paras[k];
           if (same && was[k] && ops[k] && sigOf({ runs: was[k].runs }) === sigOf({ runs: p.runs })) {
@@ -1778,4 +1838,199 @@ export async function changeOp(files, op) {
     }
   }
   return n ? { blob: await pkg.save(), count: n } : { blob: null, count: 0 };
+}
+
+// ------------------------------------------------------------------ RossDraft 1.13.0: headers and footers (as Ross Writer)
+// A header or footer is three pieces of text, left, centre and right, which may hold the fields [Page], [Pages],
+// [Title], [Author] and [Date]; saved as real Word headers and footers with real Word fields (Word and LibreOffice
+// keep the numbers up to date). hf: { header: [l, c, r], footer: [l, c, r], first (nothing on page 1), start }.
+export const HF_FIELDS = { Page: "PAGE", Pages: "NUMPAGES", Title: "TITLE", Author: "AUTHOR", Date: 'DATE \\@ "d MMMM yyyy"' };
+const HF_RE = /\[(Page|Pages|Title|Author|Date)\]/g;
+const DC = "http://purl.org/dc/elements/1.1/";
+const fieldName = (instr) => {
+  const w = (instr || "").trim().split(/\s+/)[0].toUpperCase();
+  return { PAGE: "Page", NUMPAGES: "Pages", SECTIONPAGES: "Pages", TITLE: "Title", AUTHOR: "Author", DATE: "Date", CREATEDATE: "Date", SAVEDATE: "Date", PRINTDATE: "Date" }[w] || null;
+};
+function sectionsOf(pkg) {
+  const body = pkg.body;
+  const out = [...body.getElementsByTagNameNS(W, "sectPr")].filter((s) => s.parentNode && (isW(s.parentNode, "pPr") || s.parentNode === body));
+  return out;
+}
+function hfPartName(pkg, sect, kind, type) {
+  const ref = wkids(sect, kind + "Reference").find((e) => (wval(e, "type") || "default") === type);
+  if (!ref) return null;
+  const rid = ref.getAttributeNS(R, "id") || ref.getAttribute("r:id");
+  for (const r of pkg.relsDoc.getElementsByTagNameNS(PR, "Relationship")) {
+    if (r.getAttribute("Id") === rid) return resolveTarget(pkg.mainPart, r.getAttribute("Target"));
+  }
+  return null;
+}
+// one header / footer part as [left, centre, right] (null: more than that can show: pictures, tables, paragraphs)
+function hfPieces(d) {
+  if (!d) return ["", "", ""];
+  const root = d.documentElement;
+  if (root.getElementsByTagNameNS(W, "tbl").length || root.getElementsByTagNameNS(W, "drawing").length || root.getElementsByTagNameNS(W, "pict").length) return null;
+  const ps = wkids(root, "p").filter((p) => (p.textContent || "").trim() || p.getElementsByTagNameNS(W, "fldSimple").length || p.getElementsByTagNameNS(W, "fldChar").length);
+  if (ps.length > 1) return null;
+  if (!ps.length) return ["", "", ""];
+  const p = ps[0];
+  const parts = [""];
+  let fld = null;            // a complex field being read
+  const walk = (el) => {
+    for (const c of el.children) {
+      if (c.namespaceURI !== W) continue;
+      const t = c.localName;
+      if (t === "fldSimple") { const n = fieldName(wval(c, "instr")); parts[parts.length - 1] += n ? "[" + n + "]" : c.textContent; continue; }
+      if (t === "r") {
+        for (const x of c.children) {
+          if (x.namespaceURI !== W) continue;
+          const u = x.localName;
+          if (u === "fldChar") {
+            const ty = wval(x, "fldCharType");
+            if (ty === "begin") fld = { instr: "", res: "", mode: "i" };
+            else if (ty === "separate" && fld) fld.mode = "r";
+            else if (ty === "end" && fld) { const n = fieldName(fld.instr); parts[parts.length - 1] += n ? "[" + n + "]" : fld.res; fld = null; }
+          } else if (u === "instrText") { if (fld) fld.instr += x.textContent; }
+          else if (u === "t") { if (fld) { if (fld.mode === "r") fld.res += x.textContent; } else parts[parts.length - 1] += x.textContent; }
+          else if (u === "tab" || u === "ptab") parts.push("");
+        }
+        continue;
+      }
+      if (["hyperlink", "smartTag", "ins", "customXml"].includes(t)) walk(c);
+    }
+  };
+  walk(p);
+  if (parts.length > 3) return null;
+  if (parts.length === 1) {
+    const jc = wkid(wkid(p, "pPr"), "jc");
+    const al = jc ? wval(jc) : "left";
+    return al === "center" ? ["", parts[0], ""] : al === "right" || al === "end" ? ["", "", parts[0]] : [parts[0], "", ""];
+  }
+  if (parts.length === 2) return [parts[0], "", parts[1]];
+  return parts;
+}
+export async function readHF(files) {
+  const pkg = await openPackage(files);
+  const secs = sectionsOf(pkg);
+  const sect = secs[0] || null;
+  const hf = { header: ["", "", ""], footer: ["", "", ""], first: false, start: 1 };
+  let elaborate = secs.length > 1;
+  if (sect) {
+    for (const kind of ["header", "footer"]) {
+      const name = hfPartName(pkg, sect, kind, "default");
+      const pieces = hfPieces(name && pkg.all.has(name) ? parse(dec(pkg.all.get(name))) : null);
+      if (pieces) hf[kind] = pieces.map((x) => x || ""); else elaborate = true;
+    }
+    hf.first = !!wkid(sect, "titlePg") && !["0", "false"].includes(wval(wkid(sect, "titlePg")) || "true");
+    const pn = wkid(sect, "pgNumType");
+    if (pn && wval(pn, "start") != null) hf.start = +wval(pn, "start") || 0;
+  }
+  const props = { title: "", author: "" };
+  if (pkg.all.has("docProps/core.xml")) {
+    const core = parse(dec(pkg.all.get("docProps/core.xml")));
+    const t = core.getElementsByTagNameNS(DC, "title")[0], a = core.getElementsByTagNameNS(DC, "creator")[0];
+    props.title = t ? t.textContent : "";
+    props.author = a ? a.textContent : "";
+  }
+  const has = ["header", "footer"].some((k) => hf[k].some(Boolean));
+  return { hf, props, elaborate, has };
+}
+// a header / footer part's XML: one paragraph, left <tab> centre <tab> right, the fields as Word's
+export function hfPartXml(kind, pieces, width, props = {}) {
+  const tag = kind === "header" ? "hdr" : "ftr";
+  const run = (t) => `<w:r><w:t xml:space="preserve">${xt(t)}</w:t></w:r>`;
+  const sample = (n) => ({ Page: "1", Pages: "1", Title: props.title || "", Author: props.author || "",
+    Date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) }[n]);
+  let body = "";
+  (pieces || ["", "", ""]).forEach((text, i) => {
+    if (i) body += "<w:r><w:tab/></w:r>";
+    let pos = 0;
+    for (const m of String(text || "").matchAll(HF_RE)) {
+      if (m.index > pos) body += run(text.slice(pos, m.index));
+      body += `<w:fldSimple w:instr=" ${xa(HF_FIELDS[m[1]])} ">${run(sample(m[1]) || " ")}</w:fldSimple>`;
+      pos = m.index + m[0].length;
+    }
+    if (pos < String(text || "").length) body += run(text.slice(pos));
+  });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:${tag} xmlns:w="${W}" xmlns:r="${R}"><w:p><w:pPr>` +
+    `<w:tabs><w:tab w:val="center" w:pos="${Math.round(width / 2)}"/><w:tab w:val="right" w:pos="${Math.round(width)}"/></w:tabs>` +
+    `</w:pPr>${body}</w:p></w:${tag}>`;
+}
+export async function writeHF(files, hf, props) {
+  const pkg = await openPackage(files);
+  const secs = sectionsOf(pkg);
+  let sect = secs[0];
+  if (!sect) { sect = pkg.doc.createElementNS(W, "w:sectPr"); pkg.body.appendChild(sect); }
+  const num = (el, a, d) => { const v = el && wval(el, a); return v ? parseInt(v, 10) : d; };
+  const pgSz = wkid(sect, "pgSz"), pgMar = wkid(sect, "pgMar");
+  const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1440) - num(pgMar, "right", 1440);
+  const dir = pkg.mainPart.slice(0, pkg.mainPart.lastIndexOf("/") + 1);
+  const rels = [...pkg.relsDoc.getElementsByTagNameNS(PR, "Relationship")];
+  const ids = new Set(rels.map((r) => r.getAttribute("Id")));
+  const setRef = (kind, type, xml) => {
+    let name = hfPartName(pkg, sect, kind, type);
+    if (!name) {
+      let k = 1;
+      while (pkg.all.has(dir + kind + "RD" + k + ".xml") || pkg.parts.has(dir + kind + "RD" + k + ".xml")) k++;
+      name = dir + kind + "RD" + k + ".xml";
+      let n = 1;
+      while (ids.has("rIdRNh" + n)) n++;
+      const rid = "rIdRNh" + n;
+      ids.add(rid);
+      const rel = pkg.relsDoc.createElementNS(PR, "Relationship");
+      rel.setAttribute("Id", rid);
+      rel.setAttribute("Type", REL + kind);
+      rel.setAttribute("Target", name.slice(dir.length));
+      pkg.relsDoc.documentElement.appendChild(rel);
+      const ov = pkg.ctDoc.createElementNS(CT, "Override");
+      ov.setAttribute("PartName", "/" + name);
+      ov.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.wordprocessingml." + kind + "+xml");
+      pkg.ctDoc.documentElement.appendChild(ov);
+      const ref = pkg.doc.createElementNS(W, "w:" + kind + "Reference");
+      ref.setAttributeNS(W, "w:type", type);
+      ref.setAttributeNS(R, "r:id", rid);
+      // (headers' references first in sectPr, then footers')
+      const refs = wkids(sect).filter((e) => e.localName === "headerReference" || e.localName === "footerReference");
+      const at = kind === "header" ? (refs.find((e) => e.localName === "footerReference") || wkids(sect).find((e) => !refs.includes(e)) || null)
+        : (wkids(sect).find((e) => !refs.includes(e)) || null);
+      sect.insertBefore(ref, at);
+    }
+    pkg.parts.set(name, parse(xml));
+  };
+  for (const kind of ["header", "footer"]) {
+    setRef(kind, "default", hfPartXml(kind, hf[kind], width, props));
+    if (hf.first) setRef(kind, "first", hfPartXml(kind, ["", "", ""], width, props));
+  }
+  // CT_SectPr's order after the references: footnotePr endnotePr type pgSz pgMar paperSrc pgBorders lnNumType
+  // pgNumType cols formProt vAlign noEndnote titlePg textDirection bidi rtlGutter docGrid printerSettings sectPrChange
+  const ORDER = ["footnotePr", "endnotePr", "type", "pgSz", "pgMar", "paperSrc", "pgBorders", "lnNumType", "pgNumType", "cols", "formProt",
+    "vAlign", "noEndnote", "titlePg", "textDirection", "bidi", "rtlGutter", "docGrid", "printerSettings", "sectPrChange"];
+  const place = (el) => {
+    const k = ORDER.indexOf(el.localName);
+    const next = wkids(sect).find((e) => ORDER.indexOf(e.localName) > k);
+    sect.insertBefore(el, next || null);
+  };
+  const tp = wkid(sect, "titlePg");
+  if (tp) sect.removeChild(tp);
+  if (hf.first) place(pkg.doc.createElementNS(W, "w:titlePg"));
+  let pn = wkid(sect, "pgNumType");
+  if ((+hf.start || 0) !== 1) {
+    if (!pn) { pn = pkg.doc.createElementNS(W, "w:pgNumType"); place(pn); }
+    pn.setAttributeNS(W, "w:start", String(Math.max(0, +hf.start || 0)));
+  } else if (pn && wval(pn, "start") != null) { pn.removeAttributeNS(W, "start"); pn.removeAttribute("w:start"); }
+  // later sections: the same (they follow the first)
+  for (const s of secs.slice(1)) for (const e of wkids(s)) if (e.localName === "headerReference" || e.localName === "footerReference") s.removeChild(e);
+  // the title and author, in the file's properties
+  if (props && pkg.all.has("docProps/core.xml")) {
+    const core = parse(dec(pkg.all.get("docProps/core.xml")));
+    const root = core.documentElement;
+    for (const [tag, v] of [["title", props.title], ["creator", props.author]]) {
+      if (v == null) continue;
+      let e = core.getElementsByTagNameNS(DC, tag)[0];
+      if (!e) { e = core.createElementNS(DC, "dc:" + tag); root.appendChild(e); }
+      e.textContent = v;
+    }
+    pkg.parts.set("docProps/core.xml", core);
+  }
+  return pkg.save();
 }

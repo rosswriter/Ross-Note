@@ -20,7 +20,8 @@ export function setTables(on) { TABLES = !!on; }
 export function tablesOn() { return TABLES; }
 const TROW_RE = /^\|.*\|$/;
 const TSEP_RE = /^\|(?: ?:?-{3,}:? ?\|)+$/;
-const TFLAGS_RE = /^<!-- table:((?: (?:nolines|equal|w=\d+(?:,\d+)*))+) -->$/;
+// (1.13.0) and its merged cells: m=1.0u,0.2l (row.column, merged into the cell above / to the left)
+const TFLAGS_RE = /^<!-- table:((?: (?:nolines|equal|w=\d+(?:,\d+)*|m=\d+\.\d+[ul](?:,\d+\.\d+[ul])*))+) -->$/;
 function splitRow(s) {
   const inner = s.slice(1, -1);
   const out = [];
@@ -51,8 +52,16 @@ function tableAt(lines, i) {
   if (/equal/.test(flags)) ln.equal = true;
   const wm = / w=([\d,]+)/.exec(flags);
   if (wm) ln.widths = wm[1].split(",").map(Number);       // (1.8.1) the columns' widths (Word's, twentieths of a point)
+  const mm = / m=([\d.,ul]+)/.exec(flags);
+  if (mm) { ln.cover = {}; for (const x of mm[1].split(",")) ln.cover[x.slice(0, -1)] = x.slice(-1); }
   if (tableMarkdown(ln) !== lines.slice(i, j).join("\n")) return null;
   return [ln, j - i];
+}
+function coverFlag(cv) {
+  const ks = Object.keys(cv || {}).filter((k) => /^\d+\.\d+$/.test(k) && /^[ul]$/.test(cv[k]));
+  if (!ks.length) return "";
+  ks.sort((a, b) => { const [r1, c1] = a.split(".").map(Number), [r2, c2] = b.split(".").map(Number); return r1 - r2 || c1 - c2; });
+  return "m=" + ks.map((k) => k + cv[k]).join(",");
 }
 function tableMarkdown(ln, opts = {}) {
   const rows = ln.cells || [];
@@ -61,7 +70,8 @@ function tableMarkdown(ln, opts = {}) {
     .split("|").join("\\|").replace(/^\s+|\s+$/g, "")).join("<br>");
   const out = [];
   const flags = [ln.noLines ? "nolines" : "", ln.equal ? "equal" : "",
-    ln.widths && ln.widths.length === w ? "w=" + ln.widths.map((x) => Math.round(x)).join(",") : ""].filter(Boolean);
+    ln.widths && ln.widths.length === w ? "w=" + ln.widths.map((x) => Math.round(x)).join(",") : "",
+    coverFlag(ln.cover)].filter(Boolean);
   if (flags.length) out.push("<!-- table: " + flags.join(" ") + " -->");
   rows.forEach((r, k) => {
     out.push("| " + Array.from({ length: w }, (_, c) => cell(r[c])).join(" | ") + " |");
@@ -117,7 +127,7 @@ const SPAN_RE = /<span style="(color:#[0-9A-Fa-f]{6}|font-family:[^";<>]{1,60}|f
 const MARKC_RE = /<mark class="hl-([A-Za-z]{2,12})">/y;
 // (1.12.0) tracked changes from Word: <ins data-tc="5">added</ins>, <del data-tc="6">taken out</del>,
 // <span data-tf="7">formatting changed</span>
-const TC_RE = /<(ins|del) data-tc="(-?\d+)">|<span data-tf="(-?\d+)">/y;
+const TC_RE = /<(ins|del) data-tc="(-?\d+)">|<span data-tf="(-?\d+)">|<span data-fld="([A-Za-z0-9%._~!*'()-]+)">/y;
 function spanKey(st) {
   if (st.startsWith("color:#")) return "c:" + st.slice(7).toUpperCase();
   if (st.startsWith("font-family:")) return "font:" + st.slice(12).trim();
@@ -189,7 +199,7 @@ export function inlineRuns(text) {
       if (tm) {
         const close = tm[1] ? "</" + tm[1] + ">" : "</span>";
         if (closes(close, i + tm[0].length)) {
-          const key = tm[1] === "ins" ? "ti:" + tm[2] : tm[1] === "del" ? "td:" + tm[2] : "tf:" + tm[3];
+          const key = tm[1] === "ins" ? "ti:" + tm[2] : tm[1] === "del" ? "td:" + tm[2] : tm[4] != null ? "fld:" + tm[4] : "tf:" + tm[3];
           flush(); state.add(key); spans.push(key); i += tm[0].length; continue;
         }
       }
@@ -426,13 +436,15 @@ const ORDER = ["u", "h", "s", "b", "i"];
 function keysOf(f) {
   const hc = [...f].find((k) => k.startsWith("hc:"));
   // (1.12.0) a tracked change outermost: an insertion or deletion, then a formatting change
-  const tc = [...f].filter((k) => /^t[idf]:/.test(k)).sort((a, b) => "idf".indexOf(a[1]) - "idf".indexOf(b[1]));
+  const tc = [...f].filter((k) => /^t[idf]:/.test(k)).sort((a, b) => "idf".indexOf(a[1]) - "idf".indexOf(b[1]))
+    .concat([...f].filter((k) => k.startsWith("fld:")));            // (1.13.0) a field: its own span
   const look = [...f].filter((k) => /^(font|sz|c):/.test(k)).sort((a, b) => "fsc".indexOf(a[0]) - "fsc".indexOf(b[0]));
   const basic = ORDER.filter((k) => f.has(k)).map((k) => (k === "h" && hc ? "h:" + hc.slice(3) : k));
   return tc.concat(look, basic, ["sup", "sub"].filter((k) => f.has(k)));
 }
 const tcOpen = (k) => (k[1] === "i" ? `<ins data-tc="${k.slice(3)}">` : k[1] === "d" ? `<del data-tc="${k.slice(3)}">` : `<span data-tf="${k.slice(3)}">`);
-const openOf = (k) => OPEN[k] || (k.startsWith("h:") ? `<mark class="hl-${k.slice(2)}">` : /^t[idf]:/.test(k) ? tcOpen(k) : spanOpen(k));
+const openOf = (k) => OPEN[k] || (k.startsWith("h:") ? `<mark class="hl-${k.slice(2)}">` : /^t[idf]:/.test(k) ? tcOpen(k) :
+  k.startsWith("fld:") ? `<span data-fld="${k.slice(4)}">` : spanOpen(k));
 const closeOf = (k) => CLOSE[k] || (k.startsWith("h:") ? "</mark>" : k.startsWith("ti:") ? "</ins>" : k.startsWith("td:") ? "</del>" : "</span>");
 
 function escape(t, atStart) {
@@ -485,9 +497,11 @@ export function lineMarkdown(ln, number, opts = {}) {
       continue;
     }
     const t = r.t;
-    const core = t.replace(/^ +| +$/g, "");
-    const lead = t.slice(0, t.length - t.replace(/^ +/, "").length);
-    const trail = core ? t.slice(t.replace(/ +$/, "").length) : "";
+    // (1.13.0) a tracked change's or a field's spaces are its own (an added " and" stays added, space and all)
+    const whole = r.f && [...r.f].some((k) => /^(t[id]|fld):/.test(k));
+    const core = whole ? t : t.replace(/^ +| +$/g, "");
+    const lead = whole ? "" : t.slice(0, t.length - t.replace(/^ +/, "").length);
+    const trail = whole ? "" : core ? t.slice(t.replace(/ +$/, "").length) : "";
     if (!core) { pending += t; continue; }
     const want = keysOf(r.f);
     // close back to where what's open is still wanted, in order (so the tags nest)

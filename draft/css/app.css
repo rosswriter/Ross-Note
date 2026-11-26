@@ -903,3 +903,23 @@ body.origview .page del.tc { text-decoration: none; color: inherit; opacity: 1; 
 body.origview .page span.tcf { text-decoration: none; }
 body.origview .page .ln[data-tcp]::after { content: none; }
 body.origview .page .ln[data-tcp*="f"] { box-shadow: none; }
+/* RossDraft 1.13.0: a field (page number, date…) */
+.page span.fld { background: color-mix(in srgb, currentColor 9%, transparent); border-radius: 3px; padding: 0 2px; }
+/* RossDraft 1.13.0: merged cells (a covered cell hidden; the one it's merged into spans it) */
+table.rtable td.covered { display: none; }
+/* RossDraft 1.13.0: Header and Footer… */
+.hfform { width: 100%; box-sizing: border-box; }
+.hfform input[type=text], .hfform select { box-sizing: border-box; max-width: 100%; }
+.hfform select { min-height: 38px; padding: 4px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: transparent; color: inherit; font: inherit; }
+.hfgrid { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 6px; align-items: center; margin: 8px 0; }
+.hfgrid > span { font-size: 0.85em; opacity: 0.75; text-align: center; }
+.hfgrid > span:nth-child(4n+1) { text-align: left; }
+.hfgrid input { min-width: 0; width: 100%; }
+.hfins { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.9em; margin: 4px 0 8px; }
+.hfins button { min-height: 32px; padding: 0 8px; }
+.hfrow { display: flex !important; flex-direction: row !important; align-items: center; gap: 6px; }
+.hfhint { font-size: 0.82em; opacity: 0.7; margin-top: 6px; }
+.hfwarn { background: #fff4c2; color: #4a3b00; padding: 6px 8px; border-radius: 4px; margin-bottom: 8px; font-size: 0.9em; }
+/* RossDraft 1.13.0: Track Changes */
+.page .ln[data-tcp*="d"]::after { text-decoration: line-through; }
+#tracking { font: inherit; font-size: 0.85em; border: 1px solid #c0392b; color: #c0392b; background: transparent; border-radius: 10px; padding: 0 8px; margin-left: 8px; cursor: pointer; }

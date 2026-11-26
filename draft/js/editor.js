@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.12.0";
+import * as md from "./md.js?v=1.9.22-d1.13.0";
 
 const HL = "#ffd54f";
 
@@ -52,14 +52,35 @@ export function tableElement(ln) {
   const tb = document.createElement("tbody");
   const w = Math.max(1, ...(ln.cells || []).map((r) => r.length));
   if (ln.widths && ln.widths.length === w) setWidths(t, ln.widths);
-  for (const row of ln.cells || []) {
+  (ln.cells || []).forEach((row, r) => {
     const tr = document.createElement("tr");
-    for (let c = 0; c < w; c++) tr.appendChild(cellElement(row[c] || []));
+    for (let c = 0; c < w; c++) {
+      const td = cellElement(row[c] || []);
+      const m = ln.cover && ln.cover[r + "." + c];
+      if (m === "l" || m === "u") td.dataset.m = m;
+      tr.appendChild(td);
+    }
     tb.appendChild(tr);
-  }
+  });
   t.appendChild(tb);
   div.appendChild(t);
+  applySpans(t);
   return div;
+}
+// (RossDraft 1.13.0) merged cells: every cell of the grid is there; one merged into the cell to its left (data-m="l")
+// or above ("u") is hidden, and the cell it's merged into spans it
+export function applySpans(t) {
+  const rows = [...t.querySelectorAll(":scope > tbody > tr")].map((tr) => [...tr.children].filter((c) => c.tagName === "TD"));
+  rows.forEach((row, r) => row.forEach((td, c) => {
+    const m = td.dataset.m;
+    td.classList.toggle("covered", m === "l" || m === "u");
+    if (m === "l" || m === "u") { td.colSpan = 1; td.rowSpan = 1; return; }
+    let cs = 1, rs = 1;
+    while (row[c + cs] && row[c + cs].dataset.m === "l") cs++;
+    while (rows[r + rs] && rows[r + rs][c] && rows[r + rs][c].dataset.m === "u") rs++;
+    td.colSpan = cs;
+    td.rowSpan = rs;
+  }));
 }
 // (1.8.1) the columns' widths (Word's twips) as a <colgroup>: each column its share of the table
 export function setWidths(t, widths) {
@@ -114,7 +135,13 @@ export function readCell(td) {
 }
 export function readTable(div) {
   const ln = { kind: "table", runs: [], cells: [] };
-  for (const tr of div.querySelectorAll(":scope > table > tbody > tr")) ln.cells.push([...tr.children].filter((c) => c.tagName === "TD").map(readCell));
+  const cover = {};
+  [...div.querySelectorAll(":scope > table > tbody > tr")].forEach((tr, r) => {
+    const tds = [...tr.children].filter((c) => c.tagName === "TD");
+    tds.forEach((td, c) => { if (td.dataset.m === "l" || td.dataset.m === "u") cover[r + "." + c] = td.dataset.m; });
+    ln.cells.push(tds.map((td) => (td.dataset.m ? [{ kind: null, runs: [] }] : readCell(td))));
+  });
+  if (Object.keys(cover).length) ln.cover = cover;
   if (div.dataset.nolines) ln.noLines = true;
   if (div.dataset.equal) ln.equal = true;
   const t = div.querySelector(":scope > table");
@@ -190,6 +217,13 @@ export function lineElement(ln) {
     // into: a box of their own), a formatting change marked
     for (const k of r.f) {
       if (k.startsWith("tf:")) { wrap("span"); node.className = "tcf"; node.dataset.tf = k.slice(3); }
+    }
+    // (RossDraft 1.13.0) a field (page number, date…): its result, in a box of its own
+    for (const k of r.f) {
+      if (k.startsWith("fld:")) {
+        wrap("span"); node.className = "fld"; node.dataset.fld = k.slice(4); node.contentEditable = "false";
+        try { node.title = "Field: " + decodeURIComponent(k.slice(4)); } catch (e) { /* as it is */ }
+      }
     }
     for (const k of r.f) {
       if (k.startsWith("ti:")) { wrap("ins"); node.className = "tc"; node.dataset.tc = k.slice(3); }
@@ -282,6 +316,7 @@ export function flagsOf(node, line, heading) {
     // (RossDraft 1.12.0) a tracked change's mark (not underlining or striking through)
     if ((t === "INS" || t === "DEL") && e.dataset && e.dataset.tc != null) { if (!has(f, "ti:") && !has(f, "td:")) f.add((t === "INS" ? "ti:" : "td:") + e.dataset.tc); continue; }
     if (t === "SPAN" && e.dataset && e.dataset.tf != null) { if (!has(f, "tf:")) f.add("tf:" + e.dataset.tf); continue; }
+    if (t === "SPAN" && e.dataset && e.dataset.fld != null) { if (!has(f, "fld:")) f.add("fld:" + e.dataset.fld); continue; }
     if (t === "B" || t === "STRONG") f.add("b");
     else if (t === "I" || t === "EM") f.add("i");
     else if (t === "U" || t === "INS") f.add("u");

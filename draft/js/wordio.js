@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.12.0";
+import * as md from "./md.js?v=1.9.22-d1.13.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -324,7 +324,23 @@ export async function readDocx(buf, opts = {}) {
         if (sz && /^\d+$/.test(sz) && sz !== usual.sz) f.add("sz:" + sz);
     return true;
   };
-  const runsOf = (p, paraFlags, heading, out) => {
+  // (RossDraft 1.13.0) a field (page number, date, a cross-reference...): one run showing its result, flagged
+  // "fld:<its instruction, URI-encoded>"; a HYPERLINK field: its words a link. A form field, a field in a field, or
+  // one across paragraphs (a contents list made by Word): its words shown, the scene read-only.
+  const fieldRun = (instr, runs, f0, href) => {
+    const ins = (instr || "").trim();
+    const hl = /^HYPERLINK\s+(?:\\l\s+)?"([^"]+)"/i.exec(ins);
+    if (hl) return runs.filter(Boolean).map((r) => ({ ...r, href: r.href || (/\\l/.test(ins) ? null : hl[1]) }));
+    const text = runs.filter((r) => r && r.t && !r.img).map((r) => r.t).join("").replace(/\n/g, " ");
+    const f = new Set((runs.find((r) => r && r.f) || {}).f || f0 || []);
+    for (const k of [...f]) if (k.startsWith("fld:")) f.delete(k);
+    f.add("fld:" + encodeURIComponent(ins || "PAGE"));
+    return [{ t: text || "[" + (ins.split(/\s+/)[0] || "FIELD").toUpperCase() + "]", f, href }];
+  };
+  const runsOf = (p, paraFlags, heading, out0) => {
+    // (1.13.0) the field being read (Word's begin / instruction / separate / result / end)
+    const fs = { depth: 0, instr: "", res: [], mode: "instr", f: null, odd: false };
+    const out = { push: (x) => (fs.depth > 0 ? (fs.mode === "res" || fs.depth > 1 ? fs.res.push(x) : 0) : out0.push(x)) };
     const run = (r, href, tc) => {
       const rpr = kid(r, "rPr");
       const f = new Set(paraFlags);
@@ -348,6 +364,24 @@ export async function readDocx(buf, opts = {}) {
       for (const c of r.children) {
         if (c.namespaceURI === W) {
           const t = c.localName;
+          if (t === "fldChar") {
+            const ty = wv(c, "fldCharType");
+            if (ty === "begin") {
+              if (fs.depth === 0) Object.assign(fs, { instr: "", res: [], mode: "instr", f: new Set(f), odd: false, href });
+              else fs.odd = "a field inside a field";
+              if (kid(c, "ffData")) fs.odd = "a form field";
+              fs.depth++;
+            } else if (ty === "separate" && fs.depth === 1) fs.mode = "res";
+            else if (ty === "end" && fs.depth > 0) {
+              fs.depth--;
+              if (fs.depth === 0) {
+                if (fs.odd) { trouble.add(fs.odd); for (const x of fs.res) out0.push(x); }
+                else for (const x of fieldRun(fs.instr, fs.res, fs.f, fs.href)) out0.push(x);
+              }
+            }
+            continue;
+          }
+          if (t === "instrText") { if (fs.depth === 1 && fs.mode === "instr") fs.instr += c.textContent; continue; }
           if (t === "t" || (t === "delText" && tc && tc.kind === "del")) { if (c.textContent) out.push({ t: c.textContent, f: new Set(f), href }); }
           else if (t === "footnoteReference" || t === "endnoteReference") out.push({ t: noteToken(t[0], wv(c, "id")), f: new Set(f), href });
           else if (t === "tab" || t === "ptab") out.push({ t: " ", f: new Set(f), href });
@@ -379,11 +413,25 @@ export async function readDocx(buf, opts = {}) {
           walk(c, h || href, tc);
         } else if (t === "ins" || t === "moveTo") walk(c, href, wv(c, "id") != null ? { key: "ti:" + wv(c, "id"), kind: "ins", el: c } : tc);
         else if (t === "del" || t === "moveFrom") walk(c, href, wv(c, "id") != null ? { key: "td:" + wv(c, "id"), kind: "del", el: c } : tc);
-        else if (["smartTag", "fldSimple", "customXml"].includes(t)) walk(c, href, tc);
+        else if (t === "fldSimple") {
+          // (1.13.0) its result's runs made the field's one run
+          const sub = [];
+          const keep = out0;
+          const at = keep.length;
+          walk(c, href, tc);
+          sub.push(...keep.splice(at));
+          for (const x of fieldRun(wv(c, "instr"), sub, null, href)) keep.push(x);
+        }
+        else if (["smartTag", "customXml"].includes(t)) walk(c, href, tc);
         else if (t === "sdt") { const sc = kid(c, "sdtContent"); if (sc) walk(sc, href, tc); }
       }
     };
     walk(p, null, null);
+    if (fs.depth > 0) {
+      // a field that goes on past the paragraph (a contents list, say): its words, read-only
+      trouble.add("a field across paragraphs (a contents list, say)");
+      for (const x of fs.res) out0.push(x);
+    }
   };
 
   const olAt = new Map();      // (1.7.0) the Word list each level's numbered items were last in
@@ -481,35 +529,54 @@ export async function readDocx(buf, opts = {}) {
   };
   const table = (tb, idx) => {
     tableChanges(tb);
-    const merged = [...tb.getElementsByTagNameNS(W, "gridSpan")].some((g) => +(g.getAttributeNS(W, "val") || g.getAttribute("w:val") || 1) > 1) ||
-      tb.getElementsByTagNameNS(W, "vMerge").length || tb.getElementsByTagNameNS(W, "hMerge").length;
     const nested = [...tb.getElementsByTagNameNS(W, "tc")].some((tc) => tc.getElementsByTagNameNS(W, "tbl").length);
-    if (merged) trouble.add("a table with merged cells");
     if (nested) trouble.add("a table inside a table");
-    if (!merged && !nested) {
-      const cells = [];
+    if (!nested) {
+      // (RossDraft 1.13.0) merged cells: the cells laid out on the table's grid; one merged into the cell to its left
+      // (Word's gridSpan, hMerge) or into the one above (vMerge) is covered: cover["row.col"] = "l" / "u"
+      const cells = [], cover = {};
+      const empty = () => [{ kind: null, runs: [] }];
       for (const tr of kids(tb, "tr")) {
+        const r = cells.length;
         const row = [];
+        const trPr = kid(tr, "trPr");
+        const gb = trPr && kid(trPr, "gridBefore");
+        for (let k = 0; k < (gb ? +wv(gb) || 0 : 0); k++) row.push(empty());
         for (const tc of kids(tr, "tc")) {
+          const tcPr = kid(tc, "tcPr");
+          const gs = Math.max(1, Math.min(63, +(kid(tcPr, "gridSpan") && wv(kid(tcPr, "gridSpan"))) || 1));
+          const vm = kid(tcPr, "vMerge");
+          const hm = kid(tcPr, "hMerge");
           const paras = [];
           for (const p of kids(tc, "p")) {
             for (const ln of paragraph(p)) {
-              paras.push({ kind: null, runs: ln.runs.filter((r) => !r.img), align: ln.align || null });
+              paras.push({ kind: null, runs: ln.runs.filter((x) => !x.img), align: ln.align || null });
             }
           }
           if (tc.getElementsByTagNameNS(W, "drawing").length || tc.getElementsByTagNameNS(W, "pict").length) trouble.add("a picture in a table");
-          row.push(paras.length ? paras : [{ kind: null, runs: [] }]);
+          const col = row.length;
+          row.push(paras.length ? paras : empty());
+          if (vm && wv(vm) !== "restart" && r > 0) cover[r + "." + col] = "u";
+          else if (hm && wv(hm) !== "restart" && col > 0) cover[r + "." + col] = "l";
+          for (let k = 1; k < gs; k++) { cover[r + "." + row.length] = "l"; row.push(empty()); }
         }
         if (row.length) cells.push(row);
       }
       if (cells.length) {
         const w = Math.max(...cells.map((r) => r.length));
         for (const r of cells) while (r.length < w) r.push([{ kind: null, runs: [] }]);
+        // a cell "merged into the one above" where there's nothing above to merge into: a cell of its own
+        for (const k of Object.keys(cover)) {
+          const [r, c] = k.split(".").map(Number);
+          if (cover[k] === "u" && (r === 0 || cover[(r - 1) + "." + c] === "l")) delete cover[k];
+          if (cover[k] === "l" && c === 0) delete cover[k];
+        }
         const bd = kid(kid(tb, "tblPr"), "tblBorders");
         const off = (e) => ["none", "nil"].includes(e.getAttributeNS(W, "val") || e.getAttribute("w:val"));
         // (no lines of its own and no table style: Word shows none)
         const noLines = bd ? kids(bd).length > 0 && kids(bd).every(off) : !kid(kid(tb, "tblPr"), "tblStyle");
         const ln = { kind: "table", runs: [], cells, noLines, code: false, depth: 1 };
+        if (Object.keys(cover).length) ln.cover = cover;
         const gw = kids(kid(tb, "tblGrid"), "gridCol").map((g) => parseInt(g.getAttributeNS(W, "w") || g.getAttribute("w:w") || "0", 10));
         if (gw.length === w && gw.every((x) => x > 0)) ln.widths = gw;
         if (idx != null) ln.src = idx;
@@ -608,6 +675,7 @@ export function toNoteLines(lines, picture) {
       const out = { kind: "table", runs: [], cells: ln.cells.map((r) => r.map((c) => toNoteLines(c, picture).map((p) => ({ kind: null, runs: p.runs })))) };
       if (ln.noLines) out.noLines = true;
       if (ln.widths) out.widths = ln.widths.slice();
+      if (ln.cover) out.cover = { ...ln.cover };          // (1.13.0) merged cells
       return out;
     }
     if (ln.code) {
@@ -642,7 +710,7 @@ export function fromNoteLines(lines) {
         .map((p) => ({ kind: null, depth: 1, code: false, align: null, restart: false, runs: p.runs }))));
       // (table: the rows' words, for the writers that only know those: RTF, e-book, print)
       return { kind: "table", depth: 1, code: false, runs: [], cells, noLines: !!ln.noLines, equal: !!ln.equal,
-        widths: ln.widths && ln.widths.length ? ln.widths.slice() : null,
+        widths: ln.widths && ln.widths.length ? ln.widths.slice() : null, cover: ln.cover ? { ...ln.cover } : null,
         table: cells.map((r) => r.map((c) => c.map((p) => p.runs.map((x) => x.t || "").join("")).join(" "))) };
     }
     if (ln.raw != null && (ln.code || ln.runs.map((r) => r.t).join("") === ln.raw)) {
@@ -851,8 +919,17 @@ export function cellsTableXml(ln, width = 9072) {
   return `<w:tbl><w:tblPr><w:tblW w:w="${ws.reduce((a, b2) => a + b2, 0)}" w:type="dxa"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(b).join("")}</w:tblBorders>` +
     '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
     `<w:tblGrid>${ws.map((x2) => `<w:gridCol w:w="${x2}"/>`).join("")}</w:tblGrid>` +
-    rows.map((r) => `<w:tr>${Array.from({ length: n }, (_, k) => `<w:tc><w:tcPr><w:tcW w:w="${ws[k]}" w:type="dxa"/></w:tcPr>` +
-      ((r[k] && r[k].length ? r[k] : [{ runs: [] }]).map(para).join("")) + "</w:tc>").join("")}</w:tr>`).join("") +
+    rows.map((r, ri) => `<w:tr>${Array.from({ length: n }, (_, k) => {
+      // (1.13.0) merged cells: one tc for a cell and those merged into it from the right; vMerge down
+      const cv = ln.cover || {};
+      if (cv[ri + "." + k] === "l") return "";
+      let span = 1;
+      while (k + span < n && cv[ri + "." + (k + span)] === "l") span++;
+      const vm = cv[ri + "." + k] === "u" ? "<w:vMerge/>" : cv[(ri + 1) + "." + k] === "u" ? '<w:vMerge w:val="restart"/>' : "";
+      const wsum = ws.slice(k, k + span).reduce((a, b2) => a + b2, 0);
+      return `<w:tc><w:tcPr><w:tcW w:w="${wsum}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ""}${vm}</w:tcPr>` +
+        ((cv[ri + "." + k] !== "u" && r[k] && r[k].length ? r[k] : [{ runs: [] }]).map(para).join("")) + "</w:tc>";
+    }).join("")}</w:tr>`).join("") +
     "</w:tbl>";
 }
 

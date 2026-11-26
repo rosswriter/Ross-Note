@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.12.0";
-import * as ed from "./editor.js?v=1.9.22-d1.12.0";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.12.0";
-import * as spell from "./spell.js?v=1.9.22-d1.12.0";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.12.0";
+import * as md from "./md.js?v=1.9.22-d1.13.0";
+import * as ed from "./editor.js?v=1.9.22-d1.13.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.13.0";
+import * as spell from "./spell.js?v=1.9.22-d1.13.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.13.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.12.0";
+import { ED } from "./edition.js?v=1.9.22-d1.13.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.12.0")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.13.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.12.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.13.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1645,7 +1645,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
+    const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1777,7 +1777,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.12.0");
+    const EP = await import("./epub.js?v=1.9.22-d1.13.0");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1801,7 +1801,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.12.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.13.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1842,7 +1842,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2549,7 +2549,9 @@ const WORD_RE = /[\p{L}\p{N}]+(?:['\u2019-][\p{L}\p{N}]+)*/gu;
 function wordsIn(text) { return (text.match(WORD_RE) || []).length; }
 
 function pageWords(pg) {
-  return [...pg.children].map((d) => ed.lineText(d)).join("\n").split(md.OBJ).join("").split("\u200b").join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
+  // (1.13.0) taken-out words (tracked) aren't counted
+  const textOf = (d) => { if (!d.querySelector("del.tc")) return ed.lineText(d); const c = d.cloneNode(true); for (const x of c.querySelectorAll("del.tc")) x.remove(); return ed.lineText(c); };
+  return [...pg.children].map(textOf).join("\n").split(md.OBJ).join("").split("\u200b").join("").replace(/\uE000[fe]-?\d+\uE001/g, "");
 }
 
 let wordsTimer = 0;
@@ -2679,7 +2681,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.12.0"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.13.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2703,7 +2705,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.12.0");
+  const X = await import("./export.js?v=1.9.22-d1.13.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2731,7 +2733,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.12.0");
+  const X = await import("./export.js?v=1.9.22-d1.13.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -4583,7 +4585,7 @@ const MENU_ORDER = {
   edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Select All",
     "Paste Special", "-", "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", "Next Result (or Page)", "Previous Result (or Page)",
     /^List All/, "Search the Notes (the list)", "-", "Go To…", "-", "Search the Web"],
-  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Special Character…", "Link…", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
+  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Special Character…", "Link…", "Field", "Header and Footer…", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
     "Bookmark…", "-", "Date", "Date and Time"],
   format: ["Font", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Highlight Colour", "Text Colour",
     "Superscript", "Subscript", "Change Case", "-", "Copy Formatting", "Paste Formatting", "-",
@@ -4704,7 +4706,8 @@ function menuItemsAll(name) {
       "-",
       { label: "Picture…", fn: COMMANDS.picture },
       ...(ED.project ? [{ label: "Table", sub: tableItems() }, { label: "Page Break", fn: pageBreak, keys: "Ctrl+Enter" },
-        { label: "Special Character…", fn: specialCharDialog }, { label: "Link…", fn: linkDialog, keys: "Ctrl+Alt+K" }] : []),
+        { label: "Special Character…", fn: specialCharDialog }, { label: "Link…", fn: linkDialog, keys: "Ctrl+Alt+K" },
+        { label: "Field", sub: fieldItems() }, { label: "Header and Footer…", fn: headerFooterDialog }] : []),
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
       ...(ED.project ? [{ label: "Bookmark…", fn: insertBookmark, keys: "Ctrl+Shift+F5", off: !A.note }] : []),
@@ -5169,7 +5172,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.12.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.13.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5317,7 +5320,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.12.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.13.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5389,7 +5392,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.12.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.13.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5593,7 +5596,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5630,7 +5633,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.12.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5669,7 +5672,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.12.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.13.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5961,7 +5964,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.12.0");
+  const R = await import("./rtf.js?v=1.9.22-d1.13.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6053,7 +6056,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -7899,7 +7902,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.12.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -8002,7 +8005,14 @@ function caretInto(el, atEnd) {
   sel.addRange(r);
 }
 function tableRO() { return page.contentEditable === "false" || !!(A.note && A.note.readOnly); }
-function tableChanged() { ed.relayout(page); changed(); }
+function tableChanged() {
+  // (1.13.0) merged cells drawn again (a row or column put in or taken out)
+  const td = cellOfSel();
+  const t = td && td.closest("table.rtable");
+  for (const x of t ? [t] : page.querySelectorAll("table.rtable")) ed.applySpans(x);
+  ed.relayout(page);
+  changed();
+}
 function insertTableAt(rows, cols) {
   if (tableRO()) return;
   if (cellOfSel()) { toast("Not inside a table: put the cursor where the table should go."); return; }
@@ -8041,7 +8051,20 @@ function tableRow(where) {
   if (!td || tableRO()) return;
   const { tr } = tableOf(td);
   const nr = document.createElement("tr");
-  for (let k = 0; k < tr.children.length; k++) nr.appendChild(newCell());
+  // (1.13.0) inside a merge that goes down: the new row is part of it too (as the row below it is)
+  const below = where > 0 ? tr.nextElementSibling : tr;
+  for (let k = 0; k < tr.children.length; k++) {
+    const nc = newCell();
+    const b = below && below.children[k];
+    if (b && b.dataset.m === "u") nc.dataset.m = "u";
+    else if (b && b.dataset.m === "l") {
+      // merged across, in a merge that also goes down through here: the new cell too
+      let i = k;
+      while (i > 0 && below.children[i].dataset.m === "l") i--;
+      if (below.children[i].dataset.m === "u") nc.dataset.m = "l";
+    }
+    nr.appendChild(nc);
+  }
   if (where > 0) tr.after(nr); else tr.before(nr);
   caretInto(nr.children[Math.min(tableOf(td).c, nr.children.length - 1)], false);
   tableChanged();
@@ -8063,6 +8086,9 @@ function tableCol(where) {
   for (const tr of tb.children) {
     const ref = tr.children[c];
     const nc = newCell();
+    // (1.13.0) inside a merge that goes across: the new cell is part of it (as the one to its right is)
+    const right = where > 0 ? ref.nextElementSibling : ref;
+    if (right && right.dataset.m === "l") nc.dataset.m = "l";
     if (where > 0) ref.after(nc); else ref.before(nc);
     if (tr === td.parentElement) first = nc;
   }
@@ -8089,6 +8115,12 @@ function tableDelete(what) {
   }
   if (what === "row") {
     const to = tb.children[r + 1] || tb.children[r - 1];
+    // (1.13.0) a cell merged down over the row below: that one takes its place (and its words)
+    const next = tb.children[r + 1];
+    if (next) [...tr.children].forEach((x, k) => {
+      const y = next.children[k];
+      if (y && y.dataset.m === "u" && x.dataset.m !== "u") { delete y.dataset.m; y.textContent = ""; for (const cp of [...x.childNodes]) y.appendChild(cp); if (!y.firstChild) y.appendChild(cellPara()); }
+    });
     tr.remove();
     caretInto(to.children[Math.min(c, to.children.length - 1)], false);
   } else {
@@ -8099,7 +8131,12 @@ function tableDelete(what) {
       ws[Math.min(c, ws.length - 1)] += gone;
       ed.setWidths(t, ws);
     }
-    for (const row of tb.children) if (row.children[c]) row.children[c].remove();
+    for (const row of tb.children) {
+      const x = row.children[c], y = row.children[c + 1];
+      // (1.13.0) a cell merged across into the next column: that one takes its place
+      if (x && y && y.dataset.m === "l" && x.dataset.m !== "l") { if (x.dataset.m) y.dataset.m = x.dataset.m; else delete y.dataset.m; y.textContent = ""; for (const cp of [...x.childNodes]) y.appendChild(cp); if (!y.firstChild) y.appendChild(cellPara()); }
+      if (x) x.remove();
+    }
     caretInto(tr.children[Math.min(c, tr.children.length - 1)], false);
   }
   tableChanged();
@@ -8129,6 +8166,55 @@ function setGridlines() {
   saveSettings();
   document.body.classList.toggle("gridlines", !!S.settings.gridlines);
 }
+// (1.13.0) Merge Cells: the cell with the one to its right (Merge Right) or below it (Merge Down), as Word does: the
+// words of the cell taken in put after its own; Split Cells: a merged cell back to the cells it covered (empty)
+function anchorOf(td) {
+  // a covered cell: the cell it's merged into
+  const tb = td.parentElement.parentElement;
+  let r = [...tb.children].indexOf(td.parentElement), c = [...td.parentElement.children].indexOf(td);
+  while (tb.children[r] && tb.children[r].children[c] && tb.children[r].children[c].dataset.m) {
+    if (tb.children[r].children[c].dataset.m === "u") r--; else c--;
+  }
+  return tb.children[r].children[c];
+}
+function mergeCells(dir) {
+  const td0 = cellOfSel();
+  if (!td0 || tableRO()) return false;
+  const td = anchorOf(td0);
+  const { tb, r, c } = tableOf(td);
+  const cs = td.colSpan || 1, rs = td.rowSpan || 1;
+  const target = dir === "right" ? (tb.children[r] && tb.children[r].children[c + cs]) : (tb.children[r + rs] && tb.children[r + rs].children[c]);
+  if (!target || target.dataset.m) { toast(dir === "right" ? "There's no cell to its right to merge with." : "There's no cell below it to merge with."); return false; }
+  if (dir === "right" ? (target.rowSpan || 1) !== rs : (target.colSpan || 1) !== cs) {
+    toast("Those cells aren't the same " + (dir === "right" ? "height" : "width") + ": they can't be merged into one."); return false;
+  }
+  const tr0 = tableOf(target).r, tc0 = tableOf(target).c, trs = target.rowSpan || 1, tcs = target.colSpan || 1;
+  // its words after the cell's own (when it has any)
+  const words = ed.readCell(target).some((p) => (p.runs || []).some((x) => (x.t || "").trim()));
+  if (words) for (const cp of [...target.childNodes]) td.appendChild(cp);
+  for (let rr = tr0; rr < tr0 + trs; rr++) for (let cc = tc0; cc < tc0 + tcs; cc++) {
+    const x = tb.children[rr].children[cc];
+    x.dataset.m = dir === "down" && cc === c ? "u" : "l";
+    x.textContent = "";
+    x.appendChild(cellPara());
+  }
+  tidyCell(td);
+  caretInto(td, true);
+  tableChanged();
+  return true;
+}
+function splitCells() {
+  const td0 = cellOfSel();
+  if (!td0 || tableRO()) return false;
+  const td = anchorOf(td0);
+  const { tb, r, c } = tableOf(td);
+  const cs = td.colSpan || 1, rs = td.rowSpan || 1;
+  if (cs === 1 && rs === 1) { toast("That cell isn't merged."); return false; }
+  for (let rr = r; rr < r + rs; rr++) for (let cc = c; cc < c + cs; cc++) delete tb.children[rr].children[cc].dataset.m;
+  caretInto(td, true);
+  tableChanged();
+  return true;
+}
 function tableItems() {
   const td = cellOfSel(), ro = tableRO(), off = !td || ro;
   const line = td ? tableOf(td).line : null;
@@ -8143,6 +8229,10 @@ function tableItems() {
     { label: "Delete Row", fn: () => tableDelete("row"), off },
     { label: "Delete Column", fn: () => tableDelete("col"), off },
     { label: "Delete Table", fn: () => tableDelete("table"), off },
+    "-",
+    { label: "Merge with the Cell to the Right", fn: () => mergeCells("right"), off },
+    { label: "Merge with the Cell Below", fn: () => mergeCells("down"), off },
+    { label: "Split Merged Cells", fn: splitCells, off: off || !(td && ((anchorOf(td).colSpan || 1) > 1 || (anchorOf(td).rowSpan || 1) > 1)) },
     "-",
     { label: "Make Columns Equal", fn: tableEqual, off },
     { label: "Hide Table Lines", on: !!(line && line.dataset.nolines), fn: tableLines, off },
@@ -8378,7 +8468,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.12.0"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.13.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -8994,7 +9084,8 @@ function tcDate(d) {
 }
 function tcLabel(c) {
   if (!c) return "A change";
-  const w = (c.words || "").replace(/\s+/g, " ").trim();
+  let w = (c.words || "").replace(/\s+/g, " ").trim();
+  if (!w && A.page) w = [...A.page.querySelectorAll(`[data-tc="${c.id}"], [data-tf="${c.id}"]`)].map((e) => e.textContent).join("").replace(/\s+/g, " ").trim();
   return `${TC_KINDS[c.kind] || "Changed"}${c.author ? " by " + c.author : ""}${c.date ? ", " + tcDate(c.date) : ""}` +
     (w && (c.kind === "ins" || c.kind === "del" || c.kind === "fmt") ? `: “${w.length > 50 ? w.slice(0, 49) + "…" : w}”` : "");
 }
@@ -9174,7 +9265,8 @@ async function changesDialog() {
   box.className = "tclist";
   const fill = () => {
     box.textContent = "";
-    const list = n.changes || [];
+    const shownIds = new Set(changesInPage().map((c) => String(c.id)));
+    const list = (n.changes || []).filter((c) => !c.mine || shownIds.has(String(c.id)));
     if (!list.length) { box.textContent = "No tracked changes in this " + (S.store.isDoc ? "document." : "scene."); return; }
     const inPage = new Map(changesInPage().map((c) => [String(c.id), c]));
     for (const c of list) {
@@ -9249,6 +9341,8 @@ function reviewItems() {
   const n = tcNote();
   const has = !!(A.note && A.note.changes && A.note.changes.length);
   return [
+    { label: "Track Changes", on: !!S.settings.track, fn: () => toggleTrack(), keys: "Ctrl+Shift+E" },
+    "-",
     { label: "Changes…", fn: changesDialog, off: !n },
     "-",
     { label: "Next Change", fn: () => stepChange(1), keys: "Alt+Page Down", off: !has },
@@ -9294,8 +9388,447 @@ document.addEventListener("keydown", (e) => {
   fn();
 }, true);
 
+// ------------------------------------------------------------------ RossDraft 1.13.0: fields
+// Insert ▸ Field: Page Number, Number of Pages, Date, Title, Author: Word's fields (PAGE, NUMPAGES, DATE, TITLE,
+// AUTHOR), shown as their result in a box of their own; Word brings them up to date when it opens or prints the
+// file. Update Fields (F9): their results here worked out again. Fields from Word (cross-references, sequence
+// numbers…) are shown with the result Word last gave them.
+const FIELDS = [["page", "Page Number", "PAGE"], ["pages", "Number of Pages", "NUMPAGES"], ["date", "Date", 'DATE \\@ "d MMMM yyyy"'],
+  ["title", "Title", "TITLE"], ["author", "Author", "AUTHOR"]];
+function fieldResult(instr, at) {
+  const w = (instr || "").trim().split(/\s+/)[0].toUpperCase();
+  if (w === "DATE" || w === "CREATEDATE" || w === "SAVEDATE" || w === "PRINTDATE") return new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  if (w === "TITLE") return (S.store && !S.store.isDoc && S.store.label) || (A.note && A.note.title) || "";
+  if (w === "AUTHOR") return S.settings.commentAuthor || "";
+  if (w === "PAGE" || w === "NUMPAGES") {
+    const starts = typeof pageStarts === "function" ? pageStarts(A.page) : [];
+    if (w === "NUMPAGES") return String(Math.max(1, starts.length));
+    let k = 0;
+    const top = at ? at.getBoundingClientRect().top : 0;
+    for (let i = 0; i < starts.length; i++) if (starts[i].getBoundingClientRect().top <= top + 1) k = i;
+    return String(k + 1);
+  }
+  return null;
+}
+async function insertField(kind) {
+  if (!editableHere()) return;
+  const def = FIELDS.find((x) => x[0] === kind);
+  if (!def) return;
+  if (kind === "author" && !S.settings.commentAuthor) { const a = await askAuthor(); if (!a) return; }
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !A.page.contains(sel.anchorNode)) { toast("Put the caret where the field goes first."); return; }
+  const before = A.page.innerHTML;
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const sp = document.createElement("span");
+  sp.className = "fld";
+  sp.contentEditable = "false";
+  sp.dataset.fld = encodeURIComponent(def[2]);
+  sp.title = "Field: " + def[2];
+  r.insertNode(sp);
+  sp.textContent = fieldResult(def[2], sp) || "[" + def[2].split(" ")[0] + "]";
+  const r2 = document.createRange();
+  r2.setStartAfter(sp);
+  r2.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r2);
+  afterEdit();
+  OL.undo = { page: A.page, before, after: A.page.innerHTML };
+}
+function updateFields() {
+  const list = [...A.page.querySelectorAll("span.fld[data-fld]")];
+  let k = 0;
+  for (const sp of list) {
+    let ins = "";
+    try { ins = decodeURIComponent(sp.dataset.fld); } catch (e) { continue; }
+    const v = fieldResult(ins, sp);
+    if (v != null && v !== sp.textContent) { sp.textContent = v; k++; }
+  }
+  if (k) afterEdit();
+  toast(list.length ? `${list.length} field${list.length === 1 ? "" : "s"}${k ? ", " + k + " brought up to date" : ", all up to date"}` : "No fields here.", 2000);
+  return k;
+}
+function fieldItems() {
+  return [...FIELDS.map(([k, l]) => ({ label: l, fn: () => insertField(k) })), "-", { label: "Update Fields", fn: updateFields, keys: "F9" }];
+}
+document.addEventListener("keydown", (e) => {
+  if (!ED.project || e.key !== "F9" || e.ctrlKey || e.altKey || e.metaKey || !$("dialog").hidden) return;
+  if (!P.some((p) => p.page === document.activeElement)) return;
+  e.preventDefault();
+  updateFields();
+}, true);
+
+// ------------------------------------------------------------------ RossDraft 1.13.0: Header and Footer… (as Ross Writer)
+// The Word file's header and footer: left, centre and right text with the fields [Page], [Pages], [Title], [Author],
+// [Date]; layouts to start from; nothing on the first page; numbering's first number. Saved as real Word headers and
+// footers (Word keeps their numbers up to date). In a project, each scene's file has its own; Compile uses the
+// first scene's.
+const HF_PRESETS = [["", "Choose a layout…"], ["bc", "Page number, bottom centre"], ["br", "Page number, bottom right"],
+  ["of", "“Page 3 of 220”, bottom centre"], ["ms", "Manuscript: Surname / Title / page, top right"],
+  ["tt", "Title top centre, page bottom centre"], ["none", "No headers or footers"]];
+async function headerFooterDialog() {
+  const n = A.note;
+  const st = S.store;
+  if (!n || !st || typeof st.headerFooter !== "function" || (n.raw && n.raw.pdf)) { toast("Headers and footers are in Word files: open a Ross Writer project's scene or a Word document."); return; }
+  await flushSave();
+  let got;
+  try { got = await queue(() => st.headerFooter(n)); } catch (e) { got = null; }
+  if (!got) { toast("This scene's Word file can't be read."); return; }
+  const { hf, props, elaborate } = got;
+  if (!props.author && S.settings.commentAuthor) props.author = S.settings.commentAuthor;
+  if (!props.title) props.title = st.isDoc ? n.title : st.label || n.title;
+  const box = document.createElement("div");
+  box.className = "cform hfform";
+  box.innerHTML = (elaborate ? '<div class="hfwarn">This file’s own headers or footers have more in them (pictures, tables, several sections). They’re kept as they are unless you press OK here, which puts the simple ones below in their place.</div>' : "") +
+    '<label>Title<input type="text" class="hf-title"></label><label>Author<input type="text" class="hf-author"></label>' +
+    '<label>Layout<select class="hf-preset">' + HF_PRESETS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("") + "</select></label>" +
+    '<div class="hfgrid"><span></span><span>Left</span><span>Centre</span><span>Right</span>' +
+    ["header", "footer"].map((k) => `<span>${k === "header" ? "Header" : "Footer"}</span>` + [0, 1, 2].map((i) => `<input type="text" class="hf-${k}${i}">`).join("")).join("") + "</div>" +
+    '<div class="hfins">Insert: ' + [["Page", "Page Number"], ["Pages", "Number of Pages"], ["Title", "Title"], ["Author", "Author"], ["Date", "Date"]]
+      .map(([k, l]) => `<button type="button" data-f="${k}">${l}</button>`).join("") + "</div>" +
+    '<label class="hfrow"><input type="checkbox" class="hf-first"> Different first page (nothing on page 1)</label>' +
+    '<label class="hfrow">Start numbering at <input type="number" class="hf-start" min="0" max="9999" style="width:6em"></label>' +
+    '<div class="hfhint">Fields show as [Page], [Title]… here, and as the real values when the file is printed or opened in Word.</div>';
+  const q = (c) => box.querySelector(c);
+  q(".hf-title").value = props.title || "";
+  q(".hf-author").value = props.author || "";
+  for (const k of ["header", "footer"]) for (const i of [0, 1, 2]) q(`.hf-${k}${i}`).value = hf[k][i] || "";
+  q(".hf-first").checked = !!hf.first;
+  q(".hf-start").value = String(hf.start == null ? 1 : hf.start);
+  let last = q(".hf-footer1");
+  for (const inp of box.querySelectorAll(".hfgrid input")) inp.addEventListener("focus", () => { last = inp; });
+  for (const b of box.querySelectorAll(".hfins button")) b.addEventListener("click", () => {
+    const t = "[" + b.dataset.f + "]";
+    const a = last.selectionStart ?? last.value.length, z = last.selectionEnd ?? a;
+    last.value = last.value.slice(0, a) + t + last.value.slice(z);
+    last.focus();
+    last.setSelectionRange(a + t.length, a + t.length);
+  });
+  q(".hf-preset").addEventListener("change", () => {
+    const v = q(".hf-preset").value;
+    const set = (h, f, first) => {
+      for (const i of [0, 1, 2]) { q(".hf-header" + i).value = h[i]; q(".hf-footer" + i).value = f[i]; }
+      if (first != null) q(".hf-first").checked = first;
+    };
+    const sur = (q(".hf-author").value.trim().split(/\s+/).pop() || "Surname");
+    if (v === "bc") set(["", "", ""], ["", "[Page]", ""], false);
+    else if (v === "br") set(["", "", ""], ["", "", "[Page]"], false);
+    else if (v === "of") set(["", "", ""], ["", "Page [Page] of [Pages]", ""], false);
+    else if (v === "ms") set(["", "", sur + " / [Title] / [Page]"], ["", "", ""], true);
+    else if (v === "tt") set(["", "[Title]", ""], ["", "[Page]", ""], false);
+    else if (v === "none") set(["", "", ""], ["", "", ""], false);
+  });
+  const v = await ask("Header and Footer", box, [["OK", "ok", true]]);
+  if (v !== "ok") return;
+  const nhf = { header: [0, 1, 2].map((i) => q(".hf-header" + i).value), footer: [0, 1, 2].map((i) => q(".hf-footer" + i).value),
+    first: q(".hf-first").checked, start: Math.max(0, parseInt(q(".hf-start").value, 10) || 0) };
+  const nprops = { title: q(".hf-title").value.trim(), author: q(".hf-author").value.trim() };
+  try { await queue(() => st.setHeaderFooter(n, nhf, nprops)); }
+  catch (e) { dialog("Header and Footer", (e && e.message) || String(e)); return; }
+  for (const qq of P) if (qq.note === n && !qq.joined && qq.page.dataset.loaded) showText(n.text, qq);
+  toast("Header and footer saved into the Word file", 2000);
+}
+
+// ------------------------------------------------------------------ RossDraft 1.13.0: Track Changes (recording)
+// Review ▸ Track Changes (Ctrl+Shift+E): in a Word scene or document, what you type goes in as an addition and what
+// you delete stays, struck through, as a deletion, each under your name (Insert ▸ Your Name for Comments) and the
+// time, as Word records them; Enter marks a new paragraph end, joining two paragraphs a taken-out one. Deleting
+// your own addition takes it away. Pasting goes in as an addition (its words and paragraphs). Formatting isn't
+// recorded. While it's on, Ctrl+Z / Ctrl+Y take back and redo these, step by step.
+const TRK = { undo: [], redo: [] };
+function trackWanted() { return !!(ED.project && S.settings.track); }
+function trackingHere(p = A) {
+  return trackWanted() && p.note && Array.isArray(p.note.changes) && !p.joined && p.page.contentEditable === "true" && !(p.note.readOnly);
+}
+function showTracking() {
+  const b = $("tracking");
+  if (b) b.hidden = !trackWanted();
+}
+async function toggleTrack(on) {
+  const want = on == null ? !S.settings.track : !!on;
+  if (want && !S.settings.commentAuthor) { const a = await askAuthor(); if (!a) return; }
+  S.settings.track = want;
+  saveSettings();
+  showTracking();
+  TRK.undo.length = 0;
+  TRK.redo.length = 0;
+  toast(want ? (A.note && Array.isArray(A.note.changes) ? "Track Changes on: what you type and delete is marked, under " + S.settings.commentAuthor
+    : "Track Changes on (for Word scenes and documents)") : "Track Changes off", 2500);
+}
+$("tracking") && $("tracking").addEventListener("click", () => toggleTrack(false));
+setTimeout(showTracking, 0);
+// a new change, under your name, now
+function newChangeId(kind) {
+  const n = A.note;
+  let max = 0;
+  for (const c of n.changes) if (/^\d+$/.test(String(c.id))) max = Math.max(max, +c.id);
+  for (const e of A.page.querySelectorAll("[data-tc], [data-tf]")) max = Math.max(max, +(e.dataset.tc || e.dataset.tf) || 0);
+  for (const e of A.page.querySelectorAll("[data-tcp]")) for (const t of e.dataset.tcp.split(" ")) max = Math.max(max, +t.slice(1) || 0);
+  const id = String(Math.max(max + 1, 1001));
+  n.changes.push({ id, kind, author: S.settings.commentAuthor || "", date: new Date().toISOString().replace(/\.\d+Z$/, "Z"), words: "", mine: true });
+  return id;
+}
+function isMine(el) {
+  const c = el && tcInfo(el.dataset.tc);
+  return !!(c && c.mine);
+}
+function trkSnap() {
+  TRK.undo.push({ html: A.page.innerHTML, c: ed.caret(A.page), changes: A.note.changes.slice() });
+  if (TRK.undo.length > 100) TRK.undo.shift();
+  TRK.redo.length = 0;
+}
+function trkDone() {
+  paintAuthors(A.page, A.note);
+  afterEdit();
+}
+// put text in at the caret as an addition (yours goes on growing as you type)
+function trackInsert(text) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !text) return false;
+  let r = sel.getRangeAt(0);
+  if (!r.collapsed) { trackDeleteRange(r, false); r = sel.getRangeAt(0); r.collapse(false); }
+  const node = r.startContainer, off = r.startOffset;
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  const host = el && el.closest("ins.tc[data-tc]");
+  if (host && A.page.contains(host) && isMine(host)) {
+    // in your own addition: the words go in there
+    if (node.nodeType === 3) { node.insertData(off, text); placeAt(node, off + text.length); }
+    else { const t = document.createTextNode(text); r.insertNode(t); placeAt(t, text.length); }
+    return true;
+  }
+  // just after your own addition: on the end of it
+  const before = node.nodeType === 3 ? (off === 0 ? node.previousSibling : null) : node.childNodes[off - 1];
+  if (before && before.nodeType === 1 && before.matches && before.matches("ins.tc[data-tc]") && isMine(before)) {
+    const last = before.lastChild && before.lastChild.nodeType === 3 ? before.lastChild : before.appendChild(document.createTextNode(""));
+    last.appendData(text);
+    placeAt(last, last.data.length);
+    return true;
+  }
+  // in someone else's addition: it's split round yours
+  if (host && A.page.contains(host)) {
+    const tail = document.createRange();
+    tail.setStart(node, off);
+    tail.setEnd(host, host.childNodes.length);
+    const rest = host.cloneNode(false);
+    rest.appendChild(tail.extractContents());
+    host.after(rest);
+    r = document.createRange();
+    r.setStartAfter(host);
+    r.collapse(true);
+  }
+  const ins = document.createElement("ins");
+  ins.className = "tc";
+  ins.dataset.tc = newChangeId("ins");
+  ins.textContent = text;
+  r.insertNode(ins);
+  placeAt(ins.firstChild, text.length);
+  return true;
+}
+function placeAt(node, off) {
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(node, off);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+// a range taken out: your own additions in it go; the rest stays, marked; a paragraph end crossed is marked
+function trackDeleteRange(range, backward) {
+  const pg = A.page;
+  const lines = [...pg.children];
+  const l0 = ed.lineOf(range.startContainer, pg), l1 = ed.lineOf(range.endContainer, pg);
+  const i0 = lines.indexOf(l0), i1 = lines.indexOf(l1);
+  if (i0 < 0 || i1 < 0) return false;
+  let id = null;
+  const delId = () => (id = id || newChangeId("del"));
+  const made = [];
+  // the text nodes in the range (not in a deletion already)
+  const tw = document.createTreeWalker(range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentNode,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  const items = [];
+  for (let n = tw.currentNode; n; n = tw.nextNode()) {
+    if (!range.intersectsNode(n)) continue;
+    if (n.nodeType === 1) {
+      // a field, a picture or a note's mark: taken out whole
+      if ((n.matches("span.fld, img, .fnref") && !n.closest("del.tc")) && range.intersectsNode(n)) {
+        const rr = document.createRange(); rr.selectNode(n);
+        if (range.compareBoundaryPoints(Range.START_TO_START, rr) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, rr) >= 0) items.push([n, null, null]);
+      }
+      continue;
+    }
+    const p = n.parentElement;
+    if (!p || p.closest("del.tc, span.fld, .fnref") || p.closest('[contenteditable="false"]:not(.page)')) continue;
+    const s0 = n === range.startContainer ? range.startOffset : 0;
+    const e0 = n === range.endContainer ? range.endOffset : n.data.length;
+    if (e0 > s0) items.push([n, s0, e0]);
+  }
+  for (const [n, s0, e0] of items) {
+    if (s0 == null) {
+      const del = document.createElement("del");
+      del.className = "tc"; del.contentEditable = "false"; del.dataset.tc = delId();
+      n.before(del); del.appendChild(n);
+      made.push(del);
+      continue;
+    }
+    const host = n.parentElement.closest("ins.tc[data-tc]");
+    if (host && isMine(host)) {
+      n.deleteData(s0, e0 - s0);
+      if (!host.textContent) host.remove();
+      continue;
+    }
+    let seg = n;
+    if (e0 < seg.data.length) seg.splitText(e0);
+    if (s0 > 0) seg = seg.splitText(s0);
+    const del = document.createElement("del");
+    del.className = "tc"; del.contentEditable = "false"; del.dataset.tc = delId();
+    seg.before(del); del.appendChild(seg);
+    made.push(del);
+  }
+  // yours side by side: one deletion (as Word keeps them)
+  const sib = (el, dir) => { let x = dir < 0 ? el.previousSibling : el.nextSibling; while (x && x.nodeType === 3 && !x.data) x = dir < 0 ? x.previousSibling : x.nextSibling; return x; };
+  for (const del of made) {
+    if (!del.isConnected) continue;
+    for (const dir of [-1, 1]) {
+      const o = sib(del, dir);
+      if (o && o.nodeType === 1 && o.matches("del.tc[data-tc]") && o !== del && isMine(o)) {
+        const gone = del.dataset.tc;
+        if (dir < 0) { while (del.firstChild) o.appendChild(del.firstChild); } else { while (del.firstChild) o.insertBefore(del.lastChild, o.firstChild); }
+        del.remove();
+        if (gone !== o.dataset.tc && !A.page.querySelector(`[data-tc="${gone}"]`)) A.note.changes = A.note.changes.filter((c) => c.id !== gone);
+        made[made.indexOf(del)] = o;
+        break;
+      }
+    }
+  }
+  // the paragraph ends crossed: taken out (marked); one you made yourself goes (the two lines joined again)
+  const join = [];
+  for (let i = i0; i < i1; i++) {
+    const ln = lines[i];
+    const toks = (ln.dataset.tcp || "").split(" ").filter(Boolean);
+    const mineIns = toks.find((t) => t[0] === "i" && (tcInfo(t.slice(1)) || {}).mine);
+    if (mineIns) { join.push(i); continue; }
+    if (toks.some((t) => t[0] === "d")) continue;
+    toks.push("d" + newChangeId("pdel"));
+    ln.dataset.tcp = toks.join(" ");
+  }
+  for (const i of join.reverse()) {
+    const prev = lines[i], ln = lines[i + 1];
+    if (!prev.isConnected || !ln.isConnected || ln.dataset.kind === "table" || prev.dataset.kind === "table") continue;
+    for (const br of prev.querySelectorAll(":scope > br")) br.remove();
+    while (ln.firstChild) prev.appendChild(ln.firstChild);
+    // the joined line ends where the second did: its end's marks
+    if (ln.dataset.tcp) prev.dataset.tcp = ln.dataset.tcp; else delete prev.dataset.tcp;
+    ln.remove();
+  }
+  // the caret: before what was taken out (Backspace) or after it (Delete)
+  const sel = window.getSelection();
+  const at = backward ? (made[0] || null) : (made[made.length - 1] || null);
+  const r = document.createRange();
+  if (at) { if (backward) r.setStartBefore(at); else r.setStartAfter(at); }
+  else { r.setStart(range.startContainer.isConnected ? range.startContainer : l0, range.startContainer.isConnected ? Math.min(range.startOffset, range.startContainer.nodeType === 3 ? range.startContainer.data.length : range.startContainer.childNodes.length) : 0); }
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  return true;
+}
+// Backspace / Delete (a letter, a word…): the range it would take, past what's already taken out
+function trackDeleteStep(backward, unit) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return false;
+  if (!sel.isCollapsed) return trackDeleteRange(sel.getRangeAt(0).cloneRange(), backward);
+  const start = sel.getRangeAt(0).cloneRange();
+  let range = null;
+  for (let tries = 0; tries < 40; tries++) {
+    sel.modify("extend", backward ? "backward" : "forward", unit);
+    const r = sel.getRangeAt(0).cloneRange();
+    if (r.collapsed) break;
+    // only taken-out words in it so far: one more
+    const txt = (() => { const c = r.cloneContents(); for (const d of c.querySelectorAll("del.tc")) d.remove(); return c.textContent; })();
+    const crossesLine = ed.lineOf(r.startContainer, A.page) !== ed.lineOf(r.endContainer, A.page);
+    if (txt || crossesLine) { range = r; break; }
+  }
+  sel.removeAllRanges();
+  sel.addRange(start);
+  if (!range) return true;
+  return trackDeleteRange(range, backward);
+}
+function trackEnter() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return false;
+  if (!sel.isCollapsed) trackDeleteRange(sel.getRangeAt(0).cloneRange(), false);
+  const line = ed.lineOf(sel.getRangeAt(0).startContainer, A.page);
+  if (!line) return false;
+  const was = line.dataset.tcp || "";
+  enter();
+  const nl = line.nextElementSibling;
+  // the paragraph's own end marks go with its end (the new line); this line's end is new
+  if (nl && nl !== line) { if (was) nl.dataset.tcp = was; else delete nl.dataset.tcp; }
+  line.dataset.tcp = "i" + newChangeId("pins");
+  return true;
+}
+function trackPaste(text) {
+  const parts = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  parts.forEach((t, k) => {
+    if (k) trackEnter();
+    if (t) trackInsert(t);
+  });
+}
+// the typing, while Track Changes is on (before the page's own handling)
+function trackBeforeInput(e) {
+  if (!trackingHere()) return;
+  if (cellAt(e.target) || cellOfSel()) return;          // (in a table's cell: as usual, not recorded)
+  const t = e.inputType;
+  const run = (fn) => { e.preventDefault(); e.stopImmediatePropagation(); trkSnap(); fn(); trkDone(); };
+  if (t === "insertText" || t === "insertReplacementText") run(() => trackInsert(e.data != null ? e.data : (e.dataTransfer && e.dataTransfer.getData("text/plain")) || ""));
+  else if (t === "insertParagraph" || t === "insertLineBreak") run(trackEnter);
+  else if (t === "deleteContentBackward" || t === "deleteContentForward") run(() => trackDeleteStep(t.endsWith("Backward"), "character"));
+  else if (t === "deleteWordBackward" || t === "deleteWordForward") run(() => trackDeleteStep(t.endsWith("Backward"), "word"));
+  else if (t === "deleteSoftLineBackward" || t === "deleteHardLineBackward") run(() => trackDeleteStep(true, "lineboundary"));
+  else if (t === "deleteSoftLineForward" || t === "deleteHardLineForward") run(() => trackDeleteStep(false, "lineboundary"));
+  else if (t === "deleteByCut" || t === "deleteContent" || t === "deleteByDrag") run(() => { const s = window.getSelection(); if (s.rangeCount && !s.isCollapsed) trackDeleteRange(s.getRangeAt(0).cloneRange(), true); });
+  else if (t === "insertFromDrop" || t === "insertFromPasteAsQuotation") { e.preventDefault(); toast("While changes are tracked, paste (Ctrl+V) instead."); }
+}
+for (const p of P) p.page.addEventListener("beforeinput", (e) => { setActive(p); trackBeforeInput(e); }, true);
+for (const p of P) p.page.addEventListener("paste", (e) => {
+  setActive(p);
+  if (!trackingHere() || cellOfSel()) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+  if (!text) return;
+  trkSnap();
+  const s = window.getSelection();
+  if (s.rangeCount && !s.isCollapsed) trackDeleteRange(s.getRangeAt(0).cloneRange(), false);
+  trackPaste(text);
+  trkDone();
+}, true);
+// Ctrl+Z / Ctrl+Y while recording: step by step
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || !trackingHere() || !$("dialog").hidden || !P.some((p) => p.page === document.activeElement)) return;
+  const k = (e.key || "").toLowerCase();
+  const undo = k === "z" && !e.shiftKey, redo = k === "y" || (k === "z" && e.shiftKey);
+  if (k === "e" && e.shiftKey) return;
+  if (!undo && !redo) return;
+  const from = undo ? TRK.undo : TRK.redo, to = undo ? TRK.redo : TRK.undo;
+  if (!from.length) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  to.push({ html: A.page.innerHTML, c: ed.caret(A.page), changes: A.note.changes.slice() });
+  const st = from.pop();
+  A.page.innerHTML = st.html;
+  A.note.changes = st.changes;
+  if (st.c) ed.setCaret(A.page, st.c);
+  trkDone();
+}, true);
+document.addEventListener("keydown", (e) => {
+  if (!ED.project || !(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || (e.code !== "KeyE" && (e.key || "").toLowerCase() !== "e")) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  toggleTrack();
+}, true);
+
 // for the tests
-window.RN = { stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
