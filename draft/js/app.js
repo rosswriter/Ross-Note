@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.13.0";
-import * as ed from "./editor.js?v=1.9.22-d1.13.0";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.13.0";
-import * as spell from "./spell.js?v=1.9.22-d1.13.0";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.13.0";
+import * as md from "./md.js?v=1.9.22-d1.14.0";
+import * as ed from "./editor.js?v=1.9.22-d1.14.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.14.0";
+import * as spell from "./spell.js?v=1.9.22-d1.14.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.14.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.13.0";
+import { ED } from "./edition.js?v=1.9.22-d1.14.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -695,7 +695,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.13.0")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.14.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -822,18 +822,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.14.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.14.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.13.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.14.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1645,7 +1645,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
+    const SV = await import("./scriv.js?v=1.9.22-d1.14.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1777,7 +1777,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.13.0");
+    const EP = await import("./epub.js?v=1.9.22-d1.14.0");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1801,7 +1801,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.13.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.14.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1842,7 +1842,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.14.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2555,7 +2555,7 @@ function pageWords(pg) {
 }
 
 let wordsTimer = 0;
-function wordsSoon() { clearTimeout(wordsTimer); wordsTimer = setTimeout(countWords, 300); }
+function wordsSoon() { clearTimeout(wordsTimer); wordsTimer = setTimeout(countWords, 300); if (typeof pageEndsSoon === "function") pageEndsSoon(); }
 
 function countWords() {
   for (const p of P) {
@@ -2651,6 +2651,7 @@ function showText(text, pane = A) {
   if (ED.project && pane.note && pane.note.changes && pane.note.changes.length) paintAuthors(pane.page, pane.note);   // (1.12.0)
   // (Review ▸ Original: the scene drawn as it was before its changes, to read)
   delete pane.page.dataset.orig;
+  if (ED.project) { applyPageWidth(); pageEndsSoon(); }       // (1.14.0)
   if (ED.project && markupView() === "original") {
     pane.page.contentEditable = "false";
     if (pane.note.changes && pane.note.changes.length && !pane.joined) {
@@ -2681,7 +2682,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.13.0"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.14.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2705,7 +2706,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.13.0");
+  const X = await import("./export.js?v=1.9.22-d1.14.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2733,7 +2734,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.13.0");
+  const X = await import("./export.js?v=1.9.22-d1.14.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -4263,7 +4264,8 @@ document.addEventListener("keydown", (e) => {
   else if (c && (k === "=" || k === "+")) fn = COMMANDS.bigger;
   else if (c && k === "-") fn = COMMANDS.smaller;
   else if (c && k === "0") fn = () => setSize(0);
-  else if (c && (k === "p" || k === "P")) fn = printNote;
+  else if (c && (k === "p" || k === "P")) fn = PV.on ? printPreview : printNote;
+  else if (c && k === "F2" && ED.project) fn = () => (PV.on ? closePreview() : printPreview());
   else if (c && e.shiftKey && !e.altKey && (k === "F" || k === "f")) fn = listAll;
   else if (c && e.shiftKey && !e.altKey && (k === "O" || k === "o")) fn = showRecent;
   else if (c && !e.shiftKey && (k === "f" || k === "F")) fn = () => openFind(false);
@@ -4273,6 +4275,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "F3" && e.shiftKey && c && ED.project) fn = () => findGo(true);
   else if (k === "F5" && c && e.shiftKey && ED.project) fn = insertBookmark;
   else if (k === "F3") fn = () => findGo(e.shiftKey);
+  else if (k === "Escape" && PV.on && !openMenu && $("dialog").hidden) fn = closePreview;
   else if (k === "Escape" && !$("findbar").hidden && !openMenu && $("dialog").hidden) fn = closeFind;
   else if (c && e.altKey && (k === "n" || k === "N")) fn = () => newNote(false);
   else if (c && (k === "\\" || k === "|" || e.code === "Backslash")) fn = e.shiftKey ? COMMANDS.splitv : COMMANDS.splith;
@@ -4585,12 +4588,12 @@ const MENU_ORDER = {
   edit: ["Find or Do Anything…", "-", "Undo", "Redo", "-", "Cut", "Copy", "Paste", "Select All",
     "Paste Special", "-", "Find in This Note…", "Find and Replace…", "Find Next", "Find Previous", "Next Result (or Page)", "Previous Result (or Page)",
     /^List All/, "Search the Notes (the list)", "-", "Go To…", "-", "Search the Web"],
-  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Special Character…", "Link…", "Field", "Header and Footer…", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
+  insert: ["Picture…", "Keep Photos at Full Size", "-", "Table", "Page Break", "-", "Special Character…", "Link…", "Field", "Header and Footer…", "Table of Contents", "Update Table of Contents", "-", "Comment…", "Your Name for Comments…", "-", "Footnote", "Endnote", "-",
     "Bookmark…", "-", "Date", "Date and Time"],
   format: ["Font", "-", "Bold", "Italic", "Underline", "Strikethrough", "Highlight", "Highlight Colour", "Text Colour",
     "Superscript", "Subscript", "Change Case", "-", "Copy Formatting", "Paste Formatting", "-",
     "Heading 1", "Heading 2", "Heading 3", "Normal Text", "-", "Bullets and Numbering", "Indent (as a Quote)", "-",
-    "Align Left", "Centre", "Align Right", "Justify", "Line Spacing", "Start on New Page", "-", "Make Quotes Curly", "Make Quotes Straight", "-",
+    "Align Left", "Centre", "Align Right", "Justify", "Line Spacing", "Start on New Page", "Page Setup…", "-", "Make Quotes Curly", "Make Quotes Straight", "-",
     "Clear Formatting", "Remove Text Colours…"],
   notes: ["New Note Under This One", "-", "Move Up", "Move Down", "Move Out a Level", "Move Under the Note Above", "-",
     "Select Everything in the List (as one page)", "Count Words (with the notes under it)…", "Notebook Colour…", "-",
@@ -4668,6 +4671,8 @@ function menuItemsAll(name) {
       } },
       "-",
       { label: "Print This Note…", fn: printNote, keys: "Ctrl+P", off: !n },
+      ...(ED.project ? [{ label: "Print Preview", fn: printPreview, keys: "Ctrl+F2", off: !n },
+        { label: "Export Comments…", fn: exportComments, off: !n || !(n.comments && n.comments.length) }] : []),
       "-",
       { label: S.store && S.store.isProject ? "Read the Project Again" : "Read the Folder Again", fn: () => refresh(true) },
       "-",
@@ -4707,7 +4712,8 @@ function menuItemsAll(name) {
       { label: "Picture…", fn: COMMANDS.picture },
       ...(ED.project ? [{ label: "Table", sub: tableItems() }, { label: "Page Break", fn: pageBreak, keys: "Ctrl+Enter" },
         { label: "Special Character…", fn: specialCharDialog }, { label: "Link…", fn: linkDialog, keys: "Ctrl+Alt+K" },
-        { label: "Field", sub: fieldItems() }, { label: "Header and Footer…", fn: headerFooterDialog }] : []),
+        { label: "Field", sub: fieldItems() }, { label: "Header and Footer…", fn: headerFooterDialog },
+        { label: "Table of Contents", fn: insertToc }, { label: "Update Table of Contents", fn: updateToc, off: !(A.page && A.page.querySelector(".ln[data-toc]")) }] : []),
       "-",
       { label: "Comment…", fn: addComment, keys: "Ctrl+Alt+M", off: !(A.note && A.note.comments) },
       ...(ED.project ? [{ label: "Bookmark…", fn: insertBookmark, keys: "Ctrl+Shift+F5", off: !A.note }] : []),
@@ -4754,6 +4760,7 @@ function menuItemsAll(name) {
       { label: "Justify", fn: COMMANDS.justify, keys: "Ctrl+J" },
       "-",
       { label: "Clear Formatting", fn: COMMANDS.clear, keys: "Ctrl+Space" },
+      ...(ED.project ? [{ label: "Page Setup…", fn: pageSetupDialog }] : []),
       ...(ED.project ? [{ label: "Copy Formatting", fn: copyFormat, keys: "Ctrl+Shift+C" },
         { label: "Paste Formatting", fn: pasteFormat, keys: "Ctrl+Shift+V", off: !copiedFormat },
         { label: "Make Quotes Curly", fn: () => convertQuotes(true) },
@@ -4809,6 +4816,7 @@ function menuItemsAll(name) {
         { label: "Extra Wide", on: s.side >= 440, fn: () => sideWidth("extra") },
       ] },
       { label: "Page View", on: !!s.pageView && !s.spread, fn: () => { if (S.settings.spread) toggleSpread(); else togglePageView(); }, keys: "Ctrl+Shift+L" },
+      ...(ED.project ? [{ label: "Show Where Pages End", on: s.pageEnds !== false, off: !s.pageView, fn: () => { s.pageEnds = s.pageEnds === false; saveSettings(); paintPageEnds(); } }] : []),
       ...(ED.project ? [{ label: "Two Pages Side by Side", on: !!s.spread, fn: toggleSpread, keys: "Ctrl+Alt+P" }] : []),
       { label: "Focus (the paragraph you're in)", on: !!s.focus, fn: toggleFocus, keys: "Ctrl+Shift+Enter" },
       { label: "Split", sub: [
@@ -5172,7 +5180,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.13.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.14.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5320,7 +5328,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.13.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.14.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5392,7 +5400,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.13.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.14.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5596,7 +5604,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.14.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5633,7 +5641,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.13.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.14.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5672,7 +5680,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.13.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.14.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5964,7 +5972,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.13.0");
+  const R = await import("./rtf.js?v=1.9.22-d1.14.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6056,7 +6064,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.14.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6652,7 +6660,9 @@ function togglePageView() {
   S.settings.pageView = !S.settings.pageView;
   saveSettings();
   document.body.classList.toggle("pageview", !!S.settings.pageView);
-  toast(S.settings.pageView ? "Page view: a page-wide column" : "The page fills the width", 1500);
+  applyPageWidth();
+  pageEndsSoon();
+  toast(S.settings.pageView ? (ED.project ? "Page view: the page's own width, where each page ends marked" : "Page view: a page-wide column") : "The page fills the width", 1500);
 }
 document.body.classList.toggle("pageview", !!S.settings.pageView);
 
@@ -6671,6 +6681,7 @@ function applySpread() {
   document.body.classList.toggle("spread", on);
   document.body.classList.toggle("pageview", !!S.settings.pageView || on);
   sizeSpread();
+  if (typeof applyPageWidth === "function") { applyPageWidth(); pageEndsSoon(); }
 }
 function sizeSpread() {
   if (!document.body.classList.contains("spread")) return;
@@ -7902,7 +7913,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.13.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.14.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -8468,7 +8479,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.13.0"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.14.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -8982,17 +8993,77 @@ function pasteSpecialItems(ro) {
 
 // ---- Next / Previous Result (or Page): a search's next match; with nothing searched for, the next page
 // (a page: what fits on a printed page at the width the text is shown, about; a page break starts a new one)
-function pageStarts(pg) {
-  const lines = [...pg.children];
-  if (!lines.length) return [];
+// (1.14.0) the page, as the Word file sets it (Page Setup), here: as many lines on a page as Word puts there (its
+// text's height over Word's line for the usual size and spacing), at the page's own line height; the text's width
+// (Page View) the page's, at the size the words are shown
+const A4_PAGE = { w: 11906, h: 16838, top: 1440, bottom: 1440, left: 1440, right: 1440, landscape: false };
+function pageGeom(pg) {
+  const p = P.find((q) => q.page === pg) || A;
+  const n = p.note;
+  let pi = (n && n.pageInfo) || A4_PAGE;
+  // (Print Preview) a header or footer taller than its margin pushes the words in, as Word does
+  if (pg.dataset.hfTop || pg.dataset.hfBottom) pi = { ...pi, top: Math.max(pi.top, +pg.dataset.hfTop || 0), bottom: Math.max(pi.bottom, +pg.dataset.hfBottom || 0) };
   const cs = getComputedStyle(pg);
-  const w = pg.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const pageH = Math.max(200, w * 1.55);                // (the words' part of an A4 page, with the usual margins)
+  const fontPx = parseFloat(cs.fontSize) || 18;
+  const lh = parseFloat(cs.lineHeight) || fontPx * 1.5;
+  const usz = (n && n.usz) || 24;
+  const k = fontPx / (usz * 10);                       // px for a twip, at the size the words are shown
+  const mult = ((n && n.uline) || 240) / 240;
+  const wordLine = usz * 10 * 1.15 * mult;             // a line in Word (twips): its size, a little more, its spacing
+  const linesOnPage = Math.max(5, (pi.h - pi.top - pi.bottom) / wordLine);
+  return { pi, k, textW: Math.max(200, (pi.w - pi.left - pi.right) * k), pageH: linesOnPage * lh };
+}
+// where each page ends, as Word lays them: [{ el (the paragraph the next page starts in), y (in the page), byhand }]:
+// lines counted at the page's line height, the space after each paragraph, a page break or Start on New Page; a
+// paragraph goes on over the page (but not one line alone at either side), a heading stays with what follows it
+function pageBreaks(pg) {
+  const lines = [...pg.children].filter((d) => !d.classList.contains("jdiv"));
+  if (lines.length < 2) return [];
+  const g = pageGeom(pg);
+  const p = P.find((q) => q.page === pg) || A;
+  const n = p.note || {};
+  const lh = parseFloat(getComputedStyle(pg).lineHeight) || 24;
+  const wordLine = (n.usz || 24) * 10 * 1.15 * ((n.uline || 240) / 240);
+  const after = (n.uafter || 0) / wordLine * lh;
+  const cap = g.pageH;
+  const out = [];
+  let used = 0;
+  const pgTop = pg.getBoundingClientRect().top;
+  const topOf = (d) => d.getBoundingClientRect().top - pgTop;
+  const isHead = (d) => d && /^h[1-6]$/.test(d.dataset.kind || "");
+  lines.forEach((d, idx) => {
+    if (idx === 0) { used = 0; }
+    else if (d.dataset.pagebreak || d.dataset.newpage) { out.push({ el: d, y: topOf(d) - 2, byhand: true }); used = 0; }
+    const H = d.offsetHeight || lh;
+    const rows = Math.max(1, Math.round(H / lh));
+    const rowH = H / rows;
+    for (let i = 0; i < rows; i++) {
+      if (used + rowH > cap + 0.5 && used > 0) {
+        let at = i;
+        // not one line alone: at the bottom of a page (widow), or at the top of the next (orphan)
+        if (rows > 1 && at === rows - 1) at = Math.max(0, at - 1);
+        if (rows > 1 && at === 1) at = 0;
+        // a heading goes over with what follows it
+        if (at === 0 && idx > 0 && isHead(lines[idx - 1]) && !(lines[idx - 1].dataset.pagebreak || lines[idx - 1].dataset.newpage)) {
+          const h = lines[idx - 1];
+          if (!out.length || out[out.length - 1].el !== h) { out.push({ el: h, y: topOf(h) - 2, byhand: false }); used = h.offsetHeight + after; }
+          used += rowH * (i - at);
+        } else {
+          out.push({ el: d, y: at === 0 ? topOf(d) - 2 : topOf(d) + at * rowH, byhand: false });
+          used = rowH * (i - at);
+        }
+      }
+      used += rowH;
+    }
+    used += after;
+  });
+  return out;
+}
+function pageStarts(pg) {
+  const lines = [...pg.children].filter((d) => !d.classList.contains("jdiv"));
+  if (!lines.length) return [];
   const out = [lines[0]];
-  let top = lines[0].offsetTop;
-  for (const d of lines.slice(1)) {
-    if (d.dataset.pagebreak || d.dataset.newpage || d.offsetTop + d.offsetHeight - top > pageH) { out.push(d); top = d.offsetTop; }
-  }
+  for (const b of pageBreaks(pg)) if (out[out.length - 1] !== b.el) out.push(b.el);
   return out;
 }
 function browse(step) {
@@ -9017,6 +9088,460 @@ function browse(step) {
   if (sc) sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
   toast(`Page ${n + 1} of ${starts.length}`, 1200);
 }
+
+// ---- (1.14.0) Page View: the page's own width, and where each page ends (as Ross Writer's Option C: a line across
+// the page, "Page N" in a tab at each end, in the margins)
+function applyPageWidth() {
+  const on = ED.project && document.body.classList.contains("pageview") && !document.body.classList.contains("spread");
+  for (const q of P) {
+    if (on && q.note) q.page.style.setProperty("--measure", Math.round(pageGeom(q.page).textW) + "px");
+    else q.page.style.removeProperty("--measure");
+  }
+}
+let pageEndsTimer = 0;
+function pageEndsSoon() { clearTimeout(pageEndsTimer); pageEndsTimer = setTimeout(paintPageEnds, 250); }
+function paintPageEnds() {
+  const on = ED.project && document.body.classList.contains("pageview") && !document.body.classList.contains("spread") && S.settings.pageEnds !== false;
+  for (const q of P) {
+    const sc = q.page.closest(".scroller");
+    if (!sc) continue;
+    let layer = sc.querySelector(":scope > .pgmarks");
+    if (!on || !q.note || !q.page.dataset.loaded) { if (layer) layer.textContent = ""; continue; }
+    if (!layer) { layer = document.createElement("div"); layer.className = "pgmarks"; layer.setAttribute("aria-hidden", "true"); sc.appendChild(layer); }
+    layer.textContent = "";
+    const breaks = pageBreaks(q.page);
+    const sr = sc.getBoundingClientRect(), pr = q.page.getBoundingClientRect();
+    const left = pr.left - sr.left + sc.scrollLeft, width = pr.width;
+    const pad = parseFloat(getComputedStyle(q.page).paddingLeft) || 60;
+    const top0 = pr.top - sr.top + sc.scrollTop;
+    breaks.forEach((b, k) => {
+      const i = k + 1;
+      const m = document.createElement("div");
+      m.className = "pgend" + (b.byhand ? " byhand" : "");
+      m.style.top = (top0 + b.y) + "px";
+      m.style.left = left + "px";
+      m.style.width = width + "px";
+      const label = pad >= 58 ? "Page " + (i + 1) : pad >= 40 ? "p. " + (i + 1) : String(i + 1);
+      for (const side of ["l", "r"]) { const t = document.createElement("span"); t.className = "pgtab " + side; t.textContent = label; t.style.maxWidth = (pad - 6) + "px"; m.appendChild(t); }
+      layer.appendChild(m);
+    });
+  }
+}
+window.addEventListener("resize", () => { applyPageWidth(); pageEndsSoon(); });
+
+// ---- (1.14.0) Format ▸ Page Setup… (as Ross Writer's Format ▸ Page): paper size, orientation, margins, written into
+// the Word file (in a project: every scene's, or this one's)
+const PAPERS = [["A4", 11906, 16838], ["A5", 8391, 11906], ["B5", 9979, 14175], ["US Letter", 12240, 15840], ["US Legal", 12240, 20160],
+  ["Trade paperback (6 × 9 in)", 8640, 12960], ["Royal (156 × 234 mm)", 8845, 13268], ["Demy (138 × 216 mm)", 7824, 12246]];
+const MARGINS = [["Normal (2.54 cm)", 1440, 1440, 1440, 1440], ["Narrow (1.27 cm)", 720, 720, 720, 720], ["Moderate (2.54 / 1.91 cm)", 1440, 1440, 1080, 1080],
+  ["Wide (2.54 / 5.08 cm)", 1440, 1440, 2880, 2880]];
+const cmOf = (tw) => (tw / 566.93).toFixed(2).replace(/\.?0+$/, "");
+async function pageSetupDialog() {
+  const n = A.note, st = S.store;
+  if (!n || !st || typeof st.setPageSetup !== "function" || !Array.isArray(n.changes)) { toast("Page Setup is for Word files: open a Ross Writer project's scene or a Word document."); return; }
+  const pi = { ...(n.pageInfo || A4_PAGE) };
+  const portrait = [Math.min(pi.w, pi.h), Math.max(pi.w, pi.h)];
+  const box = document.createElement("div");
+  box.className = "cform psform";
+  const pIdx = PAPERS.findIndex((x) => Math.abs(x[1] - portrait[0]) < 60 && Math.abs(x[2] - portrait[1]) < 60);
+  box.innerHTML = '<label>Paper size<select class="ps-paper">' + PAPERS.map((x, i) => `<option value="${i}">${x[0]}</option>`).join("") +
+    (pIdx < 0 ? `<option value="own">Its own (${cmOf(portrait[0])} × ${cmOf(portrait[1])} cm)</option>` : "") + "</select></label>" +
+    '<div class="psrow"><label class="hfrow"><input type="radio" name="psor" class="ps-portrait"> Portrait</label><label class="hfrow"><input type="radio" name="psor" class="ps-landscape"> Landscape</label></div>' +
+    '<label>Margins<select class="ps-mar">' + MARGINS.map((x, i) => `<option value="${i}">${x[0]}</option>`).join("") + '<option value="own">Your own</option></select></label>' +
+    '<div class="psgrid">' + [["top", "Top"], ["bottom", "Bottom"], ["left", "Left"], ["right", "Right"]].map(([k, l]) => `<label>${l} (cm)<input type="number" step="0.1" min="0" max="10" class="ps-${k}"></label>`).join("") + "</div>" +
+    (st.isDoc ? "" : '<label class="hfrow"><input type="checkbox" class="ps-all" checked> Every scene in the project (else this scene)</label>');
+  const q = (c) => box.querySelector(c);
+  q(".ps-paper").value = pIdx < 0 ? "own" : String(pIdx);
+  (pi.landscape || pi.w > pi.h ? q(".ps-landscape") : q(".ps-portrait")).checked = true;
+  for (const k of ["top", "bottom", "left", "right"]) q(".ps-" + k).value = cmOf(pi[k]);
+  const mIdx = MARGINS.findIndex((x) => x[1] === pi.top && x[2] === pi.bottom && x[3] === pi.left && x[4] === pi.right);
+  q(".ps-mar").value = mIdx < 0 ? "own" : String(mIdx);
+  q(".ps-mar").addEventListener("change", () => {
+    const m = MARGINS[+q(".ps-mar").value];
+    if (m) ["top", "bottom", "left", "right"].forEach((k, i) => { q(".ps-" + k).value = cmOf(m[i + 1]); });
+  });
+  for (const k of ["top", "bottom", "left", "right"]) q(".ps-" + k).addEventListener("input", () => { q(".ps-mar").value = "own"; });
+  const v = await ask("Page Setup", box, [["OK", "ok", true]]);
+  if (v !== "ok") return;
+  const pp = PAPERS[+q(".ps-paper").value];
+  let [w, h] = pp ? [pp[1], pp[2]] : portrait;
+  const land = q(".ps-landscape").checked;
+  if (land) [w, h] = [h, w];
+  const tw = (k) => Math.round(Math.max(0, Math.min(10, parseFloat(q(".ps-" + k).value) || 0)) * 566.93);
+  const ps = { w, h, landscape: land, top: tw("top"), bottom: tw("bottom"), left: tw("left"), right: tw("right") };
+  if (ps.left + ps.right > w - 1440 || ps.top + ps.bottom > h - 1440) { toast("Those margins leave too little room for the words."); return; }
+  const all = !st.isDoc && q(".ps-all") && q(".ps-all").checked;
+  await flushSave();
+  let k = 0;
+  try {
+    if (all) {
+      await busy("Setting every scene's page…", async () => {
+        for (const x of st.all()) {
+          if (!x.raw || x.raw.pdf || x.raw.trash) continue;
+          try { if (await queue(() => st.setPageSetup(x, ps))) k++; } catch (e) { /* the next */ }
+        }
+      }, { after: 0 });
+    } else if (await queue(() => st.setPageSetup(n, ps))) k = 1;
+  } catch (e) { dialog("Page Setup", (e && e.message) || String(e)); return; }
+  for (const qq of P) if (qq.note && !qq.joined && qq.page.dataset.loaded) showText(qq.note.text, qq);
+  applyPageWidth();
+  pageEndsSoon();
+  toast(k ? `Page set${all ? ` in ${k} scene${k === 1 ? "" : "s"}` : ""}: ${pp ? pp[0] : "its own size"}, ${land ? "landscape" : "portrait"}` : "Nothing changed.", 3000);
+}
+
+// ---- (1.14.0) Insert ▸ Table of Contents: the headings (1 to 3) listed with their pages, as Word's contents list
+// (a TOC field: Word can bring it up to date too); Update Table of Contents makes it again; a tap on a line goes to
+// its heading
+function pageOfEl(pg, el) {
+  const top = el.getBoundingClientRect().top - pg.getBoundingClientRect().top;
+  let k = 1;
+  for (const b of pageBreaks(pg)) if (b.y <= top + 2) k++;
+  return k;
+}
+// ---- (1.14.0) Print Preview: the scene as Word prints it, page by page (its paper, margins, header and footer),
+// its comments listed after it if you like; and Export Comments (each with its page)
+const PV = { on: false, comments: false, zoom: 1 };
+function previewEl() {
+  let v = $("pview");
+  if (v) return v;
+  v = document.createElement("div");
+  v.id = "pview";
+  v.hidden = true;
+  v.innerHTML = '<div class="pvbar"><button type="button" class="pv-close" title="Back to the scene (Esc)">← Back</button>' +
+    '<span class="pv-title"></span><span class="pv-sp"></span>' +
+    '<label class="pv-c"><input type="checkbox" class="pv-comments"> Comments listed at the end</label>' +
+    '<select class="pv-zoom" title="Size"><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select>' +
+    '<button type="button" class="pv-export">Export Comments…</button>' +
+    '<button type="button" class="pv-print main">Print…</button></div><div class="pvsheets"></div>';
+  document.body.appendChild(v);
+  v.querySelector(".pv-close").onclick = closePreview;
+  v.querySelector(".pv-print").onclick = () => printPreview();
+  v.querySelector(".pv-export").onclick = () => exportComments();
+  v.querySelector(".pv-comments").onchange = (e) => { PV.comments = e.target.checked; S.settings.pvComments = PV.comments; saveSettings(); renderPreview(); };
+  v.querySelector(".pv-zoom").onchange = (e) => { PV.zoom = +e.target.value; S.settings.pvZoom = PV.zoom; saveSettings(); zoomPreview(); };
+  v.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closePreview(); } });
+  return v;
+}
+// lines into pages: [ [y0, y1] … ] in the measured page, Word's lines and paper
+function previewPages(pg) {
+  const ends = pageBreaks(pg).map((b) => b.y);
+  const ys = [0, ...ends, pg.scrollHeight];
+  const out = [];
+  for (let i = 0; i + 1 < ys.length; i++) if (ys[i + 1] - ys[i] > 1 || i === 0) out.push([ys[i], ys[i + 1]]);
+  return out;
+}
+// a page laid out as Word would (its width, its line height, the space after each paragraph), to be measured
+function measuredPage(lines, g, n) {
+  const fontPx = parseFloat(getComputedStyle(A.page).fontSize) || 18;
+  const mult = ((n && n.uline) || 240) / 240;
+  const d = document.createElement("div");
+  d.className = "page pvpage";
+  d.style.cssText = `--size:${fontPx}px;--lh:${1.15 * mult};--gap:${((n && n.uafter) || 0) * g.k}px;width:${g.textW}px;` +
+    `font-size:${fontPx}px;line-height:${fontPx * 1.15 * mult}px;font-family:${getComputedStyle(A.page).fontFamily}`;
+  // a header's line (its distance from the paper's edge, and its own height) can need more than the margin
+  const hf = PV.on && PV.hf && PV.hf.hf, pi = (n && n.pageInfo) || A4_PAGE;
+  if (hf) {
+    const hl = ((n && n.usz) || 24) * 10 * 1.15;
+    if ((hf.header || []).some(Boolean)) d.dataset.hfTop = (pi.header || 708) + hl;
+    if ((hf.footer || []).some(Boolean)) d.dataset.hfBottom = (pi.footer || 708) + hl;
+  }
+  for (const l of lines) d.appendChild(l);
+  return d;
+}
+function hfText(t, page, pages, props) {
+  return (t || "").replace(/\[Page\]/g, String(page)).replace(/\[Pages\]/g, String(pages)).replace(/\[Title\]/g, props.title || "")
+    .replace(/\[Author\]/g, props.author || "").replace(/\[Date\]/g, new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }));
+}
+// the comments as lines for the page: each with its page, who and when, the words it's on, and its replies
+function commentPageOf(pg, words, starts) {
+  const norm = (t) => t.replace(/[^]*/g, "").replace(/[￼-]/g, "").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ");
+  const want = norm(words || "").trim().slice(0, 40);
+  if (!want) return null;
+  const lines = [...pg.children];
+  const i = lines.findIndex((d) => norm(ed.lineText(d)).includes(want));
+  if (i < 0) return null;
+  let k = 0;
+  for (let j = 0; j < starts.length; j++) if (lines.indexOf(starts[j]) <= i) k = j;
+  return k + 1;
+}
+function commentEntries(n, pg) {
+  const cs = (n && n.comments) || [];
+  const starts = pageStarts(pg);
+  const out = [];
+  const top = cs.filter((c) => !c.parent);
+  for (const c of top) {
+    const pageNo = commentPageOf(pg, c.words, starts);
+    out.push({ c, reply: false, page: pageNo });
+    for (const r of cs.filter((x) => x.parent === c.id)) out.push({ c: r, reply: true, page: pageNo });
+  }
+  return out;
+}
+async function printPreview() {
+  if (PV.on) { await flushSave(); doPrintPreview(); return; }
+  const n = A.note;
+  if (!n) return;
+  await flushSave();
+  hideChip();
+  PV.on = true;
+  PV.comments = !!S.settings.pvComments;
+  PV.zoom = S.settings.pvZoom || 1;
+  const v = previewEl();
+  v.querySelector(".pv-comments").checked = PV.comments;
+  v.querySelector(".pv-zoom").value = String(PV.zoom);
+  const has = !!(n.comments && n.comments.length);
+  v.querySelector(".pv-c").hidden = !has;
+  v.querySelector(".pv-export").hidden = !has;
+  PV.hf = null;
+  const st = S.store;
+  if (st && typeof st.headerFooter === "function" && !(n.raw && n.raw.pdf)) {
+    try { PV.hf = await queue(() => st.headerFooter(n)); } catch (e) { PV.hf = null; }
+  }
+  v.hidden = false;
+  document.body.classList.add("previewing");
+  renderPreview();
+  v.tabIndex = -1;
+  v.focus();
+}
+function closePreview() {
+  PV.on = false;
+  if (PV.css) { PV.css.remove(); PV.css = null; }
+  const v = $("pview");
+  if (v) { v.hidden = true; v.querySelector(".pvsheets").textContent = ""; }
+  document.body.classList.remove("previewing");
+  A.page.focus();
+}
+function renderPreview() {
+  const v = previewEl();
+  const n = A.note;
+  const g = pageGeom(A.page);
+  const pi = g.pi;
+  const box = v.querySelector(".pvsheets");
+  box.textContent = "";
+  const host = A.page.closest(".scroller") || document.body;
+  // the scene, measured as Word lays it out
+  const src = [...A.page.children].filter((d) => d.classList.contains("ln"));
+  const mp = measuredPage(src.map((d) => d.cloneNode(true)), g, n);
+  mp.style.position = "absolute"; mp.style.left = "-99999px"; mp.style.top = "0"; mp.style.visibility = "hidden";
+  host.appendChild(mp);
+  const pages = previewPages(mp);
+  // its comments, after it, on pages of their own
+  let cpages = [], cp = null;
+  if (PV.comments && n.comments && n.comments.length) {
+    const ents = commentEntries(n, mp);
+    const L = (cls, text) => { const d = document.createElement("div"); d.className = "ln " + cls; d.textContent = text; return d; };
+    const lines = [L("pvch", "Comments" + (n.title ? " — " + n.title() : ""))];
+    lines[0].dataset.kind = "h2";
+    for (const e of ents) {
+      const d = document.createElement("div");
+      d.className = "ln pvcm" + (e.reply ? " reply" : "") + (e.c.done ? " done" : "");
+      const who = document.createElement("div");
+      who.className = "pvcwho";
+      who.textContent = [e.reply ? "Reply" : (e.page ? "Page " + e.page : "Page ?"), e.c.author || "Someone", commentDate(e.c.date), e.c.done ? "resolved" : ""].filter(Boolean).join(" · ");
+      d.appendChild(who);
+      if (e.c.words && !e.reply) { const q = document.createElement("div"); q.className = "pvcwords"; q.textContent = "“" + e.c.words + "”"; d.appendChild(q); }
+      const t = document.createElement("div");
+      t.className = "pvctext";
+      if (e.c.rich) richToDom(t, e.c.rich, e.c.text); else t.textContent = e.c.text || "";
+      d.appendChild(t);
+      lines.push(d);
+    }
+    cp = measuredPage(lines, g, n);
+    cp.classList.add("pvcomments");
+    cp.style.position = "absolute"; cp.style.left = "-99999px"; cp.style.top = "0"; cp.style.visibility = "hidden";
+    host.appendChild(cp);
+    cpages = previewPages(cp);
+  }
+  const total = pages.length + cpages.length;
+  const hf = PV.hf && PV.hf.hf, props = (PV.hf && PV.hf.props) || {};
+  if (!props.title) props.title = n.title ? n.title() : "";
+  if (!props.author && S.settings.commentAuthor) props.author = S.settings.commentAuthor;
+  const start = hf && hf.start != null ? hf.start : 1;
+  const sheet = (from, [y0, y1], no) => {
+    const sh = document.createElement("div");
+    sh.className = "sheet";
+    sh.style.width = pi.w * g.k + "px";
+    sh.style.height = pi.h * g.k + "px";
+    const body = document.createElement("div");
+    body.className = "pvbody";
+    const topT = Math.max(pi.top, +from.dataset.hfTop || 0);
+    body.style.cssText = `left:${pi.left * g.k}px;top:${topT * g.k}px;width:${g.textW}px;height:${y1 - y0}px`;
+    const inner = measuredPage([], g, n);
+    if (from.classList.contains("pvcomments")) inner.classList.add("pvcomments");
+    inner.style.position = "absolute";
+    let first = null;
+    for (const d of from.children) {
+      const t = d.offsetTop, b = t + d.offsetHeight;
+      if (b <= y0 + 1 || t >= y1 - 1) continue;
+      if (!first) first = d;
+      inner.appendChild(d.cloneNode(true));
+    }
+    if (first) {
+      // (the first line's own top margin kept, as it's measured)
+      inner.style.top = (first.offsetTop - y0) + "px";
+      inner.firstChild.style.marginTop = getComputedStyle(first).marginTop;
+    }
+    body.appendChild(inner);
+    sh.appendChild(body);
+    const pageNo = start + no - 1;
+    if (hf && !(hf.first && no === 1)) {
+      const hl = ((n && n.usz) || 24) * 10 * 1.15 * g.k;
+      for (const [k, at] of [["header", (pi.header || 708) * g.k + hl / 2], ["footer", pi.h * g.k - (pi.footer || 708) * g.k - hl / 2]]) {
+        if (!(hf[k] || []).some((x) => x)) continue;
+        const r = document.createElement("div");
+        r.className = "pvhf " + k;
+        r.style.cssText = `left:${pi.left * g.k}px;width:${g.textW}px;top:${at}px`;
+        for (const i of [0, 1, 2]) { const c = document.createElement("span"); c.textContent = hfText((hf[k] || [])[i], pageNo, start + total - 1, props); r.appendChild(c); }
+        sh.appendChild(r);
+      }
+    }
+    const lab = document.createElement("div");
+    lab.className = "pvno";
+    lab.textContent = `${no} of ${total}`;
+    const wrap = document.createElement("div");
+    wrap.className = "sheetwrap";
+    wrap.appendChild(sh);
+    wrap.appendChild(lab);
+    box.appendChild(wrap);
+  };
+  pages.forEach((r, i) => sheet(mp, r, i + 1));
+  cpages.forEach((r, i) => sheet(cp, r, pages.length + i + 1));
+  mp.remove();
+  if (cp) cp.remove();
+  const paper = (PAPERS.find((p) => Math.abs(p[1] - Math.min(pi.w, pi.h)) < 60 && Math.abs(p[2] - Math.max(pi.w, pi.h)) < 60) || ["Custom"])[0];
+  v.querySelector(".pv-title").textContent = `${n.title ? n.title() : ""} · ${total} page${total === 1 ? "" : "s"} · ${paper}${pi.landscape ? ", landscape" : ""}`;
+  PV.pi = pi; PV.k = g.k;
+  zoomPreview();
+}
+function zoomPreview() {
+  const v = $("pview");
+  if (v) v.querySelector(".pvsheets").style.zoom = String(PV.zoom || 1);
+}
+function doPrintPreview() {
+  const pi = PV.pi;
+  if (PV.css) { PV.css.remove(); PV.css = null; }
+  const st = document.createElement("style");
+  st.id = "pv-css";
+  // each sheet the paper's own size: no margins of the browser's own
+  const wIn = pi.w / 1440, hIn = pi.h / 1440;
+  st.textContent = `@page { size: ${wIn}in ${hIn}in; margin: 0; }\n@media print { #pview .pvsheets { zoom: 1 !important; } ` +
+    `#pview .sheet { zoom: ${(wIn * 96) / (pi.w * PV.k)}; } }`;
+  document.head.appendChild(st);
+  const old = document.title;
+  document.title = A.note && A.note.title ? A.note.title() : old;
+  const after = () => { st.remove(); document.title = old; window.removeEventListener("afterprint", after); };
+  if (window.RN_NOPRINT) { PV.css = st; document.title = old; return; }    // (tests: printed to a PDF by hand)
+  window.addEventListener("afterprint", after);
+  window.print();
+}
+// Export Comments…: a Word document (or text) of the scene's comments, each with its page
+async function exportComments() {
+  const n = A.note;
+  if (!n || !(n.comments && n.comments.length)) { toast("There are no comments in this scene."); return; }
+  await flushSave();
+  const g = pageGeom(A.page);
+  const host = A.page.closest(".scroller") || document.body;
+  const mp = measuredPage([...A.page.children].filter((d) => d.classList.contains("ln")).map((d) => d.cloneNode(true)), g, n);
+  mp.style.position = "absolute"; mp.style.left = "-99999px"; mp.style.visibility = "hidden";
+  host.appendChild(mp);
+  const ents = commentEntries(n, mp);
+  mp.remove();
+  const box = document.createElement("div");
+  box.className = "cform";
+  box.innerHTML = `<p>${ents.filter((e) => !e.reply).length} comment${ents.filter((e) => !e.reply).length === 1 ? "" : "s"} (with ${ents.filter((e) => e.reply).length} repl${ents.filter((e) => e.reply).length === 1 ? "y" : "ies"}), each with the page it's on.</p>` +
+    '<label class="hfrow"><input type="checkbox" class="ec-done" checked> Include resolved comments</label>';
+  const v = await ask("Export Comments", box, [["Word…", "docx", true], ["Text…", "txt"]]);
+  if (!v) return;
+  const withDone = box.querySelector(".ec-done").checked;
+  const list = ents.filter((e) => withDone || !e.c.done);
+  const title = n.title ? n.title() : "Comments";
+  const when = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const head = (e) => [e.reply ? "Reply" : (e.page ? "Page " + e.page : "Page ?"), e.c.author || "Someone", commentDate(e.c.date), e.c.done ? "resolved" : ""].filter(Boolean).join(" · ");
+  const base = md.safeName(title + " - comments");
+  if (v === "txt") {
+    const t = [`Comments: ${title}`, when, ""].concat(list.flatMap((e) => [(e.reply ? "    " : "") + head(e),
+      ...(e.c.words && !e.reply ? ["“" + e.c.words + "”"] : []), ...(e.c.text || "").split("\n").map((x) => (e.reply ? "    " : "") + x), ""])).join("\n");
+    const blob = new Blob([t], { type: "text/plain" });
+    const saved = await saveFile(blob, base + ".txt", "Text", ".txt", "text/plain");
+    if (saved) toast("Saved: " + (typeof saved === "string" ? saved : base + ".txt"), 3000);
+    return;
+  }
+  const P_ = (runs, extra = {}) => ({ kind: null, depth: 1, code: false, align: null, runs: runs.map(([t, f]) => ({ t, f: new Set(f || []) })), ...extra });
+  const lines = [{ kind: "h1", depth: 1, code: false, runs: [{ t: "Comments: " + title, f: new Set() }] }, P_([[when, ["i"]]])];
+  for (const e of list) {
+    lines.push(P_([[head(e), ["b"]]], e.reply ? { kind: "quote" } : {}));
+    if (e.c.words && !e.reply) lines.push({ kind: "quote", depth: 1, code: false, runs: [{ t: "“" + e.c.words + "”", f: new Set(["i"]) }] });
+    for (const x of (e.c.text || "").split("\n")) lines.push(P_([[x]], e.reply ? { kind: "quote" } : {}));
+  }
+  const W = await wordModule();
+  const blob = await W.writeDocx(lines, async () => null, "Comments: " + title);
+  const saved = await saveFile(blob, base + ".docx", "Word document", ".docx", blob.type);
+  if (saved) toast("Saved: " + (typeof saved === "string" ? saved : base + ".docx"), 3000);
+}
+function tocLines(pg) {
+  const lines = [...pg.children].filter((d) => d.classList.contains("ln"));
+  const out = [];
+  lines.forEach((d, i) => {
+    if (i === 0) return;                                  // (the scene's or document's own title)
+    const m = /^h([1-3])$/.exec(d.dataset.kind || "");
+    if (!m || d.dataset.toc) return;
+    const t = ed.lineText(d).replace(/[￼]/g, "").replace(/[fe]-?\d+/g, "").trim();
+    if (t) out.push({ kind: null, runs: [{ t: t + "\t" + pageOfEl(pg, d), f: new Set() }], toc: m[1] });
+  });
+  if (out.length) { out[0].toc += "s"; out[out.length - 1].toc += "e"; }
+  return out;
+}
+function insertToc() {
+  if (!editableHere()) return;
+  if (A.page.querySelector(".ln[data-toc]")) return updateToc();
+  const list = tocLines(A.page);
+  if (!list.length) { toast("No headings to list: make some lines Heading 1, 2 or 3 first."); return; }
+  const before = A.page.innerHTML;
+  const line = caretLine() || A.page.children[1] || A.page.lastElementChild;
+  const c = ed.caret(A.page);
+  const atStart = c && c.a.pos === 0 && line !== A.page.firstElementChild && ed.lineText(line).trim();
+  if (atStart) for (const ln of list) line.before(ed.lineElement(ln));   // (at the start of a line: above it)
+  else {
+    let at = line;
+    for (const ln of list) { const el = ed.lineElement(ln); at.after(el); at = el; }
+    if (line && !ed.lineText(line).trim() && line !== A.page.firstElementChild) line.remove();
+  }
+  afterEdit();
+  OL.undo = { page: A.page, before, after: A.page.innerHTML };
+  toast(`Contents: ${list.length} heading${list.length === 1 ? "" : "s"} with their pages (Update Table of Contents makes it again)`, 3000);
+}
+function updateToc() {
+  if (!editableHere()) return;
+  const old = [...A.page.querySelectorAll(":scope > .ln[data-toc]")];
+  if (!old.length) { toast("There's no contents list here (Insert ▸ Table of Contents)."); return; }
+  const before = A.page.innerHTML;
+  const list = tocLines(A.page);
+  let at = old[0];
+  const mark = document.createElement("div");
+  at.before(mark);
+  for (const d of old) d.remove();
+  // (the pages again, with the list's own length)
+  for (const ln of list) mark.before(ed.lineElement(ln));
+  mark.remove();
+  const again = tocLines(A.page);
+  const now = [...A.page.querySelectorAll(":scope > .ln[data-toc]")];
+  if (again.length === now.length) now.forEach((d, i) => d.replaceWith(ed.lineElement(again[i])));
+  afterEdit();
+  OL.undo = { page: A.page, before, after: A.page.innerHTML };
+  toast("Contents brought up to date", 1500);
+}
+onPages("click", (e) => {
+  const d = e.target.closest && e.target.closest(".ln[data-toc]");
+  if (!d || !A.page.contains(d)) return;
+  const want = ed.lineText(d).split("\t")[0].replace(/\s+\S+$/, "").trim();
+  const name = (d.dataset.tocln ? JSON.parse(d.dataset.tocln).runs.map((r) => r.t).join("") : ed.lineText(d)).split("\t")[0].trim();
+  const h = [...A.page.children].find((x, i) => i > 0 && /^h[1-6]$/.test(x.dataset.kind || "") && ed.lineText(x).trim() === name) ||
+    [...A.page.children].find((x, i) => i > 0 && /^h[1-6]$/.test(x.dataset.kind || "") && ed.lineText(x).trim().startsWith(want));
+  if (!h) return;
+  e.preventDefault();
+  A.page.focus();
+  ed.placeCaret(h, 0);
+  h.scrollIntoView({ block: "start", behavior: "smooth" });
+});
 
 // ---- Search the Web (Google; Google Books, Google Images)
 function wordsToSearch() {
@@ -9828,7 +10353,7 @@ document.addEventListener("keydown", (e) => {
 }, true);
 
 // for the tests
-window.RN = { toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { measuredPage, previewPages, printPreview, closePreview, renderPreview, exportComments, commentEntries, PV, insertToc, updateToc, tocLines, pageBreaks, pageGeom, paintPageEnds, applyPageWidth, pageSetupDialog, toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

@@ -98,7 +98,7 @@ export const ALIGNS = ["center", "right", "justify"];
 const ALIGN_RE = /^<(p|h([1-6])) align="(center|right|justify)">(.*)<\/\1>$/s;
 // (RossDraft 1.9.0) and its own line spacing, Start on New Page, a page break before it
 // (1.12.0) and a tracked change to its end or its settings: tc="i5 f7" (i: its end added, d: taken out, f: settings)
-const PARA_RE = /^<(p|h([1-6]))((?: align="(?:center|right|justify)")?(?: ls="\d+(?:\.\d+)?")?(?: newpage)?(?: pagebreak)?(?: tc="[idf]-?\d+(?: [idf]-?\d+)*")?)>(.*)<\/\1>$/s;
+const PARA_RE = /^<(p|h([1-6]))((?: align="(?:center|right|justify)")?(?: ls="\d+(?:\.\d+)?")?(?: newpage)?(?: pagebreak)?(?: tc="[idf]-?\d+(?: [idf]-?\d+)*")?(?: toc="[1-9]s?e?")?)>(.*)<\/\1>$/s;
 const ALNUM = /[\p{L}\p{N}_]/u;     // Python's isalnum() (and "_" never matters here)
 
 function isalnum(c) { return !!c && /[\p{L}\p{N}]/u.test(c); }
@@ -342,6 +342,8 @@ export function parse(text) {
       if (/ pagebreak/.test(am[3])) ln.brk = true;
       const tc = / tc="([^"]+)"/.exec(am[3]);
       if (tc) ln.tcp = tc[1];
+      const toc = / toc="([^"]+)"/.exec(am[3]);
+      if (toc) ln.toc = toc[1];
     }
     if (ln.kind === "ol" && ln.num === 1) ln.restart = true;
     const { number, restarted } = lists.step(ln);
@@ -529,11 +531,12 @@ export function lineMarkdown(ln, number, opts = {}) {
   const al = ALIGNS.includes(ln.align) ? ln.align : null;
   const ls = ln.ls && /^\d+(\.\d+)?$/.test(String(ln.ls)) ? String(ln.ls) : null;
   const tcp = ln.tcp && /^[idf]-?\d+( [idf]-?\d+)*$/.test(ln.tcp) ? ln.tcp : null;
+  const toc = ln.toc && /^[1-9]s?e?$/.test(ln.toc) ? ln.toc : null;
   const attrs = (al ? ` align="${al}"` : "") + (ls ? ` ls="${ls}"` : "") + (ln.newpage ? " newpage" : "") + (ln.brk ? " pagebreak" : "") +
-    (tcp ? ` tc="${tcp}"` : "");
+    (tcp ? ` tc="${tcp}"` : "") + (toc ? ` toc="${toc}"` : "");
   if (attrs && heading) return `<${kind}${attrs}>${body}</${kind}>`;
   const whole = lineOut(ln, kind, heading, body, number);
-  return attrs && (body.trim() || ln.newpage || ln.brk || tcp) ? `<p${attrs}>${whole}</p>` : whole;
+  return attrs && (body.trim() || ln.newpage || ln.brk || tcp || toc) ? `<p${attrs}>${whole}</p>` : whole;
 }
 
 function lineOut(ln, kind, heading, body, number) {

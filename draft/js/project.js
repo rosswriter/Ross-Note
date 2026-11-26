@@ -12,10 +12,10 @@
 //
 // For the rest of Ross Note an entry looks like a note: its text is "# Title" and the scene as Markdown,
 // with the scene's pictures as media/<id>/<name> (kept in memory, never written as files).
-import * as md from "./md.js?v=1.9.22-d1.13.0";
-import * as wordio from "./wordio.js?v=1.9.22-d1.13.0";
-import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp, readHF, writeHF, setChangeInfo } from "./wordpatch.js?v=1.9.22-d1.13.0";
-import * as rtf from "./rtf.js?v=1.9.22-d1.13.0";
+import * as md from "./md.js?v=1.9.22-d1.14.0";
+import * as wordio from "./wordio.js?v=1.9.22-d1.14.0";
+import { blockers, patchDocx, sigOf, readComments, commentEdit, stripColours, readBookmarks, bookmarkEdit, changeOp, readHF, writeHF, setChangeInfo, writePage } from "./wordpatch.js?v=1.9.22-d1.14.0";
+import * as rtf from "./rtf.js?v=1.9.22-d1.14.0";
 
 export const PROJECT_EXT = ".rwproj";
 const FORMAT = "ross-writer-project";
@@ -238,6 +238,9 @@ export class ProjectStore {
     n.comments = sc.comments || [];
     n.changes = sc.changes || [];            // (RossDraft 1.12.0) its tracked changes [{id, kind, author, date, words}]
     n.usz = sc.usual && sc.usual.sz ? +sc.usual.sz : 24;      // (1.9.0) the words' usual size, for those of their own
+    n.pageInfo = sc.page || null;            // (1.14.0) its page: size and margins (twips)
+    n.uline = sc.usual && (sc.usual.line || sc.usual.styleLine) ? +(sc.usual.line || sc.usual.styleLine) : 240;   // (1.14.0) its usual line spacing (240: single)
+    n.uafter = sc.usual && sc.usual.after ? +sc.usual.after : 0;  // (1.14.0) and the space after its paragraphs (twips)
     n.fnotes = new Map(sc.notes || []);     // RossDraft 1.2: the scene's footnotes and endnotes, "f17" -> words
     n.fnDirty = false;
     n.modified = file.lastModified;
@@ -274,7 +277,7 @@ export class ProjectStore {
     let comments = [];
     try { comments = await readComments(got.files); } catch (e) { comments = []; }
     return { lines: got.lines, sigs, files: got.files, trailing, readOnly: ro.length ? ro : null, noteLines, text, comments,
-      notes: got.notes || new Map(), usual: got.usual || null, changes: got.changes || [] };
+      notes: got.notes || new Map(), usual: got.usual || null, changes: got.changes || [], page: got.page || null };
   }
 
   // the scene's own pictures by their names (as the scene has them); others stay as they are
@@ -468,6 +471,21 @@ export class ProjectStore {
     if (!sc || !sc.files) return false;
     if (this.canWrite === false) throw new Error("There's no permission to save into this file.");
     const blob = await writeHF(sc.files, hf, props);
+    const [d, name] = await this.sceneFile(n.raw, true);
+    await writeFile(d, name, blob);
+    n.raw.modified = nowIso();
+    await this.saveProject();
+    await this.load(n, true);
+    return true;
+  }
+
+  // RossDraft 1.14.0: Page Setup: the page's size, orientation and margins (twips) written into this Word file
+  async setPageSetup(n, ps) {
+    let sc = this.scenes.get(n.raw.id);
+    if (!sc && n.raw && !n.raw.pdf) { try { await this.load(n); } catch (e) { return false; } sc = this.scenes.get(n.raw.id); }
+    if (!sc || !sc.files) return false;
+    if (this.canWrite === false) throw new Error("There's no permission to save into this file.");
+    const blob = await writePage(sc.files, ps);
     const [d, name] = await this.sceneFile(n.raw, true);
     await writeFile(d, name, blob);
     n.raw.modified = nowIso();

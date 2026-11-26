@@ -1,6 +1,6 @@
 // The page: one <div class="ln"> per line of the note, with the formatting as
 // ordinary elements. Read back to lines (md.js) to save.
-import * as md from "./md.js?v=1.9.22-d1.13.0";
+import * as md from "./md.js?v=1.9.22-d1.14.0";
 
 const HL = "#ffd54f";
 
@@ -182,6 +182,13 @@ export function lineElement(ln) {
   if (ln.newpage) div.dataset.newpage = "1";
   if (ln.brk) div.dataset.pagebreak = "1";
   if (ln.tcp) div.dataset.tcp = ln.tcp;         // (RossDraft 1.12.0) its end or settings changed (tracked)
+  if (ln.toc) {
+    // (RossDraft 1.14.0) a line of a contents list: shown as it is (its words, dots, its page), not typed in; read
+    // back as it was given
+    div.dataset.toc = ln.toc;
+    div.contentEditable = "false";
+    div.dataset.tocln = JSON.stringify({ ...ln, runs: (ln.runs || []).map((r) => ({ ...r, f: [...(r.f || [])] })) });
+  }
   for (const r of ln.runs) {
     if (r.img) { div.appendChild(pictureElement(r.img)); continue; }
     if (!r.t) continue;
@@ -238,6 +245,21 @@ export function lineElement(ln) {
     div.appendChild(node);
   }
   if (!div.firstChild) div.appendChild(document.createElement("br"));
+  if (ln.toc) {
+    // (1.14.0) the contents line's last tab: dots to its page number
+    const tw = document.createTreeWalker(div, NodeFilter.SHOW_TEXT);
+    let last = null;
+    for (let t = tw.nextNode(); t; t = tw.nextNode()) if (t.data.includes("\t")) last = t;
+    if (last) {
+      const k = last.data.lastIndexOf("\t");
+      const after = last.splitText(k);
+      after.deleteData(0, 1);
+      const dots = document.createElement("span");
+      dots.className = "tocdots";
+      last.parentNode.insertBefore(dots, after);
+      for (const t of [...div.querySelectorAll("*")].flatMap((e) => [...e.childNodes]).concat([...div.childNodes])) if (t.nodeType === 3 && t.data.includes("\t")) t.data = t.data.replace(/\t/g, " ");
+    }
+  }
   return div;
 }
 
@@ -352,6 +374,9 @@ export function readLine(div) {
   if (div.dataset.newpage) ln.newpage = true;
   if (div.dataset.pagebreak) ln.brk = true;
   if (div.dataset.tcp) ln.tcp = div.dataset.tcp;
+  if (div.dataset.tocln) {
+    try { const o = JSON.parse(div.dataset.tocln); return { ...o, runs: (o.runs || []).map((r) => ({ ...r, f: new Set(r.f || []) })) }; } catch (e) { /* as read */ }
+  }
   const heading = !!kind && kind[0] === "h";
   const walk = (n) => {
     for (const c of n.childNodes) {

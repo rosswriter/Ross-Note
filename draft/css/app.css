@@ -923,3 +923,61 @@ table.rtable td.covered { display: none; }
 /* RossDraft 1.13.0: Track Changes */
 .page .ln[data-tcp*="d"]::after { text-decoration: line-through; }
 #tracking { font: inherit; font-size: 0.85em; border: 1px solid #c0392b; color: #c0392b; background: transparent; border-radius: 10px; padding: 0 8px; margin-left: 8px; cursor: pointer; }
+/* RossDraft 1.14.0: where each page ends (Page View), as Ross Writer's Option C */
+.scroller { position: relative; }
+.pgmarks { position: absolute; inset: 0 auto auto 0; width: 0; height: 0; pointer-events: none; z-index: 2; }
+.pgend { position: absolute; height: 0; border-top: 1.5px solid #5c5546; }
+.pgend .pgtab { position: absolute; top: -10px; height: 18px; line-height: 16px; padding: 0 6px; box-sizing: border-box; overflow: hidden; white-space: nowrap;
+  font: 600 11px/16px system-ui, sans-serif; color: #3d382d; background: #e9e2d2; border: 1px solid #5c5546; border-radius: 3px; }
+.pgend .pgtab.l { left: 3px; }
+.pgend .pgtab.r { right: 3px; }
+.pgend.byhand { border-top-color: #2f6fd0; }
+.pgend.byhand .pgtab { border-color: #2f6fd0; color: #1d4f9c; background: #e3ecfa; }
+.dark .pgend { border-top-color: #b3ac9d; }
+.dark .pgend .pgtab { background: #3a3630; color: #e8e2d4; border-color: #b3ac9d; }
+.psgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.psrow { display: flex; gap: 18px; margin: 4px 0 8px; }
+.psform select { min-height: 38px; padding: 4px 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: transparent; color: inherit; font: inherit; }
+/* RossDraft 1.14.0: a contents list */
+.page .ln[data-toc] { display: flex; align-items: baseline; cursor: pointer; }
+.page .ln[data-toc^="2"] { padding-left: 1.5em; }
+.page .ln[data-toc^="3"] { padding-left: 3em; }
+.page .ln[data-toc] .tocdots { flex: 1; border-bottom: 1.5px dotted currentColor; opacity: 0.45; margin: 0 6px; min-width: 2em; transform: translateY(-0.25em); }
+.page .ln[data-toc] a { color: inherit; text-decoration: none; }
+
+/* (1.14.0) Print Preview: the pages on a grey desk, a bar across the top (not a floating panel) */
+#pview { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; background: #8a8678; outline: none; }
+#pview[hidden] { display: none; }
+#pview .pvbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--ui, #f3efe4); color: var(--ink, #222);
+  border-bottom: 1px solid var(--line, #ccc); font: 14px Inter, sans-serif; flex-wrap: wrap; }
+#pview .pvbar button, #pview .pvbar select { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line, #bbb); background: var(--paper, #fff); color: inherit; cursor: pointer; }
+#pview .pvbar button.main { background: #2F6296; border-color: #2F6296; color: #fff; }
+#pview .pv-title { font-weight: 600; }
+#pview .pv-sp { flex: 1; }
+#pview .pv-c { display: flex; align-items: center; gap: 6px; }
+#pview .pv-c[hidden], #pview .pv-export[hidden] { display: none; }
+#pview .pvsheets { flex: 1; overflow: auto; padding: 28px 16px 60px; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+#pview .sheetwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#pview .sheet { position: relative; background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0, 0, 0, .35); overflow: hidden; flex: none; }
+#pview .pvno { font: 12px Inter, sans-serif; color: #f4f1e8; }
+#pview .pvbody { position: absolute; overflow: hidden; }
+.page.pvpage { padding: 0 !important; margin: 0 !important; min-height: 0 !important; max-width: none !important; background: transparent !important;
+  color: #000; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; --ink: #000; --quote: #333; }
+.pvpage .ln.title { -webkit-text-stroke: 0; }
+#pview .pvhf { position: absolute; display: grid; grid-template-columns: 1fr 1fr 1fr; transform: translateY(-50%); font: 10pt var(--pagefont, serif); color: #000; }
+#pview .pvhf span:nth-child(2) { text-align: center; }
+#pview .pvhf span:nth-child(3) { text-align: right; }
+.pvcomments .pvcm { font-size: .82em; line-height: 1.35; margin-bottom: .7em; padding-left: 8px; border-left: 2.5px solid #e6c229; white-space: normal; }
+.pvcomments .pvcm.reply { margin-left: 22px; border-left-color: #bbb; }
+.pvcomments .pvcwho { color: #555; font: .85em Inter, sans-serif; }
+.pvcomments .pvcwords { font-style: italic; color: #444; }
+.pvcomments .pvcm.done .pvctext { color: #666; }
+@media print {
+  body.previewing > *:not(#pview) { display: none !important; }
+  body.previewing #pview { position: static; display: block; background: #fff; }
+  body.previewing #pview .pvbar, body.previewing #pview .pvno { display: none !important; }
+  body.previewing #pview .pvsheets { display: block; padding: 0; overflow: visible; }
+  body.previewing #pview .sheetwrap { display: block; }
+  body.previewing #pview .sheet { box-shadow: none; break-after: page; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.previewing #pview .sheetwrap:last-child .sheet { break-after: auto; }
+}

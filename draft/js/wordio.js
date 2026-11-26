@@ -1,7 +1,7 @@
 // Word documents (.docx) in and out, the same way as the laptop's wordio.py.
 // In: a .docx becomes lines (md.js's line model); out: lines become a .docx.
 // Only loaded when you import or export, so the app stays quick to open.
-import * as md from "./md.js?v=1.9.22-d1.13.0";
+import * as md from "./md.js?v=1.9.22-d1.14.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -265,6 +265,32 @@ export async function readDocx(buf, opts = {}) {
   const pending = [];
   const bodyEl = doc.getElementsByTagNameNS(W, "body")[0];
   const usual = bodyEl ? usualLook(bodyEl) : { font: null, sz: null, color: null, line: null };
+  // (RossDraft 1.14.0) the usual paragraph's spacing from the styles too (Normal, or the document's defaults): the
+  // line (240: single) and the space after it (twips), for where pages end
+  {
+    const sd = stylesText ? xml(stylesText) : null;
+    const spOf = (el) => el && [...el.getElementsByTagNameNS(W, "spacing")][0];
+    let defs = null, normal = null;
+    if (sd) {
+      defs = spOf([...sd.getElementsByTagNameNS(W, "pPrDefault")][0]);
+      const ns = [...sd.getElementsByTagNameNS(W, "style")].find((s2) => wv(s2, "type") === "paragraph" && (wv(s2, "default") === "1" || wv(s2, "styleId") === "Normal"));
+      normal = spOf(ns && kid(ns, "pPr"));
+    }
+    const pick = (a) => { for (const e of [normal, defs]) { const v = e && wv(e, a); if (v != null && /^\d+$/.test(v)) return +v; } return null; };
+    const rule = (normal && wv(normal, "lineRule")) || (defs && wv(defs, "lineRule")) || "auto";
+    usual.styleLine = rule === "auto" ? pick("line") : null;
+    // the space after most paragraphs: their own, or the style's
+    const tally = new Map();
+    for (const p of bodyEl ? kids(bodyEl, "p") : []) {
+      const sp = kid(kid(p, "pPr"), "spacing");
+      const v = sp && wv(sp, "after");
+      const k = v != null && /^\d+$/.test(v) ? +v : "style";
+      tally.set(k, (tally.get(k) || 0) + 1);
+    }
+    let best = "style", bn = -1;
+    for (const [k, n] of tally) if (n > bn) { best = k; bn = n; }
+    usual.after = best === "style" ? pick("after") || 0 : best;
+  }
   // (RossDraft 1.12.0) tracked changes, in the order they come: id -> { id, kind, author, date, words }
   // kinds: ins, del (and moves), fmt (the words' formatting), pins / pdel (a paragraph's end added / taken out),
   // pfmt (a paragraph's settings), rowins / rowdel, tfmt (a table's, a row's or a cell's settings)
@@ -327,6 +353,9 @@ export async function readDocx(buf, opts = {}) {
   // (RossDraft 1.13.0) a field (page number, date, a cross-reference...): one run showing its result, flagged
   // "fld:<its instruction, URI-encoded>"; a HYPERLINK field: its words a link. A form field, a field in a field, or
   // one across paragraphs (a contents list made by Word): its words shown, the scene read-only.
+  // (RossDraft 1.14.0) a contents list (Word's TOC field, across paragraphs): its paragraphs' lines are marked
+  // toc: "<level>" + "s" (its first) / "e" (its last); shown as they are, not typed in
+  let tocState = null;
   const fieldRun = (instr, runs, f0, href) => {
     const ins = (instr || "").trim();
     const hl = /^HYPERLINK\s+(?:\\l\s+)?"([^"]+)"/i.exec(ins);
@@ -368,10 +397,11 @@ export async function readDocx(buf, opts = {}) {
             const ty = wv(c, "fldCharType");
             if (ty === "begin") {
               if (fs.depth === 0) Object.assign(fs, { instr: "", res: [], mode: "instr", f: new Set(f), odd: false, href });
-              else fs.odd = "a field inside a field";
+              else if (!/^\s*TOC\b/i.test(fs.instr)) fs.odd = "a field inside a field";    // (a contents list's page numbers are fields)
               if (kid(c, "ffData")) fs.odd = "a form field";
               fs.depth++;
             } else if (ty === "separate" && fs.depth === 1) fs.mode = "res";
+            else if (ty === "end" && fs.depth === 0 && tocState && tocState.open) tocState.endHere = true;
             else if (ty === "end" && fs.depth > 0) {
               fs.depth--;
               if (fs.depth === 0) {
@@ -384,7 +414,7 @@ export async function readDocx(buf, opts = {}) {
           if (t === "instrText") { if (fs.depth === 1 && fs.mode === "instr") fs.instr += c.textContent; continue; }
           if (t === "t" || (t === "delText" && tc && tc.kind === "del")) { if (c.textContent) out.push({ t: c.textContent, f: new Set(f), href }); }
           else if (t === "footnoteReference" || t === "endnoteReference") out.push({ t: noteToken(t[0], wv(c, "id")), f: new Set(f), href });
-          else if (t === "tab" || t === "ptab") out.push({ t: " ", f: new Set(f), href });
+          else if (t === "tab" || t === "ptab") out.push({ t: (tocState && tocState.open) || (fs.depth > 0 && /^\s*TOC\b/i.test(fs.instr)) ? "\t" : " ", f: new Set(f), href });
           else if (t === "br" || t === "cr") { if (wv(c, "type") !== "page") out.push(null); }
           else if (t === "noBreakHyphen") out.push({ t: "-", f: new Set(f), href });
           else if (t === "drawing") {
@@ -428,8 +458,10 @@ export async function readDocx(buf, opts = {}) {
     };
     walk(p, null, null);
     if (fs.depth > 0) {
-      // a field that goes on past the paragraph (a contents list, say): its words, read-only
-      trouble.add("a field across paragraphs (a contents list, say)");
+      if (/^\s*TOC\b/i.test(fs.instr) && fs.depth === 1) {
+        // (1.14.0) a contents list starts here
+        tocState = { open: true, startHere: true, endHere: false };
+      } else trouble.add("a field across paragraphs");
       for (const x of fs.res) out0.push(x);
     }
   };
@@ -508,13 +540,23 @@ export async function readDocx(buf, opts = {}) {
       olAt.set(depth, num[0]);
       for (const d of [...olAt.keys()]) if (d > depth) olAt.delete(d);
     } else if (kind !== "ul" && kind !== "ol") olAt.clear();
-    return parts.map((runs, k) => ({
+    const res = parts.map((runs, k) => ({
       kind: k === 0 || kind === "quote" ? kind : (kind === "ul" || kind === "ol" || heading ? null : kind),
       restart: k === 0 && restart,
       depth, runs: tidyRuns(runs), code, title: isTitle && k === 0, align: code ? null : align,
       ls: code ? null : ls, pageBreak: k === 0 && newPage, brk: k === 0 && brk,
       tcp: k === parts.length - 1 && tcp.length ? tcp.join(" ") : null,
     }));
+    if (tocState && tocState.open) {
+      // (1.14.0) a line of a contents list: its level (Word's TOC 1, TOC 2…), its first and last
+      const nm = ((styles.byId.get(sid) || {}).name || sid || "").toLowerCase();
+      const lv = (/^toc ?(\d)/.exec(nm) || [])[1] || "1";
+      const fin = res.length ? res : [];
+      fin.forEach((ln, k) => { ln.toc = lv + (tocState.startHere && k === 0 ? "s" : "") + (tocState.endHere && k === fin.length - 1 ? "e" : ""); ln.kind = null; });
+      tocState.startHere = false;
+      if (tocState.endHere) tocState = null;
+    }
+    return res;
   };
 
   // RossDraft 1.8.0: a table as one line, its cells' paragraphs with their formatting, as Ross Writer shows it;
@@ -616,7 +658,11 @@ export async function readDocx(buf, opts = {}) {
         if (top) ls.forEach((ln) => { ln.src = idx; });
         lines.push(...ls);
       } else if (c.localName === "tbl") table(c, top ? idx : null);
-      else if (c.localName === "sdt") { const sc = kid(c, "sdtContent"); if (sc) block(sc); }
+      else if (c.localName === "sdt") {
+        // (1.14.0: kept whole when nothing in it changes, a contents list's content control say)
+        const sc = kid(c, "sdtContent");
+        if (sc) { const at = lines.length; block(sc); if (top) for (let k = at; k < lines.length; k++) lines[k].src = idx; }
+      }
       else if (c.localName === "ins" || c.localName === "customXml") block(c);
     });
   };
@@ -642,7 +688,18 @@ export async function readDocx(buf, opts = {}) {
       notes.set(kind + (n.getAttributeNS(W, "id") || n.getAttribute("w:id")), paras.join("\n").replace(/^\s+/, ""));
     }
   }
-  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble], usual, changes: [...changes.values()] };
+  // (RossDraft 1.14.0) the page: its size and margins (twips), from the last section
+  let page = null;
+  {
+    const secs = bodyEl ? kids(bodyEl, "sectPr") : [];
+    const sp = secs[secs.length - 1];
+    const num = (el, a, d) => { const v = el && wv(el, a); return v != null && /^-?\d+$/.test(v) ? +v : d; };
+    const sz = sp && kid(sp, "pgSz"), mar = sp && kid(sp, "pgMar");
+    page = { w: num(sz, "w", 11906), h: num(sz, "h", 16838), landscape: !!(sz && wv(sz, "orient") === "landscape"),
+      top: Math.abs(num(mar, "top", 1440)), bottom: Math.abs(num(mar, "bottom", 1440)), left: num(mar, "left", 1440), right: num(mar, "right", 1440),
+      header: num(mar, "header", 708), footer: num(mar, "footer", 708) };
+  }
+  if (opts.keep) return { lines, media, title, files, docText, notes, trouble: [...trouble], usual, changes: [...changes.values()], page };
   const tidy = [];
   for (const ln of lines) {
     const empty = !ln.runs.some((r) => r.t.trim()) && !ln.kind && !ln.cells;
@@ -688,6 +745,7 @@ export function toNoteLines(lines, picture) {
     if (ln.pageBreak) out.newpage = true;
     if (ln.brk) out.brk = true;
     if (ln.tcp) out.tcp = ln.tcp;              // (1.12.0)
+    if (ln.toc) out.toc = ln.toc;              // (1.14.0)
     if ((ln.kind === "ul" || ln.kind === "ol") && ln.depth > 1) {
       const lead = "  ".repeat(ln.depth - 1);
       out.mark = ln.kind === "ul" ? "ul:" + lead + "- " : "ol:" + lead + "\u0000. ";
@@ -719,7 +777,7 @@ export function fromNoteLines(lines) {
     const heading = !!ln.kind && ln.kind[0] === "h";
     return {
       kind: ln.kind, depth: depthOf[k] || 1, code: false, align: ln.align || null, restart: !!restarts[k],
-      ls: ln.ls || null, pageBreak: !!ln.newpage || !!ln.pageBreak, brk: !!ln.brk, tcp: ln.tcp || null,
+      ls: ln.ls || null, pageBreak: !!ln.newpage || !!ln.pageBreak, brk: !!ln.brk, tcp: ln.tcp || null, toc: ln.toc || null,
       runs: ln.runs.map((r) => (r.img ? { t: OBJ, f: new Set(), img: r.img }
         : { t: r.t.split(OBJ).join(""), f: heading ? new Set([...r.f].filter((x) => x !== "b")) : r.f, href: r.href || null })),
     };

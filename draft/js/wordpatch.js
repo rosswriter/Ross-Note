@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.13.0";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.14.0";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -33,7 +33,7 @@ const BLOCKERS = [
   // (RossDraft 1.8.0: tables are shown and edited; merged cells, a table in a table: readDocx's trouble says so)
   [/<w:txbxContent\b|<mc:AlternateContent\b|<w:object\b/, "a text box or shape"],
   [/<m:oMath/, "an equation"],
-  [/<w:sdt\b/, "a content control"],
+  // (1.14.0: a content control that's Word's contents list is shown and kept: blockers())
   // (RossDraft 1.13.0: fields are shown and kept; a form field, a field in a field, one across paragraphs: readDocx's trouble)
   [/<w:vanish\b(?![^>]*w:val="(0|false)")/, "hidden text"],
   [/<w:altChunk\b/, "embedded content"],
@@ -46,6 +46,10 @@ export function setChangeInfo(list) { CHANGE_INFO = new Map((list || []).map((c)
 export function blockers(docText) {
   const out = [];
   for (const [re, what] of BLOCKERS) if (re.test(docText)) out.push(what);
+  // content controls: all right where each is a contents list (Word's "Table of Contents" building block)
+  const sdts = (docText.match(/<w:sdt>|<w:sdt\s/g) || []).length;
+  const tocs = (docText.match(/<w:docPartGallery w:val="Table of Contents"\/>/g) || []).length;
+  if (sdts > tocs) out.push("a content control");
   return out;
 }
 
@@ -78,6 +82,7 @@ function sigOf(ln) {
   if (ln.align && !ln.code) sig.push(ln.align);       // (unaligned lines' signatures as before 1.8.3)
   if ((ln.ls || ln.pageBreak || ln.brk) && !ln.code) sig.push("ls" + (ln.ls || "") + (ln.pageBreak ? "np" : "") + (ln.brk ? "pb" : ""));
   if (ln.tcp) sig.push("tc" + ln.tcp);                  // (1.12.0)
+  if (ln.toc) sig.push("toc" + ln.toc);                 // (1.14.0)
   return JSON.stringify(sig);
 }
 
@@ -473,6 +478,11 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       `<w:spacing w:before="${k < 3 ? 240 : 160}" w:after="80"/><w:outlineLvl w:val="${k - 1}"/></w:pPr>` +
       `<w:rPr><w:b/><w:sz w:val="${[40, 32, 28, 24, 24, 24][k - 1]}"/></w:rPr></w:style>`;
   }
+  for (let k = 1; k <= 3; k++) {             // (1.14.0) a contents list's lines
+    OUR_STYLES["TOC" + k] = `<w:style w:type="paragraph" w:styleId="TOC${k}"><w:name w:val="toc ${k}"/>` +
+      `<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/>` +
+      (k > 1 ? `<w:ind w:left="${(k - 1) * 220}"/>` : "") + `</w:pPr></w:style>`;
+  }
   const styleFor = (names, ours) => {
     for (const n of names) if (styleIdByName.has(n)) return styleIdByName.get(n);
     if (!stylesDoc) return ours;
@@ -703,7 +713,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.13.0");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.14.0");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -797,6 +807,22 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
         }
       }
     }
+    // (1.14.0) a line of a contents list made here: Word's TOC style for its level, a right tab with dots at the
+    // text's edge; the first starts the TOC field, the last ends it
+    if (ln.toc && !(ppr && wkid(ppr, "pStyle") && /toc/i.test(wval(wkid(ppr, "pStyle"), "val") || ""))) {
+      const lv = ln.toc[0];
+      setStyle(styleFor(["toc " + lv], "TOC" + lv));
+      const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
+      const num = (el, a, d) => { const v = el && wval(el, a); return v ? parseInt(v, 10) : d; };
+      const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1440) - num(pgMar, "right", 1440);
+      const pp = ensurePpr();
+      for (const x of wkids(pp, "tabs")) pp.removeChild(x);
+      const tabs = doc.createElementNS(W, "w:tabs");
+      const tb = doc.createElementNS(W, "w:tab");
+      tb.setAttributeNS(W, "w:val", "right"); tb.setAttributeNS(W, "w:leader", "dot"); tb.setAttributeNS(W, "w:pos", String(width));
+      tabs.appendChild(tb);
+      pp.appendChild(tabs);
+    }
     // (1.13.0) its end added or taken out with changes tracked (made here, or kept from the old paragraph)
     if (ln.tcp && !ln.code) {
       for (const tok of ln.tcp.split(" ")) {
@@ -880,7 +906,11 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
           pieces.push({ key: tcKey, xml: `<w:r><w:rPr><w:rStyle w:val="${sid}"/></w:rPr><w:${k}Reference w:id="${piece.note[1]}"/></w:r>` });
           continue;
         }
-        const rx = (rp.children.length ? ser(rp) : "") + `<w:${tTag} xml:space="preserve">${xt(piece.t)}</w:${tTag}>`;
+        // (1.14.0) a tab in the words: Word's tab
+        const tx = tTag === "t" && piece.t.includes("\t")
+          ? piece.t.split("\t").map((x2, k2) => (k2 ? "<w:tab/>" : "") + (x2 ? `<w:t xml:space="preserve">${xt(x2)}</w:t>` : "")).join("")
+          : `<w:${tTag} xml:space="preserve">${xt(piece.t)}</w:${tTag}>`;
+        const rx = (rp.children.length ? ser(rp) : "") + tx;
         const fld = ln.code ? null : [...f].find((k) => k.startsWith("fld:"));
         if (fld) {
           // (1.13.0) a field: written as Word's simple field, its result as it shows
@@ -897,6 +927,10 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
       }
     }
     flushTc();
+    if (ln.toc && !ln.code) {
+      if (/s/.test(ln.toc)) xml = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' + xml;
+      if (/e/.test(ln.toc)) xml += '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    }
     if (ln.brk && !ln.code) xml = '<w:r><w:br w:type="page"/></w:r>' + xml;      // (1.9.0) a page break before it
     if (xml) {
       const frag = parse(`<w:x xmlns:w="${W}" xmlns:r="${R}" xmlns:wp="${WP}" xmlns:a="${A_}" xmlns:pic="${PIC}">${xml}</w:x>`);
@@ -916,7 +950,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.13.0");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.14.0");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }
@@ -2031,6 +2065,36 @@ export async function writeHF(files, hf, props) {
       e.textContent = v;
     }
     pkg.parts.set("docProps/core.xml", core);
+  }
+  return pkg.save();
+}
+
+// ------------------------------------------------------------------ RossDraft 1.14.0: Page Setup (as Ross Writer)
+// ps: { w, h, landscape, top, bottom, left, right } in twips, for every section of the document
+export async function writePage(files, ps) {
+  const pkg = await openPackage(files);
+  let secs = sectionsOf(pkg);
+  if (!secs.length) { const s0 = pkg.doc.createElementNS(W, "w:sectPr"); pkg.body.appendChild(s0); secs = [s0]; }
+  const ORDER = ["headerReference", "footerReference", "footnotePr", "endnotePr", "type", "pgSz", "pgMar", "paperSrc", "pgBorders", "lnNumType",
+    "pgNumType", "cols", "formProt", "vAlign", "noEndnote", "titlePg", "textDirection", "bidi", "rtlGutter", "docGrid", "printerSettings", "sectPrChange"];
+  for (const sect of secs) {
+    const get = (tag) => {
+      let e = wkid(sect, tag);
+      if (!e) {
+        e = pkg.doc.createElementNS(W, "w:" + tag);
+        const k = ORDER.indexOf(tag);
+        sect.insertBefore(e, wkids(sect).find((x) => ORDER.indexOf(x.localName) > k) || null);
+      }
+      return e;
+    };
+    const sz = get("pgSz");
+    sz.setAttributeNS(W, "w:w", String(Math.round(ps.w)));
+    sz.setAttributeNS(W, "w:h", String(Math.round(ps.h)));
+    if (ps.landscape) sz.setAttributeNS(W, "w:orient", "landscape");
+    else { sz.removeAttributeNS(W, "orient"); sz.removeAttribute("w:orient"); }
+    const mar = get("pgMar");
+    for (const k of ["top", "bottom", "left", "right"]) mar.setAttributeNS(W, "w:" + k, String(Math.round(ps[k])));
+    for (const [k, d] of [["header", "708"], ["footer", "708"], ["gutter", "0"]]) if (wval(mar, k) == null) mar.setAttributeNS(W, "w:" + k, d);
   }
   return pkg.save();
 }
