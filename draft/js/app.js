@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.15.0";
-import * as ed from "./editor.js?v=1.9.22-d1.15.0";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.15.0";
-import * as spell from "./spell.js?v=1.9.22-d1.15.0";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.15.0";
+import * as md from "./md.js?v=1.9.22-d1.15.1";
+import * as ed from "./editor.js?v=1.9.22-d1.15.1";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.15.1";
+import * as spell from "./spell.js?v=1.9.22-d1.15.1";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.15.1";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.15.0";
+import { ED } from "./edition.js?v=1.9.22-d1.15.1";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -696,7 +696,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.15.0")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.15.1")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -823,18 +823,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.15.0");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.15.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.15.1");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1646,7 +1646,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.15.0");
+    const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1778,7 +1778,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.15.0");
+    const EP = await import("./epub.js?v=1.9.22-d1.15.1");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1802,7 +1802,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.15.0");
+    const R = await import("./rtf.js?v=1.9.22-d1.15.1");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1843,7 +1843,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.0");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2683,7 +2683,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.15.0"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.15.1"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2707,7 +2707,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.15.0");
+  const X = await import("./export.js?v=1.9.22-d1.15.1");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2735,7 +2735,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.15.0");
+  const X = await import("./export.js?v=1.9.22-d1.15.1");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -4563,6 +4563,29 @@ function hideSubmenu() {
   if (sm) sm.hidden = true;
   for (const o of document.querySelectorAll("#menu button.has-sub.open")) o.classList.remove("open");
 }
+// (1.15.1) the page's menu, opened by a finger: put where it doesn't cover the words chosen (below them, above
+// them, or beside them, whichever has room; else where it covers least); gone once the selection's ends are moved
+const TM = { at: 0, range: null };
+function menuClearOf(r) {
+  const m = $("menu"), z = uiz();
+  const mw = m.offsetWidth * z, mh = m.offsetHeight * z, W = window.innerWidth, H = window.innerHeight, gap = 28;
+  const x = Math.max(8, Math.min(r.left, W - mw - 8));
+  if (r.bottom + gap + mh <= H - 8) return putAt(m, x, r.bottom + gap);
+  if (r.top - gap - mh >= 8) return putAt(m, x, r.top - gap - mh);
+  const y = Math.max(8, Math.min(r.top, H - mh - 8));
+  if (W - r.right - gap >= mw + 8) return putAt(m, r.right + gap, y);
+  if (r.left - gap - mw >= 8) return putAt(m, r.left - gap - mw, y);
+  // no room clear of it: the side of the screen it covers least
+  const below = H - r.bottom, above = r.top;
+  putAt(m, W - mw - 8, below >= above ? H - mh - 8 : 8);
+}
+document.addEventListener("selectionchange", () => {
+  if ($("menu").hidden || !TM.range || Date.now() - TM.at < 600) return;
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  if (r.compareBoundaryPoints(Range.START_TO_START, TM.range) !== 0 || r.compareBoundaryPoints(Range.END_TO_END, TM.range) !== 0) { TM.range = null; hideMenu(); }
+});
 function hideMenu() {
   hideSubmenu();
   $("menu").hidden = true;
@@ -5187,7 +5210,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.15.0")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.15.1")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5335,7 +5358,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.15.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.15.1");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5407,7 +5430,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.15.0");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.15.1");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5611,7 +5634,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.15.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5648,7 +5671,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.15.0");
+  const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5687,7 +5710,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.15.0"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.15.1"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -5979,7 +6002,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.15.0");
+  const R = await import("./rtf.js?v=1.9.22-d1.15.1");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6071,7 +6094,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -6602,9 +6625,13 @@ function pageMenu(e, p) {
   e.preventDefault();
   if (A !== p) setActive(p);
   const sel = window.getSelection();
-  const at = caretAtPoint(e.clientX, e.clientY);
-  let inSel = false;
-  if (sel.rangeCount && !sel.isCollapsed && at) { try { inSel = sel.getRangeAt(0).isPointInRange(at.node, at.off); } catch (err) { inSel = false; } }
+  // (1.15.1) a finger: the words the tablet chose are left as they are (the finger's point is often a line below
+  // them: moving the caret there made a selection spill into the next lines), and the menu goes clear of them
+  const touch = (e.pointerType === "touch") || (lastPointer === "touch" && Date.now() - lastPointerAt < 3000);
+  const r0 = touch && sel.rangeCount && p.page.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+  const at = r0 ? { node: r0.startContainer, off: r0.startOffset } : caretAtPoint(e.clientX, e.clientY);
+  let inSel = !!r0;
+  if (!inSel && sel.rangeCount && !sel.isCollapsed && at) { try { inSel = sel.getRangeAt(0).isPointInRange(at.node, at.off); } catch (err) { inSel = false; } }
   if (!inSel && at && p.page.contains(at.node)) {
     const r = document.createRange();
     r.setStart(at.node, at.off);
@@ -6670,6 +6697,7 @@ function pageMenu(e, p) {
     items.push({ label: "Switch Pane", keys: "Shift+F6", fn: switchPane });
   }
   showMenu({ getBoundingClientRect: () => new DOMRect(e.clientX, e.clientY, 0, 0) }, items);
+  if (r0) { menuClearOf(r0.getBoundingClientRect()); TM.at = Date.now(); TM.range = r0.cloneRange(); }
 }
 
 // ------------------------------------------------------------------ page view (Ross Writer's Ctrl+Shift+L)
@@ -8129,7 +8157,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.0");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -8695,7 +8723,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.15.0"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.15.1"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -10572,7 +10600,7 @@ document.addEventListener("keydown", (e) => {
 }, true);
 
 // for the tests
-window.RN = { setMenuSee, showMenu, languageDialog, langTagAt, docLangTag, dictAt, thesaurus, measuredPage, previewPages, printPreview, closePreview, renderPreview, exportComments, commentEntries, PV, insertToc, updateToc, tocLines, pageBreaks, pageGeom, paintPageEnds, applyPageWidth, pageSetupDialog, toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+window.RN = { menuClearOf, TM, setMenuSee, showMenu, languageDialog, langTagAt, docLangTag, dictAt, thesaurus, measuredPage, previewPages, printPreview, closePreview, renderPreview, exportComments, commentEntries, PV, insertToc, updateToc, tocLines, pageBreaks, pageGeom, paintPageEnds, applyPageWidth, pageSetupDialog, toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();

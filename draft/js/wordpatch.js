@@ -13,7 +13,7 @@
 //
 // Scenes with things this can't keep (footnotes, tracked changes, tables...) aren't written
 // at all: blockers() says which, and the tablet shows them read-only.
-import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.15.0";
+import { unzip, zip, imageSize, extOf, noteToken, splitNotes, noteParasXml, emptyNotesXml, NOTE_A, NOTE_STYLES, usualLook } from "./wordio.js?v=1.9.22-d1.15.1";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -715,7 +715,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
 
   const buildP = async (ln, j, tmpl, oneToOne) => {
     if (ln.table) {
-      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.15.0");
+      const { tableXml } = await import("./wordio.js?v=1.9.22-d1.15.1");
       const pgSz = sectPr && wkid(sectPr, "pgSz"), pgMar = sectPr && wkid(sectPr, "pgMar");
       const num = (el, a, d) => { const v = el && (el.getAttributeNS(W, a) || el.getAttribute("w:" + a)); return v ? parseInt(v, 10) : d; };
       const width = num(pgSz, "w", 11906) - num(pgMar, "left", 1417) - num(pgMar, "right", 1417);
@@ -957,7 +957,7 @@ export async function patchDocx(files, old, oldSigs, lines, pictureBytes, notes 
     const n = Math.max(1, ...rows.map((r) => r.length));
     const oldT = oi != null ? srcEl(oi) : null;
     if (!oldT) {
-      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.15.0");
+      const { cellsTableXml } = await import("./wordio.js?v=1.9.22-d1.15.1");
       const t = parse(`<w:x xmlns:w="${W}">${cellsTableXml(ln, textW)}</w:x>`).documentElement.firstElementChild;
       return doc.importNode(t, true);
     }
