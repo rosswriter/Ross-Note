@@ -1,15 +1,15 @@
 // Ross Note for the tablet: the RossNotes folder (kept in step with the laptop
 // by a sync app such as Drivesync), read and written in place.
-import * as md from "./md.js?v=1.9.22-d1.15.1";
-import * as ed from "./editor.js?v=1.9.22-d1.15.1";
-import { Store, PICTURES } from "./store.js?v=1.9.22-d1.15.1";
-import * as spell from "./spell.js?v=1.9.22-d1.15.1";
-import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.15.1";
+import * as md from "./md.js?v=1.9.22-d1.16.0";
+import * as ed from "./editor.js?v=1.9.22-d1.16.0";
+import { Store, PICTURES } from "./store.js?v=1.9.22-d1.16.0";
+import * as spell from "./spell.js?v=1.9.22-d1.16.0";
+import { ProjectStore, DocxStore, MdFileStore, RtfStore, findProjectFiles, findProjects, FLAG_COLOURS, alsoScrivener } from "./project.js?v=1.9.22-d1.16.0";
 
 if (ED.project) alsoScrivener();
 md.setTables(!!ED.project);       // RossDraft 1.8.0: tables shown and edited as Ross Writer's
 export const VERSION = "1.9.22";
-import { ED } from "./edition.js?v=1.9.22-d1.15.1";
+import { ED } from "./edition.js?v=1.9.22-d1.16.0";
 // The version shown: RossDraft has its own number (built on V9 VERSION).
 const SHOWN = ED.version ? ED.version + " · V9 " + VERSION : VERSION;
 export const EDITION = ED.short;   // V9 or RossDraft (js/edition.js); V9 was V7-full until 1.9.2
@@ -67,7 +67,7 @@ function loadSettings() {
     open: "", open2: "", expanded: [], split: "", ratio: 0.5, active: 0,
     // 1.9.0 (from 1.6.8): the new look
     toolbar: false, measure: "medium", font: "literata", focus: false, wordList: true, goal: 0, day: null, colours: {},
-    classic: false, ui: 100, ink: "normal" };
+    classic: false, ui: 100, ink: "normal", rwlook: !!ED.rwlook };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(ED.key) || "{}")); } catch (e) { return d; }
 }
 function saveSettings() { try { localStorage.setItem(ED.key, JSON.stringify(S.settings)); } catch (e) { /* private */ } }
@@ -110,6 +110,7 @@ function applyLook() {
   $("modes").textContent = s.focus ? "Focus" : "";
   document.querySelector('meta[name="theme-color"]').content = s.classic ? (s.dark ? "#1e2023" : "#1b523d") :
     (s.dark ? "#2F6296" : "#3B78B4");
+  if (typeof applyRw === "function") applyRw();
   layout();
 }
 
@@ -200,6 +201,7 @@ function enterPlace(store) {
   if (store.isDoc || store.isEpub) s.lastDoc = { name: store.isEpub ? store.fileName : store.label || store.fileName };
   else if (store.isProject) s.lastProject = { name: store.label, file: store.fileName };
   saveSettings();
+  if (typeof rememberPlace === "function") setTimeout(() => rememberPlace(store), 0);
 }
 
 // ------------------------------------------------------------------ the folder (kept between visits)
@@ -397,6 +399,8 @@ async function start() {
 // lets a web app into a folder or a file only from a tap.
 function showStart(kind, handle, was = null) {
   diag("start screen", kind + (was ? ", carry on: " + was.where : "") + (handle ? ", notes: " + handle.name : ""));
+  if (rwOn() && kind !== "unsupported") { rwStart(kind, handle, was); return; }
+  if ($("start").classList.contains("rwstart")) { $("start").classList.remove("rwstart", "over"); $("start").innerHTML = START_HTML; }
   $("start").hidden = false;
   // RossDraft 1.0, and Ross Note V9 1.9.21: the raised start screen (paper; midnight in dark mode), compact
   // buttons that sink when tapped.
@@ -696,7 +700,7 @@ function renderDraftHead() {
 // Its settings are the project's (the .rwproj's "compile", shared with Ross Writer); the book is saved into
 // the project's folder as "<title> (compiled).<ext>" (PDF: the print view's "Save as PDF").
 let CM = null;
-async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.15.1")); }
+async function compileModule() { return CM || (CM = await import("./compile.js?v=1.9.22-d1.16.0")); }
 function projectTitle() { return draftOn() ? (S.store.data.title || String(S.store.fileName || "Book").replace(/\.rwproj$/i, "")) : ""; }
 const WORD_FONT = { literata: "Literata", classic: "Cambria", garamond: "EB Garamond", lora: "Lora", sourceserif: "Source Serif 4",
   inter: "Inter", courier: "Courier Prime" };
@@ -823,18 +827,18 @@ async function compileBook(kind, chosen, o) {
       for (const e of chosen) { const sc = S.store.scenes && S.store.scenes.get(e.raw.id); if (sc && sc.files && !sc.readOnly) { tpl = sc; break; } }
       if (!tpl) tpl = await S.store.findTemplate();
       if (tpl && tpl.files) {
-        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
+        const { patchDocx } = await import("./wordpatch.js?v=1.9.22-d1.16.0");
         return patchDocx(tpl.files, tpl.lines, tpl.sigs, lines, bytes, notes, true);
       }
       return W.writeDocx(lines, bytes, title, "Cambria", { notes, footer: "page", titlePage: !!o.title_page });
     }, { after: 0 });
     if (o.comments && entries.some((e) => e.comments.length)) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.16.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         entries.map((e) => ({ title: e.title, comments: e.comments }))), { after: 0 });
     }
   } else if (kind === "rtf") {
-    const R = await import("./rtf.js?v=1.9.22-d1.15.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.16.0");
     ext = "rtf";
     const out = await busy("Making the RTF document…", () => {
       if (o.layout === "manuscript") return R.writeRtf(lines, { notes, title, pictureBytes: bytes, indent: 720, headingsPlain: true,
@@ -1068,10 +1072,13 @@ function panelTabs(p, cs) {
     top.appendChild(b);
   };
   // (three tabs: shorter names, so they fit side by side)
-  const three = inspectorOn(p) && fnOn(p);
+  const rw = rwOn();
+  const three = (inspectorOn(p) && fnOn(p)) || rw;
+  if (rw) tab(cs.length ? `Comments ${cs.length}` : "Comments", "comments");
   if (inspectorOn(p)) tab(three ? "Synopsis" : "Synopsis & Notes", "notes");
-  tab(cs.length ? `Comments${three ? " " : " · "}${cs.length}` : "Comments", "comments");
+  if (!rw) tab(cs.length ? `Comments${three ? " " : " · "}${cs.length}` : "Comments", "comments");
   if (fnOn(p)) { const nf = p.page.querySelectorAll("sup.fnref").length; tab(nf ? `Footnotes${three ? " " : " · "}${nf}` : "Footnotes", "footnotes"); }
+  rwChangesTab(p, cs, tab);
   const x = document.createElement("button");
   x.type = "button";
   x.className = "pclose";
@@ -1646,7 +1653,7 @@ async function openProject(handle, file, made = null, fileHandle = null) {
   else if (/\.scrivx$/i.test(file)) {
     // RossDraft 1.3: a Scrivener project, opened and saved in place (scriv.js)
     if (!ED.project) { dialog("Open a Project", "Scrivener projects open in RossDraft."); return; }
-    const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
+    const SV = await import("./scriv.js?v=1.9.22-d1.16.0");
     st = new SV.ScrivStore(handle, file);
     const locks = await st.findLocks();
     if (locks.length) {
@@ -1778,7 +1785,7 @@ async function openDocFile(fh, ask = false) {
   // RossDraft 1.5: an e-book, opened to read (epub.js)
   if (/\.epub$/i.test(fh.name)) {
     if (ask) { try { if (fh.requestPermission) await fh.requestPermission({ mode: "read" }); } catch (e) { /* read as it may */ } }
-    const EP = await import("./epub.js?v=1.9.22-d1.15.1");
+    const EP = await import("./epub.js?v=1.9.22-d1.16.0");
     const st = new EP.EpubStore(fh);
     const r = await openProject(null, fh.name, st, fh);
     if (S.store === st) await bookOpened(st, fh);      // (1.10.0) its highlights, comments, bookmarks, your place
@@ -1802,7 +1809,7 @@ async function openDocFile(fh, ask = false) {
 async function openRtfFile(fh, ro) {
   let got = null;
   try {
-    const R = await import("./rtf.js?v=1.9.22-d1.15.1");
+    const R = await import("./rtf.js?v=1.9.22-d1.16.0");
     got = R.readRtf(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
   } catch (e) { got = null; }
   if (!got || !got.comments || !got.comments.length) return openMdFile(fh, ro, "rtf");
@@ -1843,7 +1850,7 @@ async function rtfToWord(got, base, dir) {
   let blob = await W.writeDocx(lines, async () => null, base, (got.look && got.look.font) || "Cambria", {});
   const first = lines.find((ln) => ln.runs.some((r) => (r.t || "").trim()));
   const title = first ? first.runs.map((r) => r.t || "").join("") : "";
-  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
+  const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.16.0");
   blob = await exportComments(await blob.arrayBuffer(), [{ title, comments: got.comments }]);
   const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   let h = null;
@@ -2192,20 +2199,31 @@ function renderComments() {
     p.hcomments.title = S.settings.showComments ? "Hide the comments" : "Show the comments";
     const insp = inspectorOn(p);
     const fn = fnOn(p);
-    const show = !!S.settings.showComments && (cs.length > 0 || insp || fn) && !p.el.hidden;
+    const show = !!S.settings.showComments && (cs.length > 0 || insp || fn || rwOn()) && !p.el.hidden;
     p.cpanel.hidden = !show;
     p.el.classList.toggle("cbelow", p.el.clientWidth < 760);
     if (!show) continue;
     // RossDraft: the panel's two tabs, Synopsis & Notes, and Comments
-    if (fn && S.settings.ptab === "footnotes") { renderFootnotes(p, panelTabs(p, cs)); continue; }
-    if (insp && ((S.settings.ptab || "notes") === "notes" || !cs.length)) { renderInspector(p, panelTabs(p, cs)); continue; }
-    if (fn && !cs.length) { renderFootnotes(p, panelTabs(p, cs)); continue; }
-    const key = JSON.stringify(cs) + (insp || fn ? "|tabs" : "");
+    const rw = rwOn();
+    if (rw && S.settings.ptab === "changes" && !p.joined) { renderChanges(p, rwPanelHead(p, panelTabs(p, cs))); continue; }
+    if (fn && S.settings.ptab === "footnotes") { renderFootnotes(p, rwPanelHead(p, panelTabs(p, cs))); continue; }
+    if (insp && ((S.settings.ptab || "notes") === "notes" || (!cs.length && !rw))) { renderInspector(p, rwPanelHead(p, panelTabs(p, cs))); continue; }
+    if (fn && !cs.length && !rw) { renderFootnotes(p, panelTabs(p, cs)); continue; }
+    const key = JSON.stringify(cs) + (insp || fn ? "|tabs" : "") + (rw ? "|rw" : "");
     if (shownComments.get(p.cpanel) === key) continue;
     shownComments.set(p.cpanel, key);
     shownInspector.delete(p.cpanel);
     p.cpanel.textContent = "";
-    if (insp || fn) { p.cpanel.appendChild(panelTabs(p, cs)); }
+    if (insp || fn || rw) { p.cpanel.appendChild(rwPanelHead(p, panelTabs(p, cs))); }
+    if (rw) {
+      p.cpanel.appendChild(rwCommentButtons(p));
+      if (!cs.length) {
+        const e = document.createElement("div");
+        e.className = "rwempty";
+        e.textContent = "No comments here. Choose some words and press New Comment (Ctrl+Alt+M).";
+        p.cpanel.appendChild(e);
+      }
+    }
     const top = document.createElement("div");
     top.className = "ctop";
     top.textContent = insp ? "" : "Comments";
@@ -2228,7 +2246,7 @@ function renderComments() {
     }
     top.appendChild(sizes);
     top.appendChild(x);
-    p.cpanel.appendChild(top);
+    if (!rw) p.cpanel.appendChild(top);
     const replies = (id) => cs.filter((c) => c.parent === id);
     const item = (c, reply) => {
       const it = document.createElement("div");
@@ -2683,7 +2701,7 @@ async function showPdfIn(pane) {
   pane.pdfbox.hidden = false;
   pane.page.hidden = true;
   try {
-    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.15.1"), { after: 400 });
+    const R = await busy("Opening the PDF…", () => import("./research.js?v=1.9.22-d1.16.0"), { after: 400 });
     const v = await R.showPdf(pane.pdfbox, f, { share: sharePdf });
     if (pane.note !== n) { v.destroy(); return; }
     pane.pdfv = v;
@@ -2707,7 +2725,7 @@ async function exportProject() {
   if (!draftOn()) { toast("Export Project is for a Ross Writer or Scrivener project: open one first."); return; }
   if (!window.showDirectoryPicker) { dialog("Export Project", "This browser can't make folders on this device."); return; }
   await flushSave();
-  const X = await import("./export.js?v=1.9.22-d1.15.1");
+  const X = await import("./export.js?v=1.9.22-d1.16.0");
   const scr = !!(S.store.isScriv || S.store.isEpub);
   const box = document.createElement("div");
   box.className = "choose";
@@ -2735,7 +2753,7 @@ async function exportProject() {
   return exportProjectTo(kind, where);
 }
 async function exportProjectTo(kind, where) {
-  const X = await import("./export.js?v=1.9.22-d1.15.1");
+  const X = await import("./export.js?v=1.9.22-d1.16.0");
   let got;
   try {
     got = await busy("Exporting…", (say) => queue(async () => {
@@ -4225,6 +4243,7 @@ document.addEventListener("keydown", (e) => {
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyY" || k === "y" || k === "Y") && draftOn()) fn = showInspector;
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyE" || k === "e" || k === "E") && draftOn()) fn = compileDialog;
   else if (c && e.altKey && !e.shiftKey && (e.code === "KeyL" || k === "l" || k === "L")) fn = toggleClassic;
+  else if (c && e.altKey && !e.shiftKey && ED.project && (e.code === "KeyW" || k === "w" || k === "W")) fn = toggleRwLook;
   else if (c && e.altKey && !e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) fn = () => sideWidth(e.code === "BracketRight" ? 30 : -30);
   else if (c && e.shiftKey && (k === "H" || k === "h")) fn = COMMANDS.highlight;
   else if (c && e.shiftKey && (k === "X" || k === "x")) fn = COMMANDS.strike;
@@ -4650,6 +4669,7 @@ function tidyMenu(name, items) {
   return out.filter((it, k) => it !== "-" || (k > 0 && out[k - 1] !== "-" && out.slice(k + 1).some((x) => x !== "-")));
 }
 function menuItems(name) {
+  if (rwOn()) return rwMenu(name);
   const items = menuItemsAll(name);
   return ED.project ? tidyMenu(name, items) : items;
 }
@@ -4879,8 +4899,9 @@ function menuItemsAll(name) {
       { label: "Dark Mode", on: s.dark, fn: COMMANDS.dark, keys: "Ctrl+Shift+D" },
       { label: "Menus See-Through", sub: MENU_SEE.map(([v, l]) => ({ label: l, on: (s.menuSee ?? 70) === v, fn: () => setMenuSee(v) })) },
       { label: "Look", sub: [
+        ...(ED.project ? [{ label: "Ross Writer Look", on: !!s.rwlook, fn: toggleRwLook, keys: "Ctrl+Alt+W" }] : []),
         { label: "Classic Look", on: !!s.classic, fn: toggleClassic, keys: "Ctrl+Alt+L" },
-        { label: "Toolbar", on: !!s.toolbar || !!s.classic, off: !!s.classic, fn: () => { s.toolbar = !s.toolbar; saveSettings(); applyLook(); } },
+        { label: "Toolbar", on: !!s.toolbar || !!s.classic, off: !!s.classic || rwOn(), fn: () => { s.toolbar = !s.toolbar; saveSettings(); applyLook(); } },
         { label: "Word Counts in the List", on: !!s.wordList, fn: () => { s.wordList = !s.wordList; saveSettings(); applyLook(); renderTree(); } },
       ] },
       { label: "Spelling", sub: [
@@ -5000,7 +5021,8 @@ for (const b of document.querySelectorAll("#menubar [data-menu]")) {
 // Alt shows the menus' letters; Alt+F, Alt+E ... open them
 document.addEventListener("keydown", (e) => {
   if (e.key === "Alt") $("menubar").classList.add("keys");
-  const letters = { f: "file", e: "edit", i: "insert", o: "format", r: "review", n: "notes", v: "view", h: "help" };
+  const letters = rwOn() ? { f: "file", p: "project", n: "project", e: "edit", v: "view", i: "insert", a: "table", o: "format", r: "review", t: "tools", h: "help" } :
+    { f: "file", e: "edit", i: "insert", o: "format", r: "review", n: "notes", v: "view", h: "help" };
   if (e.altKey && !e.ctrlKey && !e.shiftKey && letters[e.key.toLowerCase()]) {
     e.preventDefault();
     showMenuNamed(letters[e.key.toLowerCase()]);
@@ -5210,7 +5232,7 @@ function hideToast() { $("toast").hidden = true; }
 
 // ------------------------------------------------------------------ Word in; Word, PDF and Markdown out
 let wordio = null;
-async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.15.1")); }
+async function wordModule() { return wordio || (wordio = await import("./wordio.js?v=1.9.22-d1.16.0")); }
 
 $("file-docx").addEventListener("change", async (e) => {
   if (S.newProjectWord && e.target.files[0] && S.store && S.store.isProject) {
@@ -5358,7 +5380,7 @@ async function importNoble(dir = null) {
 }
 
 async function importNobleNow(dir, say) {
-  const NB = await import("./notebooks.js?v=1.9.22-d1.15.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.16.0");
   let got;
   try { got = await NB.readNobleFolder(dir, (k) => say(`Reading “${dir.name}”: ${k} notes…`)); } catch (e) {
     dialog("Import a NobleNote Folder", "Couldn't read that folder: " + (e.message || e));
@@ -5430,7 +5452,7 @@ async function importNotebook(file) {
 
 async function importNotebookNow(file, say) {
   await flushSave();
-  const NB = await import("./notebooks.js?v=1.9.22-d1.15.1");
+  const NB = await import("./notebooks.js?v=1.9.22-d1.16.0");
   const W = await wordModule();
   say("Reading " + file.name + "…");
   await breathe();
@@ -5634,7 +5656,7 @@ async function newProject(opts = null) {
 }
 
 async function newScrivener(where, title, start, opts) {
-  const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.16.0");
   let made;
   try { made = await busy(`Making “${title}”…`, () => SV.makeScrivener(where, title), { after: 0 }); } catch (e) {
     dialog("New Scrivener Project", `Couldn't make the project in “${where.name}”.\n\n${(e && e.message) || e}`);
@@ -5671,7 +5693,7 @@ async function newScrivener(where, title, start, opts) {
 
 // RossDraft keeps a zip of a Scrivener project before its first save each visit (the last 10): one saved out
 async function scrivBackups() {
-  const SV = await import("./scriv.js?v=1.9.22-d1.15.1");
+  const SV = await import("./scriv.js?v=1.9.22-d1.16.0");
   const list = await SV.listBackups();
   if (!list.length) { dialog("Scrivener Backups", "None yet. Before RossDraft first saves into a Scrivener project each time you open it, it keeps a zip of the whole project here (the last 10)."); return; }
   const box = document.createElement("div");
@@ -5710,7 +5732,7 @@ async function importProject(dir = null, opts = null) {
   await flushSave();
   dir = dir || await chooseProjectFolder();
   if (!dir) return null;
-  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.15.1"), { after: 0 });
+  const RW = await busy("Looking in “" + dir.name + "”…", () => import("./rwimport.js?v=1.9.22-d1.16.0"), { after: 0 });
   let names;
   try { names = await busy("Looking in “" + dir.name + "”…", () => RW.projectFiles(dir), { after: 0 }); } catch (e) {
     dialog("Import a Ross Writer Project", "Couldn't look in that folder: " + (e.message || e));
@@ -6002,7 +6024,7 @@ async function wordBlob(notes, pages, name, parts = null) {
 // old ones included. An RTF document that's open keeps its own font, size and page.
 async function rtfBlob(notes, pages, name, parts = null) {
   parts = parts || await joinedParts(notes, []);
-  const R = await import("./rtf.js?v=1.9.22-d1.15.1");
+  const R = await import("./rtf.js?v=1.9.22-d1.16.0");
   const { lines, notes: fnotes } = await exportLines(notes, pages, parts);
   const bytes = async (img) => {
     try { return new Uint8Array(await (await S.store.pictureFile(img.target)).arrayBuffer()); } catch (e) {
@@ -6094,7 +6116,7 @@ async function exportNotes(kind) {
     let blob = await busy("Making the Word document…", () => wordBlob(notes, pages, name, parts), { after: 0 });
     if (withComments) {
       // the comments into it, each on its words in its note's part (wordpatch.exportComments)
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.16.0");
       blob = await busy("Putting the comments in…", async () => exportComments(await blob.arrayBuffer(),
         notes.map((x) => ({ title: x.title(), comments: x.comments || [] }))), { after: 0 });
     }
@@ -7636,7 +7658,7 @@ function placeFmtbar() {
   const sel = window.getSelection();
   const pg = sel.rangeCount ? P.map((p) => p.page).find((x) => x.contains(sel.anchorNode)) : null;
   const ok = pg && pg.isContentEditable && !sel.isCollapsed && sel.toString().trim() && $("dialog").hidden && $("menu").hidden &&
-    lastPointer !== "touch" && !(ed.lineOf(sel.anchorNode, pg) || {}).dataset?.code;
+    lastPointer !== "touch" && !(ed.lineOf(sel.anchorNode, pg) || {}).dataset?.code && !rwOn();
   if (!ok) { FMB.hidden = true; return; }
   const r = sel.getRangeAt(0).getBoundingClientRect();
   if (!r.width && !r.height) { FMB.hidden = true; return; }
@@ -7705,6 +7727,7 @@ $("goal").onclick = setGoal;
 // the look before 1.9.0 (yellow paper, Cambria, the toolbar, no blue bar, a light list); again: the new look
 function toggleClassic() {
   S.settings.classic = !S.settings.classic;
+  if (S.settings.classic) S.settings.rwlook = false;
   saveSettings();
   applyLook();
   renderTree();
@@ -8157,7 +8180,7 @@ async function saveAsBlob(st, n, name, ext) {
     }
     let blob = await wordBlob([n], false, name, parts);
     if (n.comments && n.comments.length) {
-      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.15.1");
+      const { exportComments } = await import("./wordpatch.js?v=1.9.22-d1.16.0");
       blob = await exportComments(await blob.arrayBuffer(), [{ title: n.title(), comments: n.comments }]);
     }
     return blob;
@@ -8723,7 +8746,7 @@ let casingMod = null;
 async function changeCase(mode) {
   const p = A, pg = p.page;
   if (!p.note || pg.contentEditable === "false") return;
-  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.15.1"));
+  const C = casingMod || (casingMod = await import("./casing.js?v=1.9.22-d1.16.0"));
   const sel = getSelection();
   if (!sel.rangeCount || !pg.contains(sel.anchorNode)) return;
   let r = sel.getRangeAt(0).cloneRange();
@@ -10600,7 +10623,536 @@ document.addEventListener("keydown", (e) => {
 }, true);
 
 // for the tests
-window.RN = { menuClearOf, TM, setMenuSee, showMenu, languageDialog, langTagAt, docLangTag, dictAt, thesaurus, measuredPage, previewPages, printPreview, closePreview, renderPreview, exportComments, commentEntries, PV, insertToc, updateToc, tocLines, pageBreaks, pageGeom, paintPageEnds, applyPageWidth, pageSetupDialog, toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
+// ------------------------------------------------------------------ RossDraft 1.16.0: the Ross Writer look
+// View ▸ Look ▸ Ross Writer Look (Ctrl+Alt+W): RossDraft dressed as Ross Writer on the laptop. Ross Writer's menus
+// (File, Project, Edit, View, Insert, Table, Format, Review, Tools, Help), its file bar (with Writing / Page) and
+// format bar (style, font, size, bold…, alignment, spacing, lists, copy formatting, highlight, text colour), the
+// project list on the left, Comments and Notes docked on the right (with the changes), the status bar's page and
+// zoom, and a start page with what you had open lately. The same commands as RossDraft's own look: only the
+// dress is different. Ctrl+Alt+W again: RossDraft's own look.
+function rwOn() { return !!(ED.project && S.settings.rwlook); }
+function toggleRwLook() {
+  const s = S.settings;
+  s.rwlook = !s.rwlook;
+  if (s.rwlook) s.classic = false;
+  saveSettings();
+  applyLook();
+  renderTree();
+  updateHead();
+  shownPanels();
+  renderComments();
+  toast(s.rwlook ? "The Ross Writer look (Ctrl+Alt+W again for RossDraft's own)" : "RossDraft's own look (Ctrl+Alt+W for Ross Writer's)", 2500);
+}
+function shownPanels() { for (const p of P) { shownComments.delete(p.cpanel); shownInspector.delete(p.cpanel); shownFootnotes.delete(p.cpanel); } }
+const qs = (s) => document.querySelector(s);
+function applyRw() {
+  const on = rwOn();
+  document.body.classList.toggle("rwlook", on);
+  $("rwbar").hidden = !on;
+  $("rwfmt").hidden = !on;
+  for (const m of ["project", "table", "tools"]) qs(`#menubar [data-menu="${m}"]`).hidden = !on;
+  qs('#menubar [data-menu="notes"]').hidden = on;
+  if (on) {
+    $("toolbar").hidden = true;
+    $("b-cmd").hidden = true;
+  }
+  $("b-list").hidden = on;
+  $("b-dark").hidden = on;
+  $("rw-page").hidden = !on;
+  $("rw-zoom").hidden = !on;
+  if (on) document.querySelector('meta[name="theme-color"]').content = S.settings.dark ? "#1B2433" : "#24507E";
+  $("search").placeholder = on && S.store && S.store.isProject && !S.store.isDoc ? "Search the project…" : "Search the notes…";
+  rwSyncSoon();
+}
+
+// -- the menus, as Ross Writer's: Notes becomes Project; Insert ▸ Table its own menu; spelling, the thesaurus,
+// counting and targets, searching the web and the pop-up draft in Tools
+const RW_TOOLS = { review: ["Thesaurus…", "Language…"], view: ["Spelling", "Pop-up Draft"],
+  notes: ["Count Words (with the notes under it)…", "Targets and Status…", "Daily Word Target…"], edit: ["Search the Web"] };
+function tidySeps(out) { return out.filter((it, k) => it !== "-" || (k > 0 && out[k - 1] !== "-" && out.slice(k + 1).some((x) => x !== "-"))); }
+function takeOut(items, labels) {
+  const got = [];
+  const walk = (xs) => xs.filter((it) => {
+    if (it && typeof it === "object") {
+      if (labels.includes(it.label)) { got.push(it); return false; }
+      if (Array.isArray(it.sub)) it.sub = tidySeps(walk(it.sub));
+    }
+    return true;
+  });
+  const left = tidySeps(walk(items));
+  return { left, got: labels.map((l) => got.find((it) => it.label === l)).filter(Boolean) };
+}
+function rwMenu(name) {
+  const base = (n) => tidyMenu(n, menuItemsAll(n));
+  if (name === "project" || name === "notes") return takeOut(base("notes"), RW_TOOLS.notes).left;
+  if (name === "table") {
+    const t = base("insert").find((it) => it && it.label === "Table" && Array.isArray(it.sub));
+    return t ? t.sub.map((it) => (it && it.label === "Insert Table…" ? Object.assign({}, it, { label: "Insert Table…" }) : it)) : [];
+  }
+  if (name === "insert") {
+    return base("insert").map((it) => {
+      if (!(it && it.label === "Table" && Array.isArray(it.sub))) return it;
+      const ins = it.sub.find((x) => x && x.label === "Insert Table…");
+      return ins ? Object.assign({}, ins, { label: "Table…" }) : it;
+    });
+  }
+  if (name === "tools") {
+    const v = takeOut(base("view"), RW_TOOLS.view).got, r = takeOut(base("review"), RW_TOOLS.review).got;
+    const nt = takeOut(base("notes"), RW_TOOLS.notes).got, e = takeOut(base("edit"), RW_TOOLS.edit).got;
+    const spelling = (v.find((it) => it.label === "Spelling") || { sub: [] }).sub;
+    const thes = r.filter((it) => it.label === "Thesaurus…");
+    return tidySeps([...spelling, "-", ...thes, "-", ...nt, "-", ...e, "-", ...v.filter((it) => it.label === "Pop-up Draft"), "-",
+      { label: "Find or Do Anything…", fn: commandPalette, keys: "Ctrl+K" }]);
+  }
+  return RW_TOOLS[name] ? takeOut(base(name), RW_TOOLS[name]).left : base(name);
+}
+
+// -- the file bar
+const RWB = {
+  new: () => newNote(false),
+  open: () => rwOpenPage(),
+  save: async () => { await flushSave(); showSaved(); toast("Saved", 900); },
+  print: () => printNote(),
+  undo: () => COMMANDS.undo(), redo: () => COMMANDS.redo(),
+  find: () => openFind(true),
+  list: () => toggleList(),
+  outline: () => toggleOutline(),
+  panel: () => toggleComments(),
+  draft: () => togglePop(),
+  dark: () => COMMANDS.dark(),
+};
+for (const b of document.querySelectorAll("#rwbar [data-rw]")) {
+  b.addEventListener("mousedown", (e) => e.preventDefault());       // the caret stays in the page
+  b.addEventListener("click", () => { hideMenu(); RWB[b.dataset.rw](); rwSyncSoon(); });
+}
+$("rw-cmd").addEventListener("click", () => commandPalette());
+for (const b of document.querySelectorAll("#rw-mode button")) {
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => {
+    const page = b.dataset.mode === "page";
+    if (S.settings.spread) toggleSpread();
+    if (!!S.settings.pageView !== page) togglePageView();
+    rwSyncSoon();
+  });
+}
+
+// -- the format bar
+const RWF = { style: $("rwf-style"), font: $("rwf-font"), size: $("rwf-size"), spacing: $("rwf-spacing") };
+RWF.font.innerHTML = '<option value="">(as the document)</option>' + WORD_FONTS.map((f) => `<option>${f}</option>`).join("");
+RWF.size.innerHTML = FONT_SIZES.map((z) => `<option value="${z}">${z}</option>`).join("");
+var rwRange = null, rwPainter = false, rwColour = "C00000";
+// a list's choice takes the caret out of the page: where it was, kept and put back
+function rwKeep() {
+  const sel = window.getSelection();
+  rwRange = sel.rangeCount && A.page.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : rwRange;
+}
+function rwBack() {
+  A.page.focus();
+  if (!rwRange || !A.page.contains(rwRange.startContainer)) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(rwRange);
+}
+for (const el of Object.values(RWF)) { el.addEventListener("pointerdown", rwKeep); el.addEventListener("focus", rwKeep); }
+RWF.style.addEventListener("change", () => {
+  rwBack();
+  const v = RWF.style.value, line = caretLine();
+  const now = line && line.dataset.kind && ["h1", "h2", "h3", "quote", "ul", "ol"].includes(line.dataset.kind) ? line.dataset.kind : "normal";
+  if (v !== now) setBlock(v === "normal" ? null : v);
+  rwSyncSoon();
+});
+function rwWords(what) {
+  rwBack();
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { toast(`Choose the words first, then their ${what}.`); rwSyncSoon(); return false; }
+  if (lookRO()) { toast("This can't be changed here."); rwSyncSoon(); return false; }
+  return true;
+}
+RWF.font.addEventListener("change", () => {
+  if (!rwWords("font")) return;
+  setWordsLook("font:", RWF.font.value || null);
+  rwSyncSoon();
+});
+RWF.size.addEventListener("change", () => {
+  if (!rwWords("size")) return;
+  const usz = (A.note && A.note.usz) || 24;
+  const hp = Math.round(parseFloat(RWF.size.value) * 2);
+  setWordsLook("sz:", hp === usz ? null : String(hp));
+  rwSyncSoon();
+});
+RWF.spacing.addEventListener("change", () => { rwBack(); paraSpacing(RWF.spacing.value || null); rwSyncSoon(); });
+const RWFB = {
+  h1: () => COMMANDS.h1(), h2: () => COMMANDS.h2(), h3: () => COMMANDS.h3(),
+  bold: () => COMMANDS.bold(), italic: () => COMMANDS.italic(), underline: () => COMMANDS.underline(),
+  left: () => COMMANDS.left(), center: () => COMMANDS.center(), right: () => COMMANDS.right(), justify: () => COMMANDS.justify(),
+  ul: () => COMMANDS.ul(), ol: () => COMMANDS.ol(),
+  // copy formatting: pressed, the look at the caret is copied; pressed again with words chosen, they're given it
+  painter: () => {
+    if (rwPainter && copiedFormat) { pasteFormat(); rwPainter = false; }
+    else rwPainter = copyFormat();
+  },
+  highlight: () => COMMANDS.highlight(),
+  hlmenu: (b) => showMenu(b, lookItems().hl),
+  colour: () => { if (rwWords("colour")) textColour(rwColour); },
+  colourmenu: (b) => showMenu(b, lookItems().colour.map((it) => Object.assign({}, it, { fn: () => {
+    const c = TEXT_COLOURS.find((x) => x[0] === it.label);
+    if (c && c[1]) { rwColour = c[1]; document.documentElement.style.setProperty("--rwcolour", "#" + c[1]); }
+    it.fn();
+  } }))),
+  more: (b) => showMenu(b, rwMenu("format")),
+};
+for (const b of document.querySelectorAll("#rwfmt [data-f]")) {
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => {
+    const menu = ["hlmenu", "colourmenu", "more"].includes(b.dataset.f);
+    if (menu && !$("menu").hidden) { hideMenu(); return; }
+    if (!menu) hideMenu();
+    RWFB[b.dataset.f](b);
+    rwSyncSoon();
+  });
+}
+
+// -- the status bar: the page you're on, and the zoom (the size the page is shown at: View's text size)
+const RW_ZOOMS = [75, 90, 100, 110, 125, 150, 175, 200];
+const zoomOf = (size) => RW_ZOOMS.reduce((a, z) => (Math.abs(z * 18 / 100 - size) < Math.abs(a * 18 / 100 - size) ? z : a), 100);
+$("rw-zoom").innerHTML = RW_ZOOMS.map((z) => `<option value="${z}">${z}%</option>`).join("");
+$("rw-zoom").addEventListener("change", () => {
+  S.settings.size = Math.round(18 * +$("rw-zoom").value / 100);
+  saveSettings();
+  applyLook();
+  pageEndsSoon();
+});
+$("rw-page").addEventListener("click", () => goTo());
+
+// what the bars show, kept in step with the caret
+var rwDue = 0;
+function rwSyncSoon() { if (!rwOn() || rwDue) return; rwDue = requestAnimationFrame(rwSync); }
+function rwSync() {
+  rwDue = 0;
+  if (!rwOn()) return;
+  $("search").placeholder = S.store && S.store.isProject && !S.store.isDoc ? "Search the project…" : "Search the notes…";
+  const s = S.settings;
+  const on = (sel, v) => { for (const b of document.querySelectorAll(sel)) b.classList.toggle("on", !!v); };
+  on('#rw-mode [data-mode="page"]', s.pageView || s.spread);
+  on('#rw-mode [data-mode="writing"]', !(s.pageView || s.spread));
+  on('#rwbar [data-rw="list"]', !$("app").classList.contains("list-off"));
+  on('#rwbar [data-rw="outline"]', typeof outlineOn === "function" && outlineOn());
+  on('#rwbar [data-rw="panel"]', !!s.showComments);
+  on('#rwbar [data-rw="draft"]', PN && PN.el && !PN.el.hidden);
+  $("rw-zoom").value = String(zoomOf(s.size));
+  const sel = window.getSelection();
+  const inPage = !!A.note && sel.rangeCount && A.page.contains(sel.anchorNode);
+  $("rwfmt").classList.toggle("dim", !A.note || A.page.contentEditable === "false");
+  const line = inPage ? caretLine() : null;
+  const kind = line && line.dataset.kind;
+  RWF.style.value = ["h1", "h2", "h3", "quote", "ul", "ol"].includes(kind) ? kind : "normal";
+  const f = inPage ? flagsAtCaret() : new Set();
+  for (const [k, fl] of [["bold", "b"], ["italic", "i"], ["underline", "u"], ["highlight", "h"]]) on(`#rwfmt [data-f="${k}"]`, f.has(fl));
+  for (const k of ["h1", "h2", "h3", "ul", "ol"]) on(`#rwfmt [data-f="${k}"]`, kind === k);
+  const al = line && line.dataset.align;
+  for (const k of ["left", "center", "right", "justify"]) on(`#rwfmt [data-f="${k}"]`, inPage && (k === "left" ? !al : al === k));
+  on('#rwfmt [data-f="painter"]', rwPainter && copiedFormat);
+  const font = inPage ? lookAtSel("font:") || "" : "";
+  if (font && ![...RWF.font.options].some((o) => o.value === font)) RWF.font.add(new Option(font, font));
+  RWF.font.value = font;
+  const usz = (A.note && A.note.usz) || 24;
+  const z = String(+(inPage && lookAtSel("sz:") || usz) / 2);
+  if (![...RWF.size.options].some((o) => o.value === z)) {
+    const o = new Option(z, z);
+    const after = [...RWF.size.options].find((x) => +x.value > +z);
+    RWF.size.add(o, after || null);
+  }
+  RWF.size.value = z;
+  RWF.spacing.value = (line && line.dataset.ls) || "";
+  rwPageSoon();
+}
+document.addEventListener("selectionchange", rwSyncSoon);
+window.addEventListener("resize", rwSyncSoon);
+// Page k of n (in Page view): worked out a moment after the caret stops
+var rwPageT = 0;
+function rwPageSoon() { clearTimeout(rwPageT); rwPageT = setTimeout(rwPage, 300); }
+function rwPage() {
+  const el = $("rw-page");
+  const pv = document.body.classList.contains("pageview");
+  if (!rwOn() || !A.note || !pv || !A.page.dataset.loaded) { el.textContent = ""; el.hidden = true; return; }
+  const starts = pageStarts(A.page);
+  if (!starts.length) { el.hidden = true; return; }
+  const c = ed.caret(A.page);
+  const here = c ? A.page.children[c.a.line] : null;
+  let k = 0;
+  if (here) for (let i = 0; i < starts.length; i++) if (starts[i].offsetTop <= here.offsetTop) k = i;
+  el.textContent = `Page ${k + 1} of ${starts.length}`;
+  el.hidden = false;
+}
+for (const p of P) p.page.addEventListener("input", () => { rwPageSoon(); rwChangesSoon(); });
+
+// -- Comments and Notes: docked on the right, its tabs as Ross Writer's (the comments, the synopsis and notes, the
+// footnotes, and the scene's tracked changes, each to go to, accept or reject)
+function rwPanelHead(p, tabs) {
+  if (!rwOn()) return tabs;
+  const w = document.createElement("div");
+  w.className = "rwphead";
+  const t = document.createElement("div");
+  t.className = "rwptitle";
+  t.textContent = "Comments and notes";
+  const x = tabs.querySelector(".pclose");
+  if (x) t.appendChild(x);
+  w.append(t, tabs);
+  return w;
+}
+function rwChangesTab(p, cs, tab) {
+  if (!rwOn() || p.joined) return;
+  const n = p.note;
+  const k = (n && n.changes || []).length;
+  tab(k ? `Changes ${k}` : "Changes", "changes");
+}
+var rwChT = 0;
+function rwChangesSoon() { if (!rwOn() || S.settings.ptab !== "changes") return; clearTimeout(rwChT); rwChT = setTimeout(() => { shownPanels(); renderComments(); }, 900); }
+function renderChanges(p, head) {
+  const n = p.note;
+  p.cpanel.textContent = "";
+  p.cpanel.appendChild(head);
+  const box = document.createElement("div");
+  box.className = "tclist rwchanges";
+  p.cpanel.appendChild(box);
+  const pg = p.page;
+  const inPage = new Map(changesInPage(pg).map((c) => [String(c.id), c]));
+  const list = ((n && n.changes) || []).filter((c) => !c.mine || inPage.has(String(c.id)));
+  const top = document.createElement("div");
+  top.className = "rwpbtns";
+  const mk = (where, label, fn, off) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; x.disabled = !!off; x.onclick = fn; where.appendChild(x); return x; };
+  mk(top, TRK && trackingHere() ? "Tracking: On" : "Track Changes", () => { toggleTrack(); shownPanels(); renderComments(); }).classList.toggle("on", !!(TRK && trackingHere()));
+  mk(top, "Accept All", async () => { await decideIds(n, null, true); shownPanels(); renderComments(); }, !list.length);
+  mk(top, "Reject All", async () => { await decideIds(n, null, false); shownPanels(); renderComments(); }, !list.length);
+  box.appendChild(top);
+  if (!list.length) {
+    const e = document.createElement("div");
+    e.className = "rwempty";
+    e.textContent = "No tracked changes in this " + (S.store && S.store.isDoc ? "document." : "scene.") + " Review ▸ Track Changes (Ctrl+Shift+E) marks what you type and delete.";
+    box.appendChild(e);
+    return;
+  }
+  for (const c of list) {
+    const row = document.createElement("div");
+    row.className = "tcrow";
+    const t = document.createElement("div");
+    t.className = "tctext";
+    t.textContent = tcLabel(c);
+    const b = document.createElement("span");
+    b.className = "tcbtns";
+    const here = inPage.get(String(c.id));
+    mk(b, "Accept", async (e) => { e.stopPropagation(); await decideIds(n, [c.id], true); shownPanels(); renderComments(); });
+    mk(b, "Reject", async (e) => { e.stopPropagation(); await decideIds(n, [c.id], false); shownPanels(); renderComments(); });
+    row.append(t, b);
+    if (here) row.onclick = () => showChange(here);
+    box.appendChild(row);
+  }
+}
+// the Comments tab's own buttons: a new one, and the size of the words
+function rwCommentButtons(p) {
+  const top = document.createElement("div");
+  top.className = "rwpbtns";
+  const mk = (label, fn, tip) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; x.title = tip || ""; x.addEventListener("mousedown", (e) => e.preventDefault()); x.onclick = fn; top.appendChild(x); };
+  mk("New Comment", () => addComment(), "A comment on the chosen words (Ctrl+Alt+M)");
+  mk("A−", () => commentSize(-1), "Smaller text in the comments (Ctrl+Alt+−)");
+  mk("A+", () => commentSize(1), "Larger text in the comments (Ctrl+Alt+=)");
+  return top;
+}
+
+// -- Recent: what you had open lately (projects, documents, notes folders), kept in this browser with the way back
+// into each (Android may ask once more to let RossDraft into it)
+async function rememberPlace(st) {
+  if (!ED.project || !st) return;
+  let r = null;
+  try {
+    if (st.isDoc || st.isEpub) {
+      const fh = st.fileHandle;
+      if (!fh) return;
+      const ext = (fh.name.match(/\.(\w+)$/) || ["", ""])[1].toLowerCase();
+      r = { kind: "doc", name: fh.name, h: fh, type: { docx: "Word", rtf: "RTF", md: "Markdown", markdown: "Markdown", txt: "Text", epub: "E-book" }[ext] || "Document" };
+    } else if (st.isProject && st.handle) {
+      const n = typeof st.all === "function" ? st.all().filter((x) => !x.children.length).length : 0;
+      r = { kind: "project", name: st.label || st.fileName, file: st.fileName, h: st.handle, type: st.isScriv ? "Scrivener project" : "Ross Writer project",
+        info: `In “${st.handle.name}”` + (n ? ` · ${n} scene${n === 1 ? "" : "s"}` : "") };
+    } else if (st.handle) {
+      const n = typeof st.all === "function" ? st.all().length : 0;
+      r = { kind: "notes", name: st.handle.name, h: st.handle, type: "Notes folder", info: n ? `${n} note${n === 1 ? "" : "s"}` : "" };
+    }
+  } catch (e) { return; }
+  if (!r || !r.name) return;
+  r.when = Date.now();
+  let list = [];
+  try { list = (await kvGet("recentList")) || []; } catch (e) { list = []; }
+  list = list.filter((x) => !(x.kind === r.kind && x.name === r.name && (x.file || "") === (r.file || "")));
+  list.unshift(r);
+  try { await kvSet("recentList", list.slice(0, 20)); } catch (e) { /* this visit only */ }
+}
+async function recentList() { try { return (await kvGet("recentList")) || []; } catch (e) { return []; } }
+function whenText(t) {
+  const d = new Date(t), now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (diff === 0) return "Today, " + hm;
+  if (diff === 1) return "Yesterday";
+  if (diff < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+}
+async function openRecent(r) {
+  let ok = "denied";
+  const mode = r.kind === "doc" && /\.epub$/i.test(r.name) ? "read" : "readwrite";
+  try { ok = !r.h.queryPermission || (await r.h.queryPermission({ mode })) === "granted" ? "granted" : await r.h.requestPermission({ mode }); } catch (e) { ok = "denied"; }
+  if (ok !== "granted" && r.kind !== "doc") { toast(`Android didn't let ${ED.name} into “${r.h.name}”.`); return; }
+  $("start").hidden = true;
+  if (r.kind === "project") return openProject(r.h, r.file);
+  if (r.kind === "notes") { try { await kvSet("root", r.h); } catch (e) { /* this visit */ } return openRoot(r.h); }
+  return openDocFile(r.h, ok !== "granted");
+}
+// Blank Page: a new Word document, saved where you choose, then opened
+async function newBlankDoc() {
+  if (!window.showSaveFilePicker) { dialog("Blank Page", "This browser can't make a new file on this device. Make a new project (File ▸ New Ross Writer Project…), or open a document."); return; }
+  let h;
+  try {
+    h = await window.showSaveFilePicker({ suggestedName: "Untitled.docx", id: "rossdraft-blank",
+      types: [{ description: "Word document", accept: { "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"] } }] });
+  } catch (e) { return; }
+  const W = await wordModule();
+  const blob = await W.writeDocx([{ kind: null, runs: [] }], async () => null, h.name.replace(/\.docx$/i, ""), "Cambria", {});
+  const w = await h.createWritable();
+  await w.write(blob);
+  await w.close();
+  $("start").hidden = true;
+  return openWordDoc(h);
+}
+
+// the start page (and File bar ▸ Open, Ctrl+Shift+O): the ways in on the left, Recent on the right
+var rwFilter = "all";
+async function rwStart(kind, handle, was) {
+  const st = $("start");
+  st.hidden = false;
+  st.classList.add("rwstart");
+  st.classList.remove("raised");
+  const back = !!S.store;
+  st.classList.toggle("over", back);
+  st.innerHTML = `<div class="rwsbars"></div><div class="rwswrap"><div class="rwsacts">
+      <div class="rwsbrand"><img src="icons/icon-192.png" alt="" width="46" height="46"><div><b>${ED.name}</b><small>Version ${ED.version || SHOWN}</small></div></div>
+      <div class="rwsbtns"></div>
+      <div class="rwsfoot"></div></div>
+    <div class="rwsrecent"><h2>Recent <span>Click to reopen. Android may ask once to let ${ED.name} into it again.</span></h2>
+      <div class="rwsfilter"></div><div class="rwslist"></div>
+      <div class="rwsbottom"><button type="button" class="rwsclear">Clear All</button><button type="button" class="rwsless" title="Smaller (Ctrl+−)">A−</button><button type="button" class="rwsmore" title="Larger (Ctrl+=)">A+</button>
+        <span class="rwsnote">${back ? "Esc: back to your work" : ""}</span></div></div></div>`;
+  rwPlaceStart();
+  const ic = {
+    doc: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M9 12h6M9 15h6M9 18h4"/></svg>',
+    project: '<svg viewBox="0 0 24 24"><path d="M8 3h10v14H8z"/><path d="M5 6v15h11"/><path d="M11 7h4M11 10h4M11 13h3"/></svg>',
+    notes: '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg>',
+    blank: '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M12 11v6M9 14h6"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>',
+  };
+  const btns = st.querySelector(".rwsbtns");
+  const act = (icon, label, sub, fn, main) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "rwsact" + (main ? " primary" : "");
+    b.innerHTML = `${ic[icon]}<span><span class="l"></span><small></small></span>`;
+    b.querySelector(".l").textContent = label;
+    b.querySelector("small").textContent = sub;
+    b.onclick = fn;
+    btns.appendChild(b);
+  };
+  if (kind === "unsupported") {
+    btns.textContent = `This browser can't open a folder on this device. ${ED.name} needs Chrome or Edge (on Android, version 132 or later).`;
+  } else {
+    if (back) act("back", "Back to Your Work", A.note ? A.note.title() : "", () => { st.hidden = true; A.page.focus(); });
+    if (window.showOpenFilePicker || window.showDirectoryPicker) act("doc", "Open a Document…", "Word, Markdown, text, RTF, EPUB", () => { st.hidden = true; chooseWordDoc(); }, !back);
+    act("project", "Open a Ross Writer Project…", "Edited in place, as Ross Writer sees it", () => { st.hidden = true; chooseProject(); });
+    act("notes", "Choose the RossNotes Folder…", "Your notes, as a tree", () => { st.hidden = true; chooseFolder(); });
+    act("blank", "Blank Page", "A new Word document", () => newBlankDoc());
+  }
+  const foot = st.querySelector(".rwsfoot");
+  const dc = document.createElement("button");
+  dc.type = "button";
+  dc.className = "devlink";
+  dc.textContent = "Trouble opening? Device Check";
+  dc.onclick = () => deviceCheck();
+  const look = document.createElement("button");
+  look.type = "button";
+  look.className = "devlink";
+  look.textContent = "RossDraft's own look";
+  look.title = "View ▸ Look ▸ Ross Writer Look (Ctrl+Alt+W)";
+  look.onclick = () => { toggleRwLook(); st.classList.remove("rwstart", "over"); st.innerHTML = START_HTML; if (back) st.hidden = true; else showStart(kind, handle, was); };
+  foot.append(dc, document.createElement("br"), look);
+  // Recent
+  const all = await recentList();
+  // (something kept from before 1.16.0's list: the last project and document)
+  if (!all.length && was && was.h) all.push({ kind: was.where === "doc" ? "doc" : was.where === "project" ? "project" : "notes", h: was.h, file: was.f,
+    name: was.where === "doc" ? (S.settings.lastDoc || {}).name || was.h.name : was.where === "project" ? (S.settings.lastProject || {}).name || was.h.name : was.h.name,
+    type: was.where === "doc" ? "Document" : was.where === "project" ? "Ross Writer project" : "Notes folder", when: 0 });
+  const filt = st.querySelector(".rwsfilter"), list = st.querySelector(".rwslist");
+  const fill = () => {
+    filt.textContent = "";
+    for (const [v, l] of [["all", "All"], ["project", "Projects"], ["doc", "Documents"], ["notes", "Notes"]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = rwFilter === v ? "on" : "";
+      b.textContent = l;
+      b.onclick = () => { rwFilter = v; fill(); };
+      filt.appendChild(b);
+    }
+    list.textContent = "";
+    const shown = all.filter((r) => rwFilter === "all" || r.kind === rwFilter);
+    if (!shown.length) {
+      const e = document.createElement("div");
+      e.className = "rwsempty";
+      e.textContent = all.length ? "None of these yet." : "Nothing yet: what you open is listed here, to reopen with one tap.";
+      list.appendChild(e);
+    }
+    const cur = S.store && placeId(S.store);
+    shown.forEach((r, k) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "rwsitem" + (k === 0 && !back ? " cur" : "");
+      b.innerHTML = `<span class="ic">${ic[r.kind] || ic.doc}</span><span class="tx"><span class="t"><span class="nm"></span><span class="tag"></span></span><span class="p"></span></span><span class="when"></span>`;
+      b.querySelector(".nm").textContent = r.name;
+      b.querySelector(".tag").textContent = r.type || "";
+      b.querySelector(".tag").classList.add(r.kind);
+      b.querySelector(".p").textContent = r.info || (r.kind === "doc" ? "A document" : "");
+      b.querySelector(".when").textContent = r.when ? whenText(r.when) : "";
+      b.onclick = () => openRecent(r);
+      list.appendChild(b);
+    });
+    void cur;
+  };
+  fill();
+  st.querySelector(".rwsclear").onclick = async () => { all.length = 0; try { await kvSet("recentList", []); } catch (e) { /* */ } fill(); };
+  const sz = (d) => { S.settings.startSize = Math.max(85, Math.min(150, (S.settings.startSize || 100) + d)); saveSettings(); st.style.setProperty("--rwsz", S.settings.startSize / 100); };
+  st.querySelector(".rwsless").onclick = () => sz(-10);
+  st.querySelector(".rwsmore").onclick = () => sz(10);
+  st.style.setProperty("--rwsz", (S.settings.startSize || 100) / 100);
+  const first = st.querySelector(".rwsitem") || st.querySelector(".rwsact.primary");
+  if (first && back) first.focus();
+}
+const START_HTML = $("start").innerHTML;
+// below the bars (they work over it), above the status bar
+function rwPlaceStart() {
+  const st = $("start");
+  if (!st.classList.contains("rwstart")) return;
+  const t = $("rwfmt").getBoundingClientRect().bottom, b = $("status").getBoundingClientRect();
+  st.style.setProperty("--rwtop", Math.max(0, t) + "px");
+  st.style.setProperty("--rwbot", (b.height ? Math.max(0, window.innerHeight - b.top) : 0) + "px");
+}
+window.addEventListener("resize", rwPlaceStart);
+function rwOpenPage() { rwStart("open", null, null); }
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("start").classList.contains("over") && !$("start").hidden && $("dialog").hidden) {
+    e.preventDefault();
+    $("start").hidden = true;
+    if (A.note) A.page.focus();
+  }
+});
+
+window.RN = { applyLook, rwOn, toggleRwLook, rwMenu, rwSync, rwStart, rememberPlace, recentList, openRecent, newBlankDoc, renderChanges, menuClearOf, TM, setMenuSee, showMenu, languageDialog, langTagAt, docLangTag, dictAt, thesaurus, measuredPage, previewPages, printPreview, closePreview, renderPreview, exportComments, commentEntries, PV, insertToc, updateToc, tocLines, pageBreaks, pageGeom, paintPageEnds, applyPageWidth, pageSetupDialog, toggleTrack, trackingHere, TRK, headerFooterDialog, mergeCells, splitCells, insertField, updateFields, fieldResult, stepChange, changeAtCaret, changesInPage, decideHere, decideIds, decideAll, changesDialog, toggleMarkup, setMarkup, nextMarkup, markupView, previewFinal, reviewItems, undoDecision, paintAuthors, specialCharDialog, convertQuotes, curlyFor, linkDialog, copyFormat, pasteFormat, get copiedFormat() { return copiedFormat; }, pastedLines, pasteMode, setPasteMode, pageStarts, browse, searchWeb, wordsToSearch, bookWhole, setDocDir: (d) => { docDir = d; }, bookMarksBlob, BK, bookHighlight, bookComment, bookCommentOp, bookBookmarkOp, exportBookMarks, paintBook, bookOn, setWordsLook, growFont, supSub, paraSpacing, pageBreak, startNewPage, fontWordsDialog, insertTableAt, tableRow, tableCol, tableDelete, tableEqual, tableLines, tableItems, cellOfSel, toggleTree, treeHidden, menuItems, menuItemsAll, toggleSpread, sizeSpread, saveAs, saveAsBlob, removeColours, changeCase, listLevel, restartNumbering, listItems, insertBookmark, goToBookmark, bookmarkName, renderOutline, toggleOutline, outlineMove, olStep, olLevelBy, undoOutline, OL, popNew, popListShow, popInsert, popOpenDraft, PN, draftOn, pmeta, setStatus, toggleInclude, targetsDialog, targetFigures, showInspector, moveTo, ED, selectAllShown, openJoined, selectClick, clearSel, joinedPieces, chooseAnotherFolder, noteFolders, chooseFolder, chooseProjectsFolder, pickFromFolder, lostPick, keepSpot, restoreSpot, showStart, toggleClassic, commandPalette, toggleFocus, chooseColour, colourOf, setGoal, goalNow, sideWidth, showSaved, importNoble, S, P, commentSize, importProject, newProject, importWord, listAll, replaceEverywhere, togglePop, popSave, goTo, showRecent, togglePageView, updateCorner, cornerFigures, pageMenu, spell, spellCheckNow, showDictionary, saveDictionary, openWordDoc, openMdFile, openDocFile, chooseWordDoc, addComment,
   commentAction, askAuthor, renderComments, toggleComments, goToWords, openProject, chooseProject, backToNotes, reopenProject, reopenDoc, openRoot, updateWordCopy, wordFlush, get wordDue() { return [...wordDue]; }, wordsIn, countWords, countBranch, codes, get findCur() { return findCur; }, openFind, findAll, findGo, replaceOne, replaceAll, showHeadings, importNotebook, shareNote, shareText, shareWord, copyForEmail, importWord, exportNotes, rtfBlob, saveOriginalRtf, useDocDir: (d) => { docDir = d; }, pickedNothing, deviceCheck, diag, renderTree, showPdfIn, addPdfEntry, exportProject, exportProjectTo, set testNoAsk(v) { RN_TEST_NOASK = v; }, newScrivener, scrivBackups, insertNote, fnOn, renderFootnotes, fontsDialog, PAGE_FONTS, compileDialog, compileBook, compileLines, compilePrint, compileModule, kvGet, kvSet, joinedParts, wordModule, saveFile, setActive, setSplit, get A() { return A; }, md, ed, flushSave, refresh, openNote, newNote, moveNote, addPictures, pasteLines, COMMANDS, VERSION };
 
 start();
